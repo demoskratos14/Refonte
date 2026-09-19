@@ -1,0 +1,24 @@
+// RACINE -- version de secours : si tu as deja un build.gradle racine qui
+// fonctionne dans ton depot, garde le tien et ignore celui-ci.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://chaquo.com/maven" }
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:8.2.2"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+        classpath "com.chaquo.python:gradle:15.0.1"
+    }
+}
+
+// Necessaire car settings.gradle ne declare pas dependencyResolutionManagement :
+// app/build.gradle n a pas de bloc repositories et compte sur celui-ci.
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://chaquo.com/maven" }
+    }
+}
