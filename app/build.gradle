@@ -1,0 +1,129 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'com.aventure.desdice'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.aventure.desdice.histoiresmultiples"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        ndk {
+            // Couvre les appareils recents (arm64) et les emulateurs (x86_64).
+            abiFilters "arm64-v8a", "x86_64"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // Le build "debug" est celui produit par le workflow GitHub Actions.
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    // Necessaire pour que le module Kotlin sache compiler du Compose --
+    // absent du fichier original, qui datait encore de la version WebView.
+    buildFeatures {
+        compose true
+    }
+
+    // ATTENTION -- a verifier selon la version de Kotlin de ton projet
+    // (voir build.gradle RACINE, pas celui-ci, pour "org.jetbrains.kotlin"
+    // ou "kotlin_version") :
+    //   - Kotlin 1.9.x (le plus probable ici, pas de signe d'un passage a
+    //     Kotlin 2.0 dans les fichiers fournis) -> composeOptions ci-dessous
+    //     est la bonne approche, garde-le tel quel.
+    //   - Kotlin 2.0+ -> le compilateur Compose n'est plus configure par
+    //     composeOptions/kotlinCompilerExtensionVersion mais par un plugin
+    //     Gradle DEDIE : ajoute `id 'org.jetbrains.kotlin.plugin.compose'`
+    //     dans le bloc plugins ci-dessus (meme version que le plugin
+    //     Kotlin) et SUPPRIME tout le bloc composeOptions suivant, sinon
+    //     le build echoue ("this Kotlin version is deprecated for
+    //     Compose").
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
+
+    packagingOptions {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.11"
+        pip {
+            // flask retire (etape 8 du plan de migration Compose : plus
+            // aucun fichier Python n'importe flask depuis la suppression
+            // de dice_web.py/android_bridge.py).
+            install("pillow")
+            // Ajoute : journal_export.py (generation du PDF du journal,
+            // voir game_api.export_journal) en depend. A garder meme si
+            // tu changes plus tard la generation PDF (voir etape 8 du
+            // plan), sinon revois aussi journal_export.py en consequence.
+            install("fpdf2")
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    // NOTE : plus strictement necessaire cote code (MainActivity.kt est
+    // maintenant une ComponentActivity Compose pure, plus une appli
+    // WebView) -- laisse en place par prudence, retire-le seulement apres
+    // avoir verifie qu'AndroidManifest.xml / vos themes.xml ne reference
+    // pas un theme "Theme.AppCompat.*" (auquel cas il faudrait d'abord
+    // migrer vers un theme Material3/Compose).
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+
+    // --- Compose ---
+    // Le BOM (Bill of Materials) fixe une combinaison coherente de
+    // versions pour toutes les librairies "androidx.compose.*"
+    // ci-dessous : elles n'ont donc pas leur propre numero de version.
+    implementation platform('androidx.compose:compose-bom:2024.06.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    implementation 'androidx.compose.material3:material3'
+    // Icons.Default.Delete/Add/Refresh/Send/PlayArrow (StorySelectorScreen,
+    // AiPanel, TotemManagementDialog) : le set "core" suffirait pour ceux-
+    // la, mais "extended" evite toute mauvaise surprise si d'autres icones
+    // sont ajoutees plus tard.
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.2'
+
+    // Chargement d'images (AsyncImage) : histoires (StorySelectorScreen),
+    // images de fond/totem choisies dans CreateStoryScreen/TotemManagementDialog.
+    implementation 'io.coil-kt:coil-compose:2.6.0'
+}
+
+// Renomme le fichier .apk genere (au lieu de "app-debug.apk").
+android.applicationVariants.all { variant ->
+    variant.outputs.all {
+        outputFileName = "Dés d'Aventure-${variant.buildType.name}.apk"
+    }
+}
