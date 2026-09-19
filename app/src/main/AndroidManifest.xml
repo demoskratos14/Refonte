@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Necessaire pour les appels HTTPS reels a l'API Mistral
-         (console.mistral.ai), effectues par mistral_client.py --
+         (console.mistral.ai), effectues par mistral_client.py,
          plus pour dialoguer avec un serveur Flask local (127.0.0.1),
          qui n'existe plus depuis la migration vers Compose. -->
     <uses-permission android:name="android.permission.INTERNET" />
