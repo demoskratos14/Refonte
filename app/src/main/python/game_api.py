@@ -69,6 +69,12 @@ def call_json(func_name: str, *args) -> str:
     result = fn(*args)
     return json.dumps(result, ensure_ascii=False)
 
+def get_fate_faces() -> list:
+    """Expose FATE_FACES (constante de dice_engine) a Kotlin, pour que
+    MainGameScreen.kt puisse afficher emoji/label/desc de chaque face du
+    de du destin sans dupliquer ces donnees cote Compose."""
+    return FATE_FACES
+
 def _save_totem_image(file_bytes: bytes, filename: str) -> Optional[str]:
     ext = ""
     if "." in filename:
