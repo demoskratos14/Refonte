@@ -66,27 +66,31 @@ fun StorySelectorScreen(
             }
         } else {
             LazyColumn(
-    verticalArrangement = Arrangement.spacedBy(16.dp),
-    modifier = Modifier.weight(1f)
-) {
-    if (stories.isEmpty()) {
-        item {
-            Text(
-                "Aucune histoire pour l'instant — crées-en une !",
-                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-        }
-    } else {
-        items(stories) { story -> StoryItem(...) }
-    }
-}
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(stories) { story ->
+                    StoryItem(
+                        story = story,
+                        isSelected = story.slug == currentStorySlug,
+                        onClick = {
+                            viewModel.selectStory(story.slug)
+                            onStorySelected(story.slug)
+                        },
+                        onDeleteClick = { viewModel.deleteStory(story.slug) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
 
-Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-    Button(onClick = onNewStoryClick, modifier = Modifier.weight(1f)) {
-        Text("Nouvelle histoire")
-    }
-}
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Button(onClick = onNewStoryClick, modifier = Modifier.weight(1f)) {
+                    Text("Nouvelle histoire")
+                }
+            }
         }
     }
 }
