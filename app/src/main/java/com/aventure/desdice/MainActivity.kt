@@ -6,19 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aventure.desdice.screens.StorySelectorScreen
+import com.aventure.desdice.viewmodel.GameViewModel
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import org.json.JSONObject
-import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     private lateinit var speechManager: SpeechManager
@@ -29,6 +25,11 @@ class MainActivity : ComponentActivity() {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(this))
         }
+        // Doit etre appele avant tout autre acces a game_api (voir
+        // init_app_dir() dans game_api.py : fixe le repertoire de travail
+        // Python sur le stockage prive de l'app, pour que les chemins
+        // relatifs -- app_config.json, totem_images/, sauvegarde de
+        // session -- pointent au bon endroit).
         Python.getInstance().getModule("game_api").callAttr("init_app_dir")
 
         speechManager = SpeechManager(this)
@@ -39,37 +40,37 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    GameUI(speechManager)
+                    val viewModel: GameViewModel = viewModel()
+                    AppNavigation(viewModel = viewModel, speechManager = speechManager)
                 }
             }
         }
     }
 }
 
+/**
+ * Navigation minimale : tant qu'aucune histoire n'est selectionnee
+ * (currentStorySlug == null, cf. GameViewModel.loadStories()), on affiche
+ * le selecteur d'histoires ; des qu'une histoire est choisie (StoryItem
+ * -> viewModel.selectStory(slug)), on bascule sur l'ecran de jeu.
+ *
+ * A completer plus tard : bouton "changer d'histoire" pour revenir au
+ * selecteur, ecran de creation d'histoire (onNewStoryClick), et
+ * integration d'AiPanel (non appele depuis MainGameScreen pour l'instant
+ * -- a brancher comme onglet, section ou bottom sheet dans MainGameScreen).
+ */
 @Composable
-fun GameUI(speechManager: SpeechManager) {
-    var gameState by remember { mutableStateOf("") }
+fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
+    val currentStorySlug by viewModel.currentStorySlug.collectAsState()
 
-    LaunchedEffect(Unit) {
-        try {
-            val result = Python.getInstance()
-    .getModule("game_api")
-    .callAttr("index")
-    .toString()
-            gameState = result
-        } catch (e: Exception) {
-            gameState = "Error: ${e.message}"
-        }
-    }
-
-    Text(text = gameState)
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GameUIPreview() {
-    DesDiceTheme {
-        GameUI(speechManager = SpeechManager(LocalContext.current))
+    if (currentStorySlug == null) {
+        StorySelectorScreen(
+            viewModel = viewModel,
+            onStorySelected = { /* currentStorySlug est deja mis a jour par selectStory() */ },
+            onNewStoryClick = { /* TODO : brancher l'ecran de creation d'histoire */ }
+        )
+    } else {
+        MainGameScreen(viewModel = viewModel)
     }
 }
 
