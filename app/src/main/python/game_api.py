@@ -69,6 +69,22 @@ def call_json(func_name: str, *args) -> str:
     result = fn(*args)
     return json.dumps(result, ensure_ascii=False)
 
+def init_app_dir() -> None:
+    """Appelee une seule fois depuis MainActivity.onCreate() (avant tout
+    autre appel game_api), sans argument : recupere le Context Android via
+    le binding Chaquopy (Python.getPlatform().getApplication()) et definit
+    le repertoire de travail Python sur le stockage prive de l'app
+    (getFilesDir()) -- seul repertoire durablement inscriptible sur
+    Android. Necessaire car app_config.json, totem_images/ et le fichier
+    de sauvegarde de session (dice_engine.SAVE_FILE) sont tous des chemins
+    RELATIFS : sans ce chdir, ils pointeraient vers un repertoire courant
+    indefini/non inscriptible."""
+    from com.chaquo.python import Python as ChaquopyPython
+    context = ChaquopyPython.getPlatform().getApplication()
+    app_dir = context.getFilesDir().getAbsolutePath()
+    os.makedirs(app_dir, exist_ok=True)
+    os.chdir(app_dir)
+
 def get_fate_faces() -> list:
     """Expose FATE_FACES (constante de dice_engine) a Kotlin, pour que
     MainGameScreen.kt puisse afficher emoji/label/desc de chaque face du
