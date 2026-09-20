@@ -1,8 +1,5 @@
 package com.aventure.desdice.viewmodel
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aventure.desdice.model.Story
@@ -23,18 +20,21 @@ class GameViewModel : ViewModel() {
     val currentStorySlug = _currentStorySlug.asStateFlow()
 
     // Etat de la session de jeu en cours (dict Python session_to_dict(),
-    // recu via call_json sous forme de JSON). Utilise comme etat Compose
-    // "brut" (JSONObject) plutot que via des champs Kotlin dedies, pour
-    // rester en phase avec les cles ajoutees/retirees cote Python sans
-    // devoir modifier ce ViewModel a chaque fois.
-    var sessionState by mutableStateOf<JSONObject?>(null)
-        private set
+    // recu via call_json sous forme de JSON). Un StateFlow plutot qu'un
+    // mutableStateOf de Compose : ce dernier doit etre ecrit dans un
+    // "snapshot" Compose valide, ce qui plante (IllegalStateException:
+    // "Reading a state that was created after the snapshot was taken")
+    // quand on l'ecrit depuis une coroutine Dispatchers.IO comme ici.
+    // MutableStateFlow, lui, est thread-safe sans cette contrainte -- le
+    // meme choix que pour _stories/_currentStorySlug ci-dessus.
+    private val _sessionState = MutableStateFlow<JSONObject?>(null)
+    val sessionState = _sessionState.asStateFlow()
 
     // Les 6 faces du de du destin (cle/emoji/label/desc), chargees une
     // seule fois au demarrage via get_fate_faces() (donnees statiques,
     // independantes de la session en cours).
-    var fateFaces by mutableStateOf<List<JSONObject>>(emptyList())
-        private set
+    private val _fateFaces = MutableStateFlow<List<JSONObject>>(emptyList())
+    val fateFaces = _fateFaces.asStateFlow()
 
     private val mutex = Mutex()
 
@@ -46,7 +46,7 @@ class GameViewModel : ViewModel() {
     /** Remplace l'etat de session courant par le JSON recu d'un appel
      * game_api (do_roll, do_send_ai_message, select_story, etc.). */
     fun loadSessionState(result: String) {
-        sessionState = JSONObject(result)
+        _sessionState.value = JSONObject(result)
     }
 
     private fun loadFateFaces() {
@@ -57,7 +57,7 @@ class GameViewModel : ViewModel() {
             for (i in 0 until array.length()) {
                 faces.add(array.getJSONObject(i))
             }
-            fateFaces = faces
+            _fateFaces.value = faces
         }
     }
 
