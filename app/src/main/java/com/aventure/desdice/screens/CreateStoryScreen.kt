@@ -143,6 +143,26 @@ fun CreateStoryScreen(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) { totemUri = uri; importedTotemBytes = null } }
 
+    // GetContent() plutot que OpenDocument() : mieux supporte par les
+    // gestionnaires de fichiers des surcouches constructeur (MIUI...) qui
+    // n'implementent pas toujours completement le protocole DocumentsProvider
+    // qu'exige OpenDocument(). Se contente de remplir importText -- reutilise
+    // donc le meme chemin (importIdentity()) que le collage manuel, qui reste
+    // toujours disponible si jamais le selecteur ne s'ouvre pas non plus.
+    val pickIdentityFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                importText = context.contentResolver.openInputStream(uri)
+                    ?.use { it.readBytes() }
+                    ?.toString(Charsets.UTF_8) ?: ""
+            } catch (e: Exception) {
+                error = "Impossible de lire le fichier choisi : ${e.message}"
+            }
+        }
+    }
+
     fun uriExtension(uri: Uri): String {
         val type = context.contentResolver.getType(uri) ?: ""
         return when {
@@ -316,8 +336,15 @@ fun CreateStoryScreen(
             ) {
                 // --- Import d'une identite exportee ---
                 SectionTitle("Importer une identité exportée (optionnel)", fonts)
+                ComicButton(
+                    text = "Choisir un fichier",
+                    onClick = { pickIdentityFile.launch("*/*") },
+                    fonts = fonts,
+                    secondary = true,
+                    enabled = !importing && !saving
+                )
                 ComicTextField(
-                    label = "Coller le JSON exporté depuis une autre histoire",
+                    label = "…ou coller directement le JSON exporté depuis une autre histoire",
                     value = importText,
                     onValueChange = { importText = it },
                     fonts = fonts,
