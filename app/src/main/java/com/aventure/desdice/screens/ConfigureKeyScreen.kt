@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,13 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -75,10 +76,10 @@ private val LineColor = Color(0x2614161A) // rgba(20,22,26,0.15)
  * game_api.get_config_screen_state et set_mistral_key/clear_mistral_key/
  * set_mistral_model, deja presentes dans game_api.py (sans prefixe "do_").
  *
- * L'image "hero" (bg_key_page.jpg, a placer dans res/raw/) est affichee
- * telle quelle en pleine largeur, hauteur proportionnelle -- contrairement
- * aux fonds d'histoire, elle n'a pas besoin du traitement de
- * ImageUtils/letterbox : c'est une banniere, pas un fond plein ecran.
+ * L'image de fond (bg_key_page.jpg, a placer dans res/raw/) est affichee
+ * en plein ecran (Crop, calee en haut) derriere le contenu : le haut de
+ * l'ecran laisse voir le livre et sa magie, puis le titre et la carte
+ * "papier" se posent sur la partie souterraine de l'image.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -148,24 +149,32 @@ fun ConfigureKeyScreen(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(PageBg)
     ) {
+        // Hauteur a laquelle l'image (848 x 1264) est affichee en mode Crop :
+        // le bord de la table (bas de la scene du livre) est a ~36 % de cette hauteur.
+        val imageHeight = maxOf(maxHeight, maxWidth * (1264f / 848f))
+
+        // --- Fond plein ecran (fixe, le contenu defile par-dessus) ---
+        Image(
+            painter = painterResource(id = R.raw.bg_key_page),
+            contentDescription = "Le Livre des Mille Histoires",
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter,
+            modifier = Modifier.fillMaxSize()
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            // --- Banniere (hero) ---
-            Image(
-                painter = painterResource(id = R.raw.bg_key_page),
-                contentDescription = "Le Livre des Mille Histoires",
-                contentScale = ContentScale.FillWidth,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // On laisse le livre et la magie visibles en haut de l'ecran.
+            Spacer(Modifier.height(imageHeight * 0.36f))
 
             Text(
                 text = "\uD83D\uDD11 Clé API Mistral",
@@ -175,7 +184,7 @@ fun ConfigureKeyScreen(
                 textAlign = TextAlign.Center,
                 letterSpacing = 1.sp,
                 style = TextStyle(
-                    shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), blurRadius = 6f)
+                    shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 3f), blurRadius = 10f)
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -254,8 +263,7 @@ fun ConfigureKeyScreen(
 
                         Text(
                             text = "Modèle utilisé pour la narration",
-                            fontWeight = FontWeight.Black,
-                            fontFamily = fonts.body,
+                            fontFamily = fonts.bodyBold,
                             color = Ink,
                             modifier = Modifier.padding(bottom = 6.dp)
                         )
@@ -310,8 +318,7 @@ private fun KeyStatusBlock(
         Column {
             Text(
                 text = "Narration automatique activée",
-                fontWeight = FontWeight.Black,
-                fontFamily = fonts.body,
+                fontFamily = fonts.bodyBold,
                 color = Ink
             )
             Text(
