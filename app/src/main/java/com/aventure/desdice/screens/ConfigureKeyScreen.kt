@@ -16,15 +16,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -380,27 +380,36 @@ private fun NoKeyBlock(
         modifier = Modifier.padding(bottom = 12.dp)
     )
 
-    TextField(
+    BasicTextField(
         value = keyInput,
         onValueChange = onKeyInputChange,
-        placeholder = { Text("Clé API Mistral") },
         singleLine = true,
         enabled = !saving,
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color.White,
-            unfocusedContainerColor = Color.White,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-        ),
+        textStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink),
+        cursorBrush = SolidColor(Ink),
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
             .clip(RoundedCornerShape(8.dp))
+            .background(Color.White)
             .border(2.dp, Ink, RoundedCornerShape(8.dp))
-            .padding(bottom = 10.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        decorationBox = { innerTextField ->
+            Box {
+                if (keyInput.isEmpty()) {
+                    Text(
+                        text = "Clé API Mistral",
+                        fontFamily = fonts.body,
+                        fontSize = 15.sp,
+                        color = Ink.copy(alpha = 0.5f)
+                    )
+                }
+                innerTextField()
+            }
+        }
     )
+    Spacer(Modifier.height(10.dp))
 
     ComicButton(
         text = "\uD83D\uDD11 Activer la narration automatique",
