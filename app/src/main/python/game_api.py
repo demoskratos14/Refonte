@@ -145,6 +145,26 @@ def switch_story(slug: str) -> bool:
     session = new_session
     return True
 
+def list_stories():
+    """Liste toutes les histoires disponibles (integrees + personnalisees),
+    dans l'ordre d'affichage, pour l'ecran de selection (StorySelectorScreen).
+    Ne renvoie que ce qui est utile a l'affichage d'une liste -- pas l'etat
+    de partie (session), qui reste gere separement par index()/select_story()."""
+    all_stories = stories.all_stories()
+    result = []
+    for slug in stories.all_story_order():
+        story = all_stories.get(slug)
+        if not story:
+            continue
+        result.append({
+            "slug": slug,
+            "title": story.get("title", slug),
+            "subtitle": story.get("subtitle", ""),
+            "bg_image_b64": story.get("bg_image_b64", ""),
+            "is_custom": story.get("is_custom", False),
+        })
+    return result
+
 def index() -> Dict[str, Any]:
     global CURRENT_STORY, session
     if CURRENT_STORY is None:
