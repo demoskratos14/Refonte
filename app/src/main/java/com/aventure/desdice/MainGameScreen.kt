@@ -71,7 +71,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 @Composable
-fun MainGameScreen(viewModel: GameViewModel) {
+fun MainGameScreen(viewModel: GameViewModel, onChangeStory: () -> Unit = {}) {
     val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
@@ -106,6 +106,15 @@ fun MainGameScreen(viewModel: GameViewModel) {
                         text = "Le jeu de rôle par dés",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    // Equivalent du lien "Changer d'histoire" de l'ancienne page de jeu
+                    // (layout() dans dice_web.py) : ouvre le carrousel de choix
+                    // sans rien modifier tant qu'un autre choix n'est pas fait.
+                    TextButton(onClick = onChangeStory) {
+                        Text(
+                            text = "🔁 Changer d'histoire",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
         }

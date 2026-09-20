@@ -2,11 +2,13 @@ package com.aventure.desdice
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -14,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aventure.desdice.screens.ClassicDiceScreen
 import com.aventure.desdice.screens.ConfigureKeyScreen
 import com.aventure.desdice.screens.CreateStoryScreen
 import com.aventure.desdice.screens.StorySelectorScreen
@@ -54,13 +57,19 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Navigation en 3 etapes, calquee sur le parcours de dice_web.py :
- * 1) ConfigureKeyScreen (cle API Mistral, optionnelle -- "Passer pour
- *    l'instant" ou "Continuer" appellent tous deux onDone) ;
- * 2) StorySelectorScreen tant qu'aucune histoire n'est selectionnee
- *    (currentStorySlug == null), avec bascule vers CreateStoryScreen
- *    quand on appuie sur "Nouvelle histoire" ;
- * 3) MainGameScreen des qu'une histoire est choisie.
+ * Navigation :
+ * 1) ConfigureKeyScreen au premier ecran (cle API Mistral, optionnelle --
+ *    "Passer" ou "Continuer" appellent tous deux onDone) ;
+ * 2) StorySelectorScreen (carrousel) tant qu'aucune histoire n'est
+ *    selectionnee (currentStorySlug == null). Depuis ce carrousel :
+ *      - l'icone de de ouvre ClassicDiceScreen,
+ *      - la cle rouvre ConfigureKeyScreen,
+ *      - la derniere page ouvre CreateStoryScreen ;
+ *    le bouton retour du telephone ferme chacun de ces ecrans secondaires ;
+ * 3) MainGameScreen des qu'une histoire est choisie. Son lien "Changer
+ *    d'histoire" (ou le bouton retour du telephone) rouvre le carrousel
+ *    SANS modifier l'histoire active : retour = on revient a la partie,
+ *    comme dans l'ancienne version (dice_web.py, change_story).
  *
  * A completer plus tard : bouton "changer d'histoire" depuis
  * MainGameScreen (repasser currentStorySlug a null cote ViewModel ou
@@ -71,28 +80,60 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
     var keyStepDone by remember { mutableStateOf(false) }
+    var showConfigureKey by remember { mutableStateOf(false) }
+    var showClassicDice by remember { mutableStateOf(false) }
     var showCreateStory by remember { mutableStateOf(false) }
+    var showStorySelector by remember { mutableStateOf(false) }
     val currentStorySlug by viewModel.currentStorySlug.collectAsState()
+
+    // Des que l'histoire active change (nouveau choix, creation, suppression),
+    // le carrousel ouvert a la demande n'a plus lieu d'etre.
+    LaunchedEffect(currentStorySlug) { showStorySelector = false }
 
     when {
         !keyStepDone -> {
             ConfigureKeyScreen(onDone = { keyStepDone = true })
         }
+        showConfigureKey -> {
+            BackHandler { showConfigureKey = false }
+            ConfigureKeyScreen(onDone = { showConfigureKey = false })
+        }
+        showClassicDice -> {
+            BackHandler { showClassicDice = false }
+            ClassicDiceScreen()
+        }
         showCreateStory -> {
+            BackHandler { showCreateStory = false }
             CreateStoryScreen(
                 viewModel = viewModel,
                 onCreated = { showCreateStory = false }
             )
         }
-        currentStorySlug == null -> {
+        currentStorySlug == null || showStorySelector -> {
+            if (currentStorySlug != null) {
+                // Carrousel ouvert depuis la partie : retour = annuler.
+                BackHandler { showStorySelector = false }
+            }
             StorySelectorScreen(
                 viewModel = viewModel,
-                onStorySelected = { /* currentStorySlug est deja mis a jour par selectStory() */ },
-                onNewStoryClick = { showCreateStory = true }
+                onStorySelected = { slug ->
+                    // Autre histoire : le LaunchedEffect ci-dessus ferme le
+                    // carrousel quand currentStorySlug change. Meme histoire :
+                    // rien ne change, on referme donc a la main.
+                    if (slug == currentStorySlug) showStorySelector = false
+                },
+                onNewStoryClick = { showCreateStory = true },
+                onClassicDiceClick = { showClassicDice = true },
+                onConfigureKeyClick = { showConfigureKey = true }
             )
         }
         else -> {
-            MainGameScreen(viewModel = viewModel)
+            // Comme l'ancien piege du bouton retour : retour = choix d'histoire.
+            BackHandler { showStorySelector = true }
+            MainGameScreen(
+                viewModel = viewModel,
+                onChangeStory = { showStorySelector = true }
+            )
         }
     }
 }

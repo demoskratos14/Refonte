@@ -179,12 +179,17 @@ fun CreateStoryScreen(
                 // "fire-and-forget" -- lance sa propre coroutine sans
                 // moyen d'attendre sa fin) : on a besoin de savoir que la
                 // creation est terminee avant de naviguer (onCreated).
-                Python.getInstance().getModule("game_api").callAttr(
+                val created = Python.getInstance().getModule("game_api").callAttr(
                     "call_json", "do_create_story",
                     title, subtitle, loreText,
                     totemLabel, totemPowers, totemSpecial,
                     bgBytes, bgExt, totemBytes, totemFilename
-                )
+                ).toString()
+                // do_create_story active la nouvelle histoire cote Python et
+                // renvoie sa session : on la charge avant de rafraichir la
+                // liste, pour que l'ecran de jeu n'affiche pas l'etat de
+                // l'histoire precedente.
+                viewModel.loadSessionState(created)
                 viewModel.loadStories()
                 onCreated()
             } catch (e: Exception) {
