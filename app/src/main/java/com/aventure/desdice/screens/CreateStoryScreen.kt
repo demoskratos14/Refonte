@@ -593,8 +593,13 @@ private fun ComicTextField(
             onValueChange = onValueChange,
             singleLine = singleLine,
             enabled = enabled,
-            textStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink),
-            cursorBrush = SolidColor(Ink),
+            textStyle = TextStyle(
+                fontFamily = fonts.body,
+                fontSize = 15.sp,
+                color = Color.White,
+                shadow = TextShadow
+            ),
+            cursorBrush = SolidColor(Color.White),
             modifier = Modifier
                 .fillMaxWidth()
                 .alpha(if (enabled) 1f else 0.6f)
@@ -620,7 +625,7 @@ private fun ComicButton(
     enabled: Boolean = true,
 ) {
     val bg = if (secondary) SecondaryButtonFill else Red
-    val textColor = if (secondary) Ink else Color.White
+    val textColor = Color.White
     val alpha = if (enabled) 1f else 0.5f
 
     Box(modifier = modifier.fillMaxWidth()) {
@@ -640,7 +645,9 @@ private fun ComicButton(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(bg.copy(alpha = alpha))
+                // bg.alpha * alpha (et non alpha seul) : copy(alpha = 1f) sur un fond
+                // transparent le rendait noir opaque.
+                .background(bg.copy(alpha = bg.alpha * alpha))
                 .border(3.dp, Ink.copy(alpha = alpha), RoundedCornerShape(10.dp))
                 .clickable(enabled = enabled, onClick = onClick)
                 .padding(horizontal = 8.dp, vertical = 14.dp),
@@ -652,7 +659,9 @@ private fun ComicButton(
                 color = textColor.copy(alpha = alpha),
                 fontSize = 16.sp,
                 letterSpacing = 1.sp,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                // Meme ombre que les titres des champs : le texte ressort sur l'image.
+                style = if (secondary) TextStyle(shadow = TextShadow) else TextStyle.Default
             )
         }
     }
