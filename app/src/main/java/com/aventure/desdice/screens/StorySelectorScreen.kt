@@ -2,6 +2,7 @@ package com.aventure.desdice.screens
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -66,6 +67,7 @@ import kotlinx.coroutines.withContext
  * de pagination, et en haut : de classique (a gauche), titre de la page
  * (au centre) et cle API (a droite).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StorySelectorScreen(
     viewModel: GameViewModel,
