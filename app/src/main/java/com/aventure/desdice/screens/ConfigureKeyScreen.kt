@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shadow
@@ -67,7 +68,10 @@ private val Red = Color(0xFFE0263C)
 private val DangerRed = Color(0xFF8A1020)
 private val PageBg = Color(0xFF1B140C)
 private val KeyStatusBg = Color(0xFFFFF8EA)
-private val LineColor = Color(0x2614161A) // rgba(20,22,26,0.15)
+private val LineColor = Color(0x4DFFFFFF) // trait clair, visible sur la photo
+// Ombre portee des textes poses directement sur l'image (plus de carte papier).
+private val TextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
+private val ErrorOnPhoto = Color(0xFFFFC9C9)
 
 /**
  * Equivalent Compose de render_configure_key_page (dice_web.py), restyle
@@ -166,6 +170,22 @@ fun ConfigureKeyScreen(
             alignment = Alignment.TopCenter,
             modifier = Modifier.fillMaxSize()
         )
+        // Voile leger, surtout en bas, pour garder les textes lisibles sur l'image.
+        // Plus l'alpha (les 2 premiers chiffres apres 0x) est petit, plus l'image se voit.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color(0x00000000),
+                            0.35f to Color(0x14000000),
+                            0.6f to Color(0x59000000),
+                            1.0f to Color(0x8C000000)
+                        )
+                    )
+                )
+        )
 
         Column(
             modifier = Modifier
@@ -191,30 +211,19 @@ fun ConfigureKeyScreen(
                     .padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 14.dp)
             )
 
-            // --- Carte "papier" (avec ombre portee facon BD) ---
+            // --- Contenu pose directement sur l'image (plus de carte papier) ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                // Ombre : un rectangle sombre decale, sous la carte.
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .offset(x = 5.dp, y = 5.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.Black.copy(alpha = 0.4f))
-                )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Paper)
-                        .border(3.dp, Ink, RoundedCornerShape(14.dp))
-                        .padding(20.dp)
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
                 ) {
                     if (loading) {
-                        CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally))
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.CenterHorizontally))
                     } else {
                         if (hasKey && !showChangeForm) {
                             KeyStatusBlock(
@@ -247,7 +256,8 @@ fun ConfigureKeyScreen(
                         error?.let {
                             Text(
                                 text = it,
-                                color = DangerRed,
+                                color = ErrorOnPhoto,
+                                style = TextStyle(shadow = TextShadow),
                                 modifier = Modifier.padding(top = 10.dp)
                             )
                         }
@@ -264,16 +274,18 @@ fun ConfigureKeyScreen(
                         Text(
                             text = "Modèle utilisé pour la narration",
                             fontFamily = fonts.bodyBold,
-                            color = Ink,
+                            color = Color.White,
+                            style = TextStyle(shadow = TextShadow),
                             modifier = Modifier.padding(bottom = 6.dp)
                         )
                         Text(
                             text = "Plus le modèle est riche, plus les histoires sont détaillées — " +
                                 "mais aussi (légèrement) plus coûteux sur ton forfait Mistral. " +
                                 "Modifiable à tout moment, même en cours de partie.",
-                            fontSize = 13.sp,
-                            color = Ink.copy(alpha = 0.75f),
+                            fontSize = 14.sp,
+                            color = Color.White.copy(alpha = 0.95f),
                             fontFamily = fonts.body,
+                            style = TextStyle(shadow = TextShadow),
                             modifier = Modifier.padding(bottom = 10.dp)
                         )
 
@@ -337,9 +349,10 @@ private fun KeyStatusBlock(
     if (confirmRemove) {
         Text(
             text = "Retirer la clé API et revenir au mode manuel ?",
-            fontSize = 13.sp,
-            color = Ink,
+            fontSize = 14.sp,
+            color = Color.White,
             fontFamily = fonts.body,
+            style = TextStyle(shadow = TextShadow),
             modifier = Modifier.padding(bottom = 6.dp)
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -381,9 +394,10 @@ private fun NoKeyBlock(
             "console.mistral.ai, email + mot de passe, sans carte bancaire) pour " +
             "que l'histoire s'écrive toute seule à chaque lancer, quelle que soit " +
             "l'histoire choisie ensuite.",
-        fontSize = 13.sp,
-        color = Ink.copy(alpha = 0.75f),
+        fontSize = 14.sp,
+        color = Color.White.copy(alpha = 0.95f),
         fontFamily = fonts.body,
+        style = TextStyle(shadow = TextShadow),
         modifier = Modifier.padding(bottom = 12.dp)
     )
 
