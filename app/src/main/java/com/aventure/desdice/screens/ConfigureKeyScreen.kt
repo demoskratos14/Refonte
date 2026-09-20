@@ -14,12 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
@@ -268,18 +269,16 @@ fun ConfigureKeyScreen(
                             modifier = Modifier.padding(bottom = 10.dp)
                         )
 
-                        modelChoices.forEach { (value, label) ->
-                            ModelChoiceRow(
-                                label = label,
-                                selected = value == selectedModel,
-                                enabled = !saving,
-                                fonts = fonts,
-                                onClick = {
-                                    selectedModel = value
-                                    callGameApi("set_mistral_model", value)
-                                }
-                            )
-                        }
+                        ModelDropdown(
+                            modelChoices = modelChoices,
+                            selectedModel = selectedModel,
+                            enabled = !saving,
+                            fonts = fonts,
+                            onSelect = { value ->
+                                selectedModel = value
+                                callGameApi("set_mistral_model", value)
+                            }
+                        )
                     }
                 }
             }
@@ -397,6 +396,8 @@ private fun NoKeyBlock(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(8.dp))
             .border(2.dp, Ink, RoundedCornerShape(8.dp))
             .padding(bottom = 10.dp)
     )
@@ -465,41 +466,65 @@ private fun ComicButton(
     }
 }
 
+/** Menu deroulant pour le choix du modele Mistral -- remplace la liste a
+ * puces (un choix par ligne) par un select compact, plus adapte a une
+ * liste de 3 options sur mobile. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelChoiceRow(
-    label: String,
-    selected: Boolean,
+private fun ModelDropdown(
+    modelChoices: List<Pair<String, String>>,
+    selectedModel: String,
     enabled: Boolean,
     fonts: AppFonts,
-    onClick: () -> Unit,
+    onSelect: (String) -> Unit,
 ) {
-    Column {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = modelChoices.firstOrNull { it.first == selectedModel }?.second
+        ?: "Choisir un modèle"
+
+    Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(enabled = enabled, onClick = onClick)
-                .background(if (selected) Color.White else Color.Transparent)
-                .border(2.dp, if (selected) Ink else LineColor, RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 10.dp)
+                .background(Color.White)
+                .border(2.dp, Ink, RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled) { expanded = true }
+                .padding(horizontal = 14.dp, vertical = 14.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .width(18.dp)
-                    .height(18.dp)
-                    .clip(RoundedCornerShape(50))
-                    .border(2.dp, Ink, RoundedCornerShape(50))
-                    .background(if (selected) Ink else Color.Transparent)
-            )
             Text(
-                text = label,
+                text = selectedLabel,
                 fontFamily = fonts.body,
                 color = Ink,
                 fontSize = 14.sp,
-                modifier = Modifier.padding(start = 10.dp)
+                modifier = Modifier.weight(1f)
             )
+            Text(text = "\u25BE", fontSize = 18.sp, color = Ink)
         }
-        Spacer(Modifier.height(6.dp))
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(Color.White)
+        ) {
+            modelChoices.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            fontFamily = fonts.body,
+                            color = Ink,
+                            fontSize = 14.sp
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    }
+                )
+            }
+        }
     }
 }
