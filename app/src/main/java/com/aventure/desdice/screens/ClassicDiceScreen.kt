@@ -1,5 +1,6 @@
 package com.aventure.desdice.screens
 
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
@@ -30,7 +31,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -160,8 +160,14 @@ private fun parseHistory(result: String): List<ClassicRoll> {
  * Necessite res/drawable/bg_classic_dice.jpg.
  */
 @Composable
-fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: () -> Unit = {}) {
+fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
     val fonts = rememberAppFonts()
+    // Fleche retour : si onBack n'est pas fourni, on declenche le meme retour que
+    // le bouton du telephone (le BackHandler de MainActivity ferme alors la page).
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val goBack: () -> Unit = {
+        if (onBack != null) onBack() else backDispatcher?.onBackPressed()
+    }
     val python = remember { Python.getInstance() }
     val scope = rememberCoroutineScope()
 
@@ -313,15 +319,22 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: () -> Unit = {}) {
             ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .background(Color(0x8014161A), CircleShape)
-                        .clickable(onClick = onBack)
+                        .size(44.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = goBack
+                        )
                         .semantics { contentDescription = "Retour" },
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
                         text = "←",
-                        style = TextStyle(color = Color.White, fontSize = 22.sp)
+                        style = TextStyle(
+                            color = Color.White,
+                            fontSize = 30.sp,
+                            shadow = Shadow(Color(0xB3000000), Offset(0f, 3f), 8f)
+                        )
                     )
                 }
                 Text(
