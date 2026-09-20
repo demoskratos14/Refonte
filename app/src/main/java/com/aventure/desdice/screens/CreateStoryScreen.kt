@@ -143,26 +143,6 @@ fun CreateStoryScreen(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) { totemUri = uri; importedTotemBytes = null } }
 
-    // GetContent() plutot que OpenDocument() : mieux supporte par les
-    // gestionnaires de fichiers des surcouches constructeur (MIUI...) qui
-    // n'implementent pas toujours completement le protocole DocumentsProvider
-    // qu'exige OpenDocument(). Se contente de remplir importText -- reutilise
-    // donc le meme chemin (importIdentity()) que le collage manuel, qui reste
-    // toujours disponible si jamais le selecteur ne s'ouvre pas non plus.
-    val pickIdentityFile = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                importText = context.contentResolver.openInputStream(uri)
-                    ?.use { it.readBytes() }
-                    ?.toString(Charsets.UTF_8) ?: ""
-            } catch (e: Exception) {
-                error = "Impossible de lire le fichier choisi : ${e.message}"
-            }
-        }
-    }
-
     fun uriExtension(uri: Uri): String {
         val type = context.contentResolver.getType(uri) ?: ""
         return when {
@@ -211,6 +191,32 @@ fun CreateStoryScreen(
                 mutex.withLock { error = "Erreur d'import : ${e.message}" }
             } finally {
                 mutex.withLock { importing = false }
+            }
+        }
+    }
+
+    // GetContent() plutot que OpenDocument() : mieux supporte par les
+    // gestionnaires de fichiers des surcouches constructeur (MIUI...) qui
+    // n'implementent pas toujours completement le protocole DocumentsProvider
+    // qu'exige OpenDocument(). Declaree apres importIdentity() (dont elle a
+    // besoin) : une fonction locale Kotlin ne peut pas etre appelee avant sa
+    // declaration dans le meme bloc.
+    val pickIdentityFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.use { it.readBytes() }
+                    ?.toString(Charsets.UTF_8) ?: ""
+                importText = text
+                // Import automatique : contrairement au collage manuel (ou
+                // l'utilisateur peut vouloir relire/corriger avant de valider),
+                // un fichier choisi via l'explorateur est deja le contenu final --
+                // pas besoin d'un appui supplementaire sur "Importer".
+                if (text.isNotBlank()) importIdentity()
+            } catch (e: Exception) {
+                error = "Impossible de lire le fichier choisi : ${e.message}"
             }
         }
     }
@@ -349,7 +355,8 @@ fun CreateStoryScreen(
                     onValueChange = { importText = it },
                     fonts = fonts,
                     enabled = !importing && !saving,
-                    minHeight = 80.dp
+                    minHeight = 80.dp,
+                    maxHeight = 100.dp
                 )
                 ComicButton(
                     text = if (importing) "Import en cours…" else "Importer",
@@ -448,194 +455,4 @@ fun CreateStoryScreen(
                 )
                 ComicTextField(
                     label = "Pouvoirs (séparés par des virgules)",
-                    value = totemPowers,
-                    onValueChange = { totemPowers = it },
-                    fonts = fonts,
-                    enabled = !saving,
-                    minHeight = 60.dp
-                )
-                ComicTextField(
-                    label = "Capacité spéciale (optionnel)",
-                    value = totemSpecial,
-                    onValueChange = { totemSpecial = it },
-                    fonts = fonts,
-                    enabled = !saving,
-                    minHeight = 60.dp
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    ComicButton(
-                        text = if (totemUri == null && importedTotemBytes == null) {
-                            "Image du totem (optionnel)"
-                        } else {
-                            "Changer l'image"
-                        },
-                        onClick = {
-                            pickTotemImage.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        fonts = fonts,
-                        secondary = true,
-                        enabled = !saving,
-                        modifier = Modifier.weight(1f)
-                    )
-                    totemUri?.let {
-                        AsyncImage(
-                            model = it,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(2.dp, Ink, RoundedCornerShape(8.dp))
-                        )
-                    }
-                    if (totemUri == null) {
-                        importedTotemBytes?.let { bytes ->
-                            val bmp = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-                            if (bmp != null) {
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(52.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .border(2.dp, Ink, RoundedCornerShape(8.dp))
-                                )
-                            }
-                        }
-                    }
-                }
-
-                error?.let {
-                    Text(
-                        text = it,
-                        color = ErrorOnPhoto,
-                        fontFamily = fonts.body,
-                        style = TextStyle(shadow = TextShadow)
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
-                if (saving) {
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.White)
-                    }
-                } else {
-                    ComicButton(
-                        text = "Créer l'histoire",
-                        onClick = { submit() },
-                        fonts = fonts
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Intitule de section : Bangers blanc pose directement sur l'image. */
-@Composable
-private fun SectionTitle(text: String, fonts: AppFonts) {
-    Text(
-        text = text,
-        fontFamily = fonts.display,
-        fontSize = 19.sp,
-        letterSpacing = 0.5.sp,
-        color = Color.White,
-        style = TextStyle(shadow = TextShadow),
-        modifier = Modifier.padding(top = 6.dp)
-    )
-}
-
-/**
- * Champ de saisie "BD" : libelle en blanc au-dessus, champ blanc a bordure
- * noire. `minHeight` > 0 donne un champ multiligne (sinon `singleLine`).
- */
-@Composable
-private fun ComicTextField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    fonts: AppFonts,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    singleLine: Boolean = false,
-    minHeight: Dp = 0.dp
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            fontFamily = fonts.bodyBold,
-            fontSize = 14.sp,
-            color = Color.White,
-            style = TextStyle(shadow = TextShadow),
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = singleLine,
-            enabled = enabled,
-            textStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink),
-            cursorBrush = SolidColor(Ink),
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(if (enabled) 1f else 0.6f)
-                .heightIn(min = minHeight)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White)
-                .border(2.dp, Ink, RoundedCornerShape(8.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp)
-        )
-    }
-}
-
-/** Reproduit .btn / .btn.secondary de l'ancien CSS : fond plat, bordure
- * epaisse, "ombre" facon BD (rectangle decale, pas de flou). */
-@Composable
-private fun ComicButton(
-    text: String,
-    onClick: () -> Unit,
-    fonts: AppFonts,
-    modifier: Modifier = Modifier,
-    secondary: Boolean = false,
-    enabled: Boolean = true,
-) {
-    val bg = if (secondary) Color.White else Red
-    val textColor = if (secondary) Ink else Color.White
-    val alpha = if (enabled) 1f else 0.5f
-
-    Box(modifier = modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .offset(x = 3.dp, y = 3.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Ink.copy(alpha = alpha))
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(bg.copy(alpha = alpha))
-                .border(3.dp, Ink.copy(alpha = alpha), RoundedCornerShape(10.dp))
-                .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 8.dp, vertical = 14.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = text,
-                fontFamily = fonts.display,
-                color = textColor.copy(alpha = alpha),
-                fontSize = 16.sp,
-                letterSpacing = 1.sp,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
+               
