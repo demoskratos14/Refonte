@@ -9,8 +9,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aventure.desdice.screens.ConfigureKeyScreen
+import com.aventure.desdice.screens.CreateStoryScreen
 import com.aventure.desdice.screens.StorySelectorScreen
 import com.aventure.desdice.viewmodel.GameViewModel
 import com.chaquo.python.Python
@@ -49,28 +54,46 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Navigation minimale : tant qu'aucune histoire n'est selectionnee
- * (currentStorySlug == null, cf. GameViewModel.loadStories()), on affiche
- * le selecteur d'histoires ; des qu'une histoire est choisie (StoryItem
- * -> viewModel.selectStory(slug)), on bascule sur l'ecran de jeu.
+ * Navigation en 3 etapes, calquee sur le parcours de dice_web.py :
+ * 1) ConfigureKeyScreen (cle API Mistral, optionnelle -- "Passer pour
+ *    l'instant" ou "Continuer" appellent tous deux onDone) ;
+ * 2) StorySelectorScreen tant qu'aucune histoire n'est selectionnee
+ *    (currentStorySlug == null), avec bascule vers CreateStoryScreen
+ *    quand on appuie sur "Nouvelle histoire" ;
+ * 3) MainGameScreen des qu'une histoire est choisie.
  *
- * A completer plus tard : bouton "changer d'histoire" pour revenir au
- * selecteur, ecran de creation d'histoire (onNewStoryClick), et
- * integration d'AiPanel (non appele depuis MainGameScreen pour l'instant
- * -- a brancher comme onglet, section ou bottom sheet dans MainGameScreen).
+ * A completer plus tard : bouton "changer d'histoire" depuis
+ * MainGameScreen (repasser currentStorySlug a null cote ViewModel ou
+ * ajouter un etat de nav dedie), et integration d'AiPanel (non appele
+ * depuis MainGameScreen pour l'instant -- a brancher comme onglet,
+ * section ou bottom sheet).
  */
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
+    var keyStepDone by remember { mutableStateOf(false) }
+    var showCreateStory by remember { mutableStateOf(false) }
     val currentStorySlug by viewModel.currentStorySlug.collectAsState()
 
-    if (currentStorySlug == null) {
-        StorySelectorScreen(
-            viewModel = viewModel,
-            onStorySelected = { /* currentStorySlug est deja mis a jour par selectStory() */ },
-            onNewStoryClick = { /* TODO : brancher l'ecran de creation d'histoire */ }
-        )
-    } else {
-        MainGameScreen(viewModel = viewModel)
+    when {
+        !keyStepDone -> {
+            ConfigureKeyScreen(onDone = { keyStepDone = true })
+        }
+        showCreateStory -> {
+            CreateStoryScreen(
+                viewModel = viewModel,
+                onCreated = { showCreateStory = false }
+            )
+        }
+        currentStorySlug == null -> {
+            StorySelectorScreen(
+                viewModel = viewModel,
+                onStorySelected = { /* currentStorySlug est deja mis a jour par selectStory() */ },
+                onNewStoryClick = { showCreateStory = true }
+            )
+        }
+        else -> {
+            MainGameScreen(viewModel = viewModel)
+        }
     }
 }
 
