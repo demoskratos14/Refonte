@@ -29,22 +29,20 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,8 +56,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.aventure.desdice.viewmodel.GameViewModel
 import com.chaquo.python.Python
@@ -71,6 +67,7 @@ import org.json.JSONObject
 
 @Composable
 fun MainGameScreen(viewModel: GameViewModel) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -96,7 +93,7 @@ fun MainGameScreen(viewModel: GameViewModel) {
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                     Text(
-                        text = viewModel.sessionState?.optString("story_title") ?: "Aventure",
+                        text = sessionState?.optString("story_title") ?: "Aventure",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -160,6 +157,7 @@ fun DiceResultCard(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -168,8 +166,8 @@ fun DiceResultCard(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(viewModel.sessionState) {
-        lastResult = viewModel.sessionState?.optJSONObject("last_result")
+    LaunchedEffect(sessionState) {
+        lastResult = sessionState?.optJSONObject("last_result")
     }
 
     Column(
@@ -201,15 +199,15 @@ fun DiceResultCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (success != -1) {
-                        val pipSymbol = viewModel.sessionState?.optString("pip_symbol") ?: ""
-                        val pipMode = viewModel.sessionState?.optString("pip_mode") ?: "single"
+                        val pipSymbol = sessionState?.optString("pip_symbol") ?: ""
+                        val pipMode = sessionState?.optString("pip_mode") ?: "single"
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(bottom = 8.dp)
                         ) {
                             Text(
-                                text = "Résultat : $success",
+                                text = "Résultat : \$success",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -230,7 +228,7 @@ fun DiceResultCard(
                     }
 
                     if (fate.isNotEmpty()) {
-                        val fateFaces = viewModel.fateFaces
+                        val fateFaces by viewModel.fateFaces.collectAsState()
                         val fateFace = fateFaces.find { it.optString("key") == fate }
 
                         fateFace?.let {
@@ -295,7 +293,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
+                            error = "Erreur : \${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -320,7 +318,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
+                            error = "Erreur : \${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -345,7 +343,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
+                            error = "Erreur : \${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -364,11 +362,12 @@ fun HistoryList(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
 
-    val historyState = viewModel.sessionState?.optJSONArray("history")
+    val historyState = sessionState?.optJSONArray("history")
     val listState = rememberLazyListState()
 
     Column(modifier = modifier) {
@@ -450,6 +449,7 @@ fun HistoryItem(
     python: Python,
     mutex: Mutex
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val success = record.optInt("success", -1)
     val fate = record.optString("fate", "")
@@ -472,28 +472,28 @@ fun HistoryItem(
                 val pipSymbol = if (pipChoice != null && pipChoice.length() > 0) {
                     pipChoice.getString(0)
                 } else {
-                    viewModel.sessionState?.optString("pip_symbol") ?: ""
+                    sessionState?.optString("pip_symbol") ?: ""
                 }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "#${record.optInt("id")}",
+                        text = "#\${record.optInt("id")}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.size(8.dp))
                     if (note.isNotEmpty()) {
                         Text(
-                            text = "[$note]",
+                            text = "[\$note]",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.size(4.dp))
                     }
                     Text(
-                        text = "Réussite=$success",
+                        text = "Réussite=\$success",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.size(8.dp))
@@ -511,7 +511,7 @@ fun HistoryItem(
                     }
                 }
             } else if (fate.isNotEmpty()) {
-                val fateFaces = viewModel.fateFaces
+                val fateFaces by viewModel.fateFaces.collectAsState()
                 val fateFace = fateFaces.find { it.optString("key") == fate }
 
                 fateFace?.let {
@@ -519,21 +519,21 @@ fun HistoryItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "#${record.optInt("id")}",
+                            text = "#\${record.optInt("id")}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.size(8.dp))
                         if (note.isNotEmpty()) {
                             Text(
-                                text = "[$note]",
+                                text = "[\$note]",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.size(4.dp))
                         }
                         Text(
-                            text = "Destin=${it.optString("emoji")} ${it.optString("label")}",
+                            text = "Destin=\${it.optString("emoji")} \${it.optString("label")}",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -560,8 +560,8 @@ fun TotemGaugesRow(
     // distinct de "error", qui reste réservé aux vraies erreurs techniques.
     var effectMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(viewModel.sessionState) {
-        val session = viewModel.sessionState
+    LaunchedEffect(sessionState) {
+        val session = sessionState
         symbols = buildMap {
             session?.optJSONArray("all_symbols")?.let { arr ->
                 for (i in 0 until arr.length()) {
@@ -633,7 +633,8 @@ fun TotemGaugeItem(
     onError: (String) -> Unit,
     onEffect: (String) -> Unit
 ) {
-    val energy = viewModel.sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0
+    val sessionState by viewModel.sessionState.collectAsState()
+    val energy = sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0
     val threshold = 15
     val isReady = energy >= threshold
     val label = symbol.optString("label")
@@ -720,8 +721,9 @@ fun ThreatGauge(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
-    val threatLevel = viewModel.sessionState?.optInt("threat_level", 0) ?: 0
+    val threatLevel = sessionState?.optInt("threat_level", 0) ?: 0
     val threshold = 10
 
     Column(modifier = modifier) {
@@ -764,6 +766,7 @@ fun SideQuestsList(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -772,9 +775,9 @@ fun SideQuestsList(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(viewModel.sessionState) {
+    LaunchedEffect(sessionState) {
         sideQuests = buildList {
-            viewModel.sessionState?.optJSONArray("side_quests")?.let { arr ->
+            sessionState?.optJSONArray("side_quests")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     add(arr.getJSONObject(i))
                 }
@@ -898,6 +901,7 @@ fun SymbolPicker(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -908,16 +912,16 @@ fun SymbolPicker(
     var error by remember { mutableStateOf<String?>(null) }
     var expandedMode by remember { mutableStateOf(false) }
 
-    LaunchedEffect(viewModel.sessionState) {
+    LaunchedEffect(sessionState) {
         symbols = buildMap {
-            viewModel.sessionState?.optJSONArray("all_symbols")?.let { arr ->
+            sessionState?.optJSONArray("all_symbols")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
                     put(obj.optString("key"), obj)
                 }
             }
         }
-        pipMode = viewModel.sessionState?.optString("pip_mode") ?: "single"
+        pipMode = sessionState?.optString("pip_mode") ?: "single"
     }
 
     Column(modifier = modifier) {
@@ -954,8 +958,8 @@ fun SymbolPicker(
             ) {
                 symbols.forEach { (key, symbol) ->
                     val isActive = when (pipMode) {
-                        "single" -> viewModel.sessionState?.optString("pip_symbol") == key
-                        "random", "mixed" -> viewModel.sessionState
+                        "single" -> sessionState?.optString("pip_symbol") == key
+                        "random", "mixed" -> sessionState
                             ?.optJSONArray("enabled_symbols")
                             ?.let { arr ->
                                 (0 until arr.length()).any { arr.getString(it) == key }
@@ -1085,6 +1089,7 @@ fun AllowedValuesDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -1095,12 +1100,12 @@ fun AllowedValuesDialog(
     var allowedValues by remember { mutableStateOf<List<Int>>(emptyList()) }
     var allowedFates by remember { mutableStateOf<List<String>>(emptyList()) }
 
-    LaunchedEffect(viewModel.sessionState) {
-        allowedValues = viewModel.sessionState?.optJSONArray("allowed_success_values")?.let { arr ->
+    LaunchedEffect(sessionState) {
+        allowedValues = sessionState?.optJSONArray("allowed_success_values")?.let { arr ->
             (0 until arr.length()).map { arr.getInt(it) }
         } ?: listOf(1, 2, 3, 4, 5, 6)
 
-        allowedFates = viewModel.sessionState?.optJSONArray("allowed_fate_keys")?.let { arr ->
+        allowedFates = sessionState?.optJSONArray("allowed_fate_keys")?.let { arr ->
             (0 until arr.length()).map { arr.getString(it) }
         } ?: listOf("coeur", "question", "soleil", "etoile", "exclamation", "spirale")
     }
@@ -1153,7 +1158,7 @@ fun AllowedValuesDialog(
                                                 .callAttr("call_json", "do_toggle_allowed_value", value)
                                                 .toString()
                                             viewModel.loadSessionState(result)
-                                            allowedValues = viewModel.sessionState?.optJSONArray("allowed_success_values")
+                                            allowedValues = sessionState?.optJSONArray("allowed_success_values")
                                                 ?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } }
                                                 ?: emptyList()
                                         } catch (e: Exception) {
@@ -1239,7 +1244,7 @@ fun AllowedValuesDialog(
                                                 .callAttr("call_json", "do_toggle_allowed_fate", key)
                                                 .toString()
                                             viewModel.loadSessionState(result)
-                                            allowedFates = viewModel.sessionState?.optJSONArray("allowed_fate_keys")
+                                            allowedFates = sessionState?.optJSONArray("allowed_fate_keys")
                                                 ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
                                                 ?: emptyList()
                                         } catch (e: Exception) {

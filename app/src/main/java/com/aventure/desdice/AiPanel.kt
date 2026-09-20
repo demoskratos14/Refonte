@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -79,11 +80,13 @@ fun AiPanel(
     var error by remember { mutableStateOf<String?>(null) }
     var showResetConfirm by remember { mutableStateOf(false) }
 
-    // Reconstruit la liste affichable a chaque changement d'etat de session
+    val sessionState by viewModel.sessionState.collectAsState()
+
+    // Reconstuit la liste affichable a chaque changement d'etat de session
     // (le premier message, "system", n'est jamais montre au joueur -- c'est
     // le contexte de mecaniques, pas un tour de conversation).
-    LaunchedEffect(viewModel.sessionState) {
-        val conv: JSONArray? = viewModel.sessionState?.optJSONArray("ai_conversation")
+    LaunchedEffect(sessionState) {
+        val conv: JSONArray? = sessionState?.optJSONArray("ai_conversation")
         val list = mutableListOf<Pair<String, String>>()
         if (conv != null) {
             for (i in 0 until conv.length()) {
