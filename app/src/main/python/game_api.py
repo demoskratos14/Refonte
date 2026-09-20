@@ -147,9 +147,12 @@ def switch_story(slug: str) -> bool:
 
 def list_stories():
     """Liste toutes les histoires disponibles (integrees + personnalisees),
-    dans l'ordre d'affichage, pour l'ecran de selection (StorySelectorScreen).
-    Ne renvoie que ce qui est utile a l'affichage d'une liste -- pas l'etat
-    de partie (session), qui reste gere separement par index()/select_story()."""
+    dans l'ordre d'affichage, pour l'ecran de selection (StorySelectorScreen),
+    accompagnee du slug de l'histoire actuellement active (CURRENT_STORY),
+    au format {"stories": [...], "current_story": "..."} attendu par
+    GameViewModel.loadStories(). Ne renvoie que ce qui est utile a
+    l'affichage d'une liste -- pas l'etat de partie (session), qui reste
+    gere separement par index()/select_story()."""
     all_stories = stories.all_stories()
     result = []
     for slug in stories.all_story_order():
@@ -163,7 +166,7 @@ def list_stories():
             "bg_image_b64": story.get("bg_image_b64", ""),
             "is_custom": story.get("is_custom", False),
         })
-    return result
+    return {"stories": result, "current_story": CURRENT_STORY or ""}
 
 def index() -> Dict[str, Any]:
     global CURRENT_STORY, session
