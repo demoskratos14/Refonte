@@ -455,4 +455,210 @@ fun CreateStoryScreen(
                 )
                 ComicTextField(
                     label = "Pouvoirs (séparés par des virgules)",
-               
+                    value = totemPowers,
+                    onValueChange = { totemPowers = it },
+                    fonts = fonts,
+                    enabled = !saving,
+                    minHeight = 60.dp
+                )
+                ComicTextField(
+                    label = "Capacité spéciale (optionnel)",
+                    value = totemSpecial,
+                    onValueChange = { totemSpecial = it },
+                    fonts = fonts,
+                    enabled = !saving,
+                    minHeight = 60.dp
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ComicButton(
+                        text = if (totemUri == null && importedTotemBytes == null) {
+                            "Image du totem (optionnel)"
+                        } else {
+                            "Changer l'image"
+                        },
+                        onClick = {
+                            pickTotemImage.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        fonts = fonts,
+                        secondary = true,
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f)
+                    )
+                    totemUri?.let {
+                        AsyncImage(
+                            model = it,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(2.dp, Ink, RoundedCornerShape(8.dp))
+                        )
+                    }
+                    if (totemUri == null) {
+                        importedTotemBytes?.let { bytes ->
+                            val bmp = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+                            if (bmp != null) {
+                                Image(
+                                    bitmap = bmp.asImageBitmap(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(2.dp, Ink, RoundedCornerShape(8.dp))
+                                )
+                            }
+                        }
+                    }
+                }
+
+                error?.let {
+                    Text(
+                        text = it,
+                        color = ErrorOnPhoto,
+                        fontFamily = fonts.body,
+                        style = TextStyle(shadow = TextShadow)
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+                if (saving) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                } else {
+                    ComicButton(
+                        text = "Créer l'histoire",
+                        onClick = { submit() },
+                        fonts = fonts
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Intitule de section : Bangers blanc pose directement sur l'image. */
+@Composable
+private fun SectionTitle(text: String, fonts: AppFonts) {
+    Text(
+        text = text,
+        fontFamily = fonts.display,
+        fontSize = 19.sp,
+        letterSpacing = 0.5.sp,
+        color = Color.White,
+        style = TextStyle(shadow = TextShadow),
+        modifier = Modifier.padding(top = 6.dp)
+    )
+}
+
+/**
+ * Champ de saisie "BD" : libelle en blanc au-dessus, champ blanc a bordure
+ * noire. `minHeight` > 0 donne un champ multiligne (sinon `singleLine`).
+ */
+@Composable
+private fun ComicTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    fonts: AppFonts,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    singleLine: Boolean = false,
+    minHeight: Dp = 0.dp,
+    // Quand renseigne, le champ ne grandit plus au-dela de cette hauteur :
+    // le texte defile A L'INTERIEUR de la zone (comme un <textarea> HTML
+    // avec "resize: none"), plutot que de pousser le reste de la page vers
+    // le bas -- utile pour le collage d'un JSON potentiellement tres long.
+    maxHeight: Dp = Dp.Unspecified
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            fontFamily = fonts.bodyBold,
+            fontSize = 14.sp,
+            color = Color.White,
+            style = TextStyle(shadow = TextShadow),
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        val heightModifier = if (maxHeight != Dp.Unspecified) {
+            Modifier.heightIn(min = minHeight, max = maxHeight)
+        } else {
+            Modifier.heightIn(min = minHeight)
+        }
+        val scrollModifier = if (maxHeight != Dp.Unspecified) {
+            Modifier.verticalScroll(rememberScrollState())
+        } else {
+            Modifier
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = singleLine,
+            enabled = enabled,
+            textStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink),
+            cursorBrush = SolidColor(Ink),
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (enabled) 1f else 0.6f)
+                .then(heightModifier)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White)
+                .border(2.dp, Ink, RoundedCornerShape(8.dp))
+                .then(scrollModifier)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        )
+    }
+}
+
+/** Reproduit .btn / .btn.secondary de l'ancien CSS : fond plat, bordure
+ * epaisse, "ombre" facon BD (rectangle decale, pas de flou). */
+@Composable
+private fun ComicButton(
+    text: String,
+    onClick: () -> Unit,
+    fonts: AppFonts,
+    modifier: Modifier = Modifier,
+    secondary: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val bg = if (secondary) Color.White else Red
+    val textColor = if (secondary) Ink else Color.White
+    val alpha = if (enabled) 1f else 0.5f
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 3.dp, y = 3.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Ink.copy(alpha = alpha))
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(bg.copy(alpha = alpha))
+                .border(3.dp, Ink.copy(alpha = alpha), RoundedCornerShape(10.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                fontFamily = fonts.display,
+                color = textColor.copy(alpha = alpha),
+                fontSize = 16.sp,
+                letterSpacing = 1.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
