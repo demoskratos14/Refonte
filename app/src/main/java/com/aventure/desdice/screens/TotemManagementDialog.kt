@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,8 +89,10 @@ fun TotemManagementDialog(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) imageUri = uri }
 
+    val sessionState by viewModel.sessionState.collectAsState()
+
     fun refreshFromSessionState() {
-        val custom = viewModel.sessionState?.optJSONArray("custom_totems")
+        val custom = sessionState?.optJSONArray("custom_totems")
         val list = mutableListOf<CustomTotem>()
         if (custom != null) {
             for (i in 0 until custom.length()) {
@@ -106,7 +109,7 @@ fun TotemManagementDialog(
         totems = list
     }
 
-    LaunchedEffect(viewModel.sessionState) { refreshFromSessionState() }
+    LaunchedEffect(sessionState) { refreshFromSessionState() }
 
     fun addTotem() {
         if (label.isBlank()) {
