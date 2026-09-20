@@ -66,7 +66,6 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -404,8 +403,7 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
                 Text(
                     text = "Historique",
                     style = TextStyle(
-                        fontFamily = fonts.body,
-                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = fonts.bodyBold,
                         fontSize = 16.sp,
                         color = Color.White,
                         shadow = TextShadow
