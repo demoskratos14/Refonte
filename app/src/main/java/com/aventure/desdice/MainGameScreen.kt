@@ -29,13 +29,16 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +59,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.aventure.desdice.viewmodel.GameViewModel
 import com.chaquo.python.Python
@@ -207,7 +212,7 @@ fun DiceResultCard(
                             modifier = Modifier.padding(bottom = 8.dp)
                         ) {
                             Text(
-                                text = "Résultat : \$success",
+                                text = "Résultat : $success",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -293,7 +298,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : \${e.message}"
+                            error = "Erreur : ${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -318,7 +323,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : \${e.message}"
+                            error = "Erreur : ${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -343,7 +348,7 @@ fun DiceResultCard(
                             viewModel.loadSessionState(result)
                             lastResult = JSONObject(result).optJSONObject("last_result")
                         } catch (e: Exception) {
-                            error = "Erreur : \${e.message}"
+                            error = "Erreur : ${e.message}"
                         } finally {
                             mutex.withLock { isLoading = false }
                         }
@@ -479,21 +484,21 @@ fun HistoryItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "#\${record.optInt("id")}",
+                        text = "#${record.optInt("id")}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.size(8.dp))
                     if (note.isNotEmpty()) {
                         Text(
-                            text = "[\$note]",
+                            text = "[$note]",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.size(4.dp))
                     }
                     Text(
-                        text = "Réussite=\$success",
+                        text = "Réussite=$success",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.size(8.dp))
@@ -519,21 +524,21 @@ fun HistoryItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "#\${record.optInt("id")}",
+                            text = "#${record.optInt("id")}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.size(8.dp))
                         if (note.isNotEmpty()) {
                             Text(
-                                text = "[\$note]",
+                                text = "[$note]",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.size(4.dp))
                         }
                         Text(
-                            text = "Destin=\${it.optString("emoji")} \${it.optString("label")}",
+                            text = "Destin=${it.optString("emoji")} ${it.optString("label")}",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -551,6 +556,7 @@ fun TotemGaugesRow(
     val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
+    val sessionState by viewModel.sessionState.collectAsState()
 
     var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(false) }
