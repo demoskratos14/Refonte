@@ -707,14 +707,19 @@ def set_mistral_model(model):
 
 def get_config_screen_state() -> Dict[str, Any]:
     """Etat initial pour ConfigureKeyScreen (6a) : la cle elle-meme n'est
-    jamais renvoyee (has_key suffit a l'UI pour savoir si une cle est
-    deja enregistree), le modele actuellement choisi, et la liste des
-    modeles proposes (mistral_client.MODEL_CHOICES, normalisee en listes
+    jamais renvoyee en clair -- seulement has_key (pour savoir si une cle
+    est deja enregistree) et masked_key (ses 4 derniers caracteres, le
+    reste remplace par des etoiles, comme l'affichait l'ancienne page
+    HTML) -- le modele actuellement choisi, et la liste des modeles
+    proposes (mistral_client.MODEL_CHOICES, normalisee en listes
     [valeur, libelle] pour la serialisation JSON -- peu importe que
     MODEL_CHOICES soit fait de tuples ou de listes cote Python)."""
     import mistral_client
+    key = get_mistral_key()
+    masked_key = ("*" * max(0, len(key) - 4)) + key[-4:] if key else ""
     return {
         "has_key": has_mistral_key(),
+        "masked_key": masked_key,
         "model": get_mistral_model(),
         "model_choices": [list(choice) for choice in mistral_client.MODEL_CHOICES],
     }
