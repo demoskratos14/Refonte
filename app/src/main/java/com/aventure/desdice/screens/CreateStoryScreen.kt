@@ -74,6 +74,12 @@ private val Red = Color(0xFFE0263C)
 private val PageBg = Color(0xFF1B140C)
 private val ErrorOnPhoto = Color(0xFFFFC9C9)
 private val DividerColor = Color(0x4DFFFFFF)
+// Fond des champs de saisie et des boutons "secondaires" (ex-blancs) :
+// transparent pour laisser voir l'image. Si le texte noir devient difficile
+// a lire sur l'image, remplace par un voile leger, par exemple
+// Color.White.copy(alpha = 0.25f).
+private val FieldFill = Color.Transparent
+private val SecondaryButtonFill = Color.Transparent
 // Ombre portee des textes poses directement sur l'image.
 private val TextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 // Voile sombre par-dessus l'image (haut -> 30 % -> bas). L'image est deja
@@ -343,27 +349,11 @@ fun CreateStoryScreen(
                 // --- Import d'une identite exportee ---
                 SectionTitle("Importer une identité exportée (optionnel)", fonts)
                 ComicButton(
-                    text = "Choisir un fichier",
+                    text = if (importing) "Import en cours…" else "Choisir un fichier",
                     onClick = { pickIdentityFile.launch("*/*") },
                     fonts = fonts,
                     secondary = true,
                     enabled = !importing && !saving
-                )
-                ComicTextField(
-                    label = "…ou coller directement le JSON exporté depuis une autre histoire",
-                    value = importText,
-                    onValueChange = { importText = it },
-                    fonts = fonts,
-                    enabled = !importing && !saving,
-                    minHeight = 80.dp,
-                    maxHeight = 100.dp
-                )
-                ComicButton(
-                    text = if (importing) "Import en cours…" else "Importer",
-                    onClick = { importIdentity() },
-                    fonts = fonts,
-                    secondary = true,
-                    enabled = !importing && !saving && importText.isNotBlank()
                 )
 
                 Box(
@@ -610,7 +600,7 @@ private fun ComicTextField(
                 .alpha(if (enabled) 1f else 0.6f)
                 .then(heightModifier)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.White)
+                .background(FieldFill)
                 .border(2.dp, Ink, RoundedCornerShape(8.dp))
                 .then(scrollModifier)
                 .padding(horizontal = 14.dp, vertical = 12.dp)
@@ -629,18 +619,23 @@ private fun ComicButton(
     secondary: Boolean = false,
     enabled: Boolean = true,
 ) {
-    val bg = if (secondary) Color.White else Red
+    val bg = if (secondary) SecondaryButtonFill else Red
     val textColor = if (secondary) Ink else Color.White
     val alpha = if (enabled) 1f else 0.5f
 
     Box(modifier = modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .offset(x = 3.dp, y = 3.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Ink.copy(alpha = alpha))
-        )
+        // "Ombre" decalee facon BD : uniquement si le bouton a un fond. Sur un
+        // bouton transparent, elle serait visible A TRAVERS le bouton (rectangle
+        // noir derriere le texte noir).
+        if (bg.alpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .offset(x = 3.dp, y = 3.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Ink.copy(alpha = alpha))
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
