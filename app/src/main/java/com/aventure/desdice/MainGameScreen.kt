@@ -9,7 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.aventure.desdice.screens.DieBox
@@ -209,7 +211,7 @@ fun MainGameScreen(
             GameHeader(headerTitle = headerTitle, fonts = fonts, onChangeStory = onChangeStory)
             TotemBadgesRow(state = sessionState, onTotemClick = { infoTotemKey = it })
 
-            DiceResultCard(viewModel = viewModel)
+            DiceResultCard(viewModel = viewModel, hasKey = hasKey)
             ThreatGauge(viewModel = viewModel)
             SymbolPicker(viewModel = viewModel)
 
@@ -232,7 +234,7 @@ fun MainGameScreen(
             )
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
-            SideQuestsList(viewModel = viewModel)
+            SideQuestsList(viewModel = viewModel, hasKey = hasKey)
             ContinueSection(viewModel = viewModel, hasKey = hasKey)
             HistoryList(viewModel = viewModel)
             JournalSection(viewModel = viewModel, isCustomStory = isCustomStory)
@@ -337,7 +339,10 @@ private fun StoryBackdrop(b64: String) {
 @Composable
 fun DiceResultCard(
     viewModel: GameViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Narration automatique active (cle Mistral enregistree) : un "!" est alors envoye
+    // directement a l'IA, et la note "a copier" n'est plus proposee.
+    hasKey: Boolean = false
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
     val fateFaces by viewModel.fateFaces.collectAsState()
@@ -348,6 +353,7 @@ fun DiceResultCard(
     val textMeasurer = rememberTextMeasurer()
 
     var rolling by remember { mutableStateOf(false) }
+    var sendingToAi by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     // Animation de lancer : memes des 3D que la page "Des classiques". Le resultat
@@ -413,6 +419,25 @@ fun DiceResultCard(
                 spin = null
                 spinGlyphs = null
                 viewModel.loadSessionState(result)
+
+                // Narration automatique active : un "!" est envoye directement a l'IA (avec
+                // le lancer en attente). Le "?" n'est PAS envoye : il debloque une quete
+                // secondaire, transmise a l'IA par le bouton "Commencer" de cette quete.
+                if (hasKey && fateKey == "exclamation") {
+                    sendingToAi = true
+                    try {
+                        val sent = withContext(Dispatchers.IO) {
+                            python.getModule("game_api")
+                                .callAttr("call_json", "do_send_ai_message", "")
+                                .toString()
+                        }
+                        val aiError = JSONObject(sent).str("ai_error")
+                        viewModel.loadSessionState(sent)
+                        if (aiError.isNotEmpty()) error = aiError
+                    } finally {
+                        sendingToAi = false
+                    }
+                }
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
@@ -524,7 +549,7 @@ fun DiceResultCard(
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (description.isNotEmpty() && !rolling) {
+        if (description.isNotEmpty() && spin == null) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = description,
@@ -535,7 +560,9 @@ fun DiceResultCard(
         }
 
         // Evenements "?" / "!" : texte a signaler a l'IA narratrice (copiable).
-        val narratorNote = if (rolling) "" else narratorNoteFor(
+        // Note "a copier" (! et ?) : seulement en mode manuel. Avec la narration automatique,
+        // le "!" part tout seul et le "?" passe par la quete secondaire.
+        val narratorNote = if (spin != null || hasKey) "" else narratorNoteFor(
             sessionState?.optJSONObject("last_result"), fateFaces
         )
         if (narratorNote.isNotEmpty()) {
@@ -543,11 +570,62 @@ fun DiceResultCard(
             NarratorNoteBox(text = narratorNote, fonts = fonts)
         }
 
+        // "?" avec la narration automatique : rappel de la quete secondaire debloquee.
+        val unlockedQuest = sessionState?.optJSONObject("last_result")?.optJSONObject("side_quest")
+        if (hasKey && spin == null && unlockedQuest != null &&
+            isQuestOpen(sessionState, unlockedQuest.optInt("id"))
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "📜 Quête secondaire débloquée : ${questKindText(unlockedQuest.optString("kind"))}. " +
+                    "Lance-la avec « Commencer » dans les quêtes secondaires.",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+                style = bodyStyle(fonts, 14.sp, Gold)
+            )
+        }
+
+        if (sendingToAi) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(text = "⌛ Le narrateur écrit...", style = bodyStyle(fonts, 14.sp))
+            }
+        }
+
         error?.let {
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = it, style = bodyStyle(fonts, 14.sp, ErrorOnPhoto))
         }
     }
+}
+
+private fun questKindText(kind: String): String =
+    if (kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou un nouveau totem)"
+
+/** Demande envoyee a l'IA quand on demarre une quete secondaire. */
+private fun questRequestText(kind: String): String =
+    if (kind == "ami") {
+        "Je commence la quête secondaire : se faire un nouvel ami. Fais entrer en scène " +
+            "un nouveau personnage et raconte cette rencontre."
+    } else {
+        "Je commence la quête secondaire : trouver un nouvel objet (ou un nouveau totem). " +
+            "Raconte cette découverte."
+    }
+
+/** Vrai si la quete `id` existe encore et n'est pas terminee. */
+private fun isQuestOpen(state: JSONObject?, id: Int): Boolean {
+    val arr = state?.optJSONArray("side_quests") ?: return false
+    for (i in 0 until arr.length()) {
+        val q = arr.getJSONObject(i)
+        if (q.optInt("id") == id) return q.optString("status") == "ouverte"
+    }
+    return false
 }
 
 /** Fond creme du de du destin (comme la page "Des classiques"). */
@@ -1108,39 +1186,66 @@ private fun TotemGaugeItem(
 @Composable
 fun SideQuestsList(
     viewModel: GameViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Narration automatique active : "Commencer" envoie la demande a l'IA. Sinon la
+    // demande est copiee dans le presse-papiers (a coller dans l'IA de ton choix).
+    hasKey: Boolean = false
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
     val fonts = rememberAppFonts()
+    val clipboard = LocalClipboardManager.current
 
     var sideQuests by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
 
+    // Seulement les quetes OUVERTES (comme session.open_side_quests() dans l'ancienne page) :
+    // une quete terminee ou commencee disparait de la liste.
     LaunchedEffect(sessionState) {
         sideQuests = buildList {
             sessionState?.optJSONArray("side_quests")?.let { arr ->
                 for (i in 0 until arr.length()) {
-                    add(arr.getJSONObject(i))
+                    val quest = arr.getJSONObject(i)
+                    if (quest.optString("status") == "ouverte") add(quest)
                 }
             }
         }
     }
 
-    fun completeQuest(quest: JSONObject) {
+    // "Commencer" : la demande de quete part a l'IA (le lancer "?" en attente est ajoute
+    // automatiquement par do_send_ai_message), puis la quete est retiree de la liste -- il
+    // n'y a donc plus de bouton "Terminer". Si l'IA renvoie une erreur, la quete est
+    // conservee pour pouvoir reessayer.
+    fun startQuest(quest: JSONObject) {
+        val request = questRequestText(quest.optString("kind"))
         viewModel.viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
                 isLoading = true
                 error = null
+                info = null
             }
             try {
-                val result = python.getModule("game_api")
+                if (hasKey) {
+                    val sent = python.getModule("game_api")
+                        .callAttr("call_json", "do_send_ai_message", request)
+                        .toString()
+                    val aiError = JSONObject(sent).str("ai_error")
+                    viewModel.loadSessionState(sent)
+                    if (aiError.isNotEmpty()) {
+                        error = aiError
+                        return@launch
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { clipboard.setText(AnnotatedString(request)) }
+                    info = "Demande copiée dans le presse-papiers."
+                }
+                val done = python.getModule("game_api")
                     .callAttr("call_json", "do_complete_side_quest", quest.optInt("id"))
                     .toString()
-                viewModel.loadSessionState(result)
-                sideQuests = sideQuests.filter { it.optInt("id") != quest.optInt("id") }
+                viewModel.loadSessionState(done)
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
@@ -1153,8 +1258,16 @@ fun SideQuestsList(
         SectionTitle("Quêtes secondaires", fonts)
 
         if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                if (hasKey) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(text = "⌛ Le narrateur écrit...", style = bodyStyle(fonts, 14.sp))
+                }
             }
         } else if (sideQuests.isEmpty()) {
             Text(
@@ -1170,15 +1283,22 @@ fun SideQuestsList(
                     SideQuestItem(
                         quest = quest,
                         fonts = fonts,
-                        onComplete = { completeQuest(quest) }
+                        onStart = { startQuest(quest) }
                     )
                 }
             }
         }
 
-        error?.let {
+        info?.let {
             Text(
                 text = it,
+                style = bodyStyle(fonts, 14.sp),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        error?.let {
+            Text(
+                text = "⚠️ $it",
                 style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
                 modifier = Modifier.padding(top = 8.dp)
             )
@@ -1190,16 +1310,15 @@ fun SideQuestsList(
 private fun SideQuestItem(
     quest: JSONObject,
     fonts: AppFonts,
-    onComplete: () -> Unit
+    onStart: () -> Unit
 ) {
     val kind = quest.optString("kind")
-    val status = quest.optString("status")
-    val kindText = if (kind == "ami") "Nouvel ami" else "Nouvel objet/totem"
+    val kindText = if (kind == "ami") "👥 Nouvel ami" else "🎁 Nouvel objet/totem"
     val shape = RoundedCornerShape(10.dp)
 
     Column(
         modifier = Modifier
-            .width(140.dp)
+            .width(150.dp)
             .clip(shape)
             .background(Ink.copy(alpha = 0.45f))
             .border(2.dp, Color.White.copy(alpha = 0.4f), shape)
@@ -1210,10 +1329,9 @@ private fun SideQuestItem(
         Text(text = kindText, style = bodyStyle(fonts, 13.sp))
         Spacer(modifier = Modifier.height(8.dp))
         ComicButton(
-            text = "Terminer",
-            onClick = onComplete,
+            text = "Commencer",
+            onClick = onStart,
             fonts = fonts,
-            enabled = status == "ouverte",
             compact = true,
             modifier = Modifier.fillMaxWidth()
         )
