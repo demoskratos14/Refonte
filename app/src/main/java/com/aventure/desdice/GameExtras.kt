@@ -543,6 +543,7 @@ fun ContinueSection(
 fun JournalSection(
     viewModel: GameViewModel,
     isCustomStory: Boolean,
+    hasKey: Boolean,
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
@@ -612,23 +613,29 @@ fun JournalSection(
     Section(modifier) {
         SectionTitle("Journal de l'histoire", fonts)
 
-        ComicTextField(
-            label = "Coller ici le résumé de chapitre reçu de l'IA narratrice",
-            value = entryText,
-            onValueChange = { entryText = it },
-            fonts = fonts,
-            enabled = !busy,
-            minHeight = 90.dp
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        ComicButton(
-            text = "📚 Ajouter au journal de l'histoire",
-            onClick = { addEntry() },
-            fonts = fonts,
-            enabled = !busy && entryText.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(10.dp))
+        // Saisie manuelle : masquee quand l'API (clé Mistral) est active,
+        // puisque c'est alors elle qui ecrit le journal automatiquement
+        // (voir game_api.maybe_update_story_digest). Lecture et export
+        // restent toujours utiles, donc toujours affiches plus bas.
+        if (!hasKey) {
+            ComicTextField(
+                label = "Coller ici le résumé de chapitre reçu de l'IA narratrice",
+                value = entryText,
+                onValueChange = { entryText = it },
+                fonts = fonts,
+                enabled = !busy,
+                minHeight = 90.dp
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            ComicButton(
+                text = "📚 Ajouter au journal de l'histoire",
+                onClick = { addEntry() },
+                fonts = fonts,
+                enabled = !busy && entryText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
         ComicButton(
             text = "Voir le journal complet (${chapters.size})",
             onClick = { showLog = true },

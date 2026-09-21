@@ -239,11 +239,7 @@ fun MainGameScreen(
             SideQuestsList(viewModel = viewModel, hasKey = hasKey)
             ContinueSection(viewModel = viewModel, hasKey = hasKey)
             HistoryList(viewModel = viewModel)
-            // Masqué quand l'API (clé Mistral) est active : c'est elle qui écrit
-            // le journal automatiquement, la saisie manuelle n'a plus lieu d'être.
-            if (!hasKey) {
-                JournalSection(viewModel = viewModel, isCustomStory = isCustomStory)
-            }
+            JournalSection(viewModel = viewModel, isCustomStory = isCustomStory, hasKey = hasKey)
         }
     }
 
