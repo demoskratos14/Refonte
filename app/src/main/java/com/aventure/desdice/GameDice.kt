@@ -1,5 +1,6 @@
 package com.aventure.desdice
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,12 +29,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.aventure.desdice.screens.PipGlyph
+import com.aventure.desdice.screens.pipGlyphSizeDp
 import com.aventure.desdice.ui.rememberAppFonts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 // Meme table que PIP_POSITIONS (dice_web.py) : (ligne, colonne) dans une grille 3x3.
@@ -243,6 +250,64 @@ internal fun TotemInfoDialog(totemKey: String, state: JSONObject?, onDismiss: ()
                     fonts = fonts,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Symboles a dessiner sur les 6 faces du de de reussite pendant qu'il roule (a la place
+ * des points noirs). La face qui va rester visible porte les VRAIS symboles du tirage
+ * (pip_choice) : la transition avec le de a plat est donc invisible. Les autres faces
+ * sont des leurres du meme style que le mode actif (unique : le symbole actif ;
+ * aleatoire : un symbole tire au sort par face ; mixte : un par point).
+ */
+@OptIn(ExperimentalTextApi::class)
+internal suspend fun buildSuccessDieGlyphs(
+    context: Context,
+    state: JSONObject?,
+    textMeasurer: TextMeasurer,
+    finalValue: Int,
+    finalKeys: List<String>
+): List<List<PipGlyph>> {
+    val mode = state?.optString("pip_mode").orEmpty().ifEmpty { "single" }
+    val active = state?.optString("pip_symbol").orEmpty()
+    val enabled: List<String> = state?.optJSONArray("enabled_symbols")
+        ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+        ?: emptyList()
+    val decoyPool = if (mode == "single" || enabled.isEmpty()) listOf(active) else enabled
+
+    val faceKeys: List<List<String>> = (1..6).map { count ->
+        if (count == finalValue && finalKeys.isNotEmpty()) {
+            List(count) { finalKeys.getOrNull(it) ?: finalKeys.first() }
+        } else when (mode) {
+            "single" -> List(count) { active }
+            "random" -> {
+                val key = decoyPool.random()
+                List(count) { key }
+            }
+            else -> List(count) { decoyPool.random() }
+        }
+    }
+
+    // Images (fichiers de totem_images/) decodees hors du thread principal.
+    val bitmaps = withContext(Dispatchers.IO) {
+        faceKeys.flatten().toSet().associateWith { key ->
+            findSymbol(state, key)?.str("image")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { loadTotemBitmap(context, it) }
+        }
+    }
+
+    return faceKeys.mapIndexed { index, keys ->
+        val style = TextStyle(fontSize = (pipGlyphSizeDp(index + 1) * 0.8f).sp)
+        keys.map { key ->
+            val bitmap = bitmaps[key]
+            if (bitmap != null) {
+                PipGlyph(bitmap, null)
+            } else {
+                val emoji = findSymbol(state, key)?.str("emoji").orEmpty().ifEmpty { "⚫" }
+                PipGlyph(null, textMeasurer.measure(emoji, style))
             }
         }
     }

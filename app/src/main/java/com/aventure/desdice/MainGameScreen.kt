@@ -1,6 +1,7 @@
 package com.aventure.desdice
 
 import android.graphics.BitmapFactory
+import android.content.Context
 import android.util.Base64
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -9,9 +10,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.rememberTextMeasurer
 import com.aventure.desdice.screens.DieBox
 import com.aventure.desdice.screens.FateDieFace
 import com.aventure.desdice.screens.FateFace
+import com.aventure.desdice.screens.PipGlyph
 import com.aventure.desdice.screens.SpinDurationMs
 import com.aventure.desdice.screens.SpinState
 import com.aventure.desdice.screens.TumblingDie
@@ -329,6 +333,7 @@ private fun StoryBackdrop(b64: String) {
 // Dernier resultat + boutons de lancer
 // =====================================================================
 
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun DiceResultCard(
     viewModel: GameViewModel,
@@ -339,6 +344,8 @@ fun DiceResultCard(
     val python = remember { Python.getInstance() }
     val fonts = rememberAppFonts()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val textMeasurer = rememberTextMeasurer()
 
     var rolling by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -347,6 +354,8 @@ fun DiceResultCard(
     // est deja tire ; l'etat de session n'est publie qu'a la fin de l'animation
     // pour ne pas gacher le suspense.
     var spin by remember { mutableStateOf<SpinState?>(null) }
+    // Symboles des totems dessines sur les faces du de de reussite qui roule.
+    var spinGlyphs by remember { mutableStateOf<List<List<PipGlyph>>?>(null) }
     val progress = remember { Animatable(0f) }
 
     fun roll(kind: String) {
@@ -379,6 +388,20 @@ fun DiceResultCard(
                         newSpinSpec(faceIndex = fateIndex, bounces = 2, timeScale = 0.88f)
                     } else null
 
+                // Symboles a la place des points noirs (points noirs si ca echoue).
+                spinGlyphs = if (successSpec != null && successValue != null) {
+                    try {
+                        val finalKeys = last?.optJSONArray("pip_choice")
+                            ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+                            ?: emptyList()
+                        buildSuccessDieGlyphs(
+                            context, JSONObject(result), textMeasurer, successValue, finalKeys
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                } else null
+
                 if (successSpec != null || fateSpec != null) {
                     spin = SpinState(successSpec, fateSpec)
                     progress.snapTo(0f)
@@ -388,11 +411,13 @@ fun DiceResultCard(
                     )
                 }
                 spin = null
+                spinGlyphs = null
                 viewModel.loadSessionState(result)
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
                 spin = null
+                spinGlyphs = null
                 rolling = false
             }
         }
@@ -433,7 +458,7 @@ fun DiceResultCard(
                     val spec = spin?.success
                     if (spec != null) {
                         Box(Modifier.size(150.dp).graphicsLayer { rotationZ = -1f }) {
-                            TumblingDie(spec, progress, null, fonts, Color.White)
+                            TumblingDie(spec, progress, null, fonts, Color.White, pipGlyphs = spinGlyphs)
                         }
                     } else {
                         DieBox(rotation = -1f, background = Color.White) {
@@ -1739,6 +1764,21 @@ internal fun findSymbol(state: JSONObject?, key: String): JSONObject? {
 // Petit cache : les images de totem (400 px max) sont reaffichees a chaque recomposition.
 private val totemBitmapCache = HashMap<String, ImageBitmap>()
 
+/** Image d'un totem (fichier de <filesDir>/totem_images/), avec cache. null si illisible. A appeler hors thread principal. */
+internal fun loadTotemBitmap(context: Context, imageName: String): ImageBitmap? {
+    synchronized(totemBitmapCache) { totemBitmapCache[imageName] }?.let { return it }
+    return try {
+        val file = File(context.filesDir, "totem_images/$imageName")
+        val decoded = BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+        if (decoded != null) {
+            synchronized(totemBitmapCache) { totemBitmapCache[imageName] = decoded }
+        }
+        decoded
+    } catch (e: Exception) {
+        null
+    }
+}
+
 /**
  * Icone d'un symbole/totem. `image` (game_api.all_symbols) est un NOM DE FICHIER stocke
  * dans <filesDir>/totem_images/ (le dossier de travail Python est filesDir) -- pas du
@@ -1760,18 +1800,7 @@ internal fun SymbolIcon(
         val cached = synchronized(totemBitmapCache) { totemBitmapCache[imageName] }
         val bitmap by produceState<ImageBitmap?>(cached, imageName) {
             if (value == null) {
-                value = withContext(Dispatchers.IO) {
-                    try {
-                        val file = File(context.filesDir, "totem_images/$imageName")
-                        val decoded = BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
-                        if (decoded != null) {
-                            synchronized(totemBitmapCache) { totemBitmapCache[imageName] = decoded }
-                        }
-                        decoded
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
+                value = withContext(Dispatchers.IO) { loadTotemBitmap(context, imageName) }
             }
         }
         val bmp = bitmap
