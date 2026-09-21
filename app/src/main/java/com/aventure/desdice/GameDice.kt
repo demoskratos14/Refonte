@@ -126,7 +126,10 @@ internal fun SymbolSuccessDieFace(
 @Composable
 internal fun TotemBadgesRow(state: JSONObject?, onTotemClick: (String) -> Unit) {
     val info = state?.optJSONObject("totem_info") ?: return
-    val keys = info.keys().asSequence().toList()
+    // Les allies fixes (Araignee, Bouclier...) ont une fiche mais pas de badge sous le titre.
+    val keys = info.keys().asSequence()
+        .filter { info.optJSONObject(it)?.optBoolean("badge", true) != false }
+        .toList()
     if (keys.isEmpty()) return
 
     FlowRow(

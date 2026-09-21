@@ -451,7 +451,7 @@ fun DiceResultCard(
                 DieColumn(
                     caption = "Dé du destin",
                     buttonText = "🔮 Lancer",
-                    primary = false,
+                    primary = true,
                     enabled = !rolling,
                     dimmed = !fateUsed,
                     onRoll = { roll("fate") },
@@ -614,6 +614,10 @@ fun ThreatGauge(
 // Symbole actif (selection + mode de lancer)
 // =====================================================================
 
+/**
+ * Symbole actif : un resume (mode + symboles utilises) et un bouton qui ouvre la
+ * fenetre de choix -- pour ne pas surcharger la page de jeu.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SymbolPicker(
@@ -621,29 +625,90 @@ fun SymbolPicker(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
+    val fonts = rememberAppFonts()
+    var showDialog by remember { mutableStateOf(false) }
+
+    val pipMode = sessionState?.optString("pip_mode").orEmpty().ifEmpty { "single" }
+    val activeKeys: List<String> = if (pipMode == "single") {
+        listOfNotNull(sessionState?.optString("pip_symbol")?.takeIf { it.isNotEmpty() })
+    } else {
+        sessionState?.optJSONArray("enabled_symbols")
+            ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+            ?: emptyList()
+    }
+    val summary = when (pipMode) {
+        "random" -> "🎲 Aléatoire : ${activeKeys.size} symbole(s) dans le tirage"
+        "mixed" -> "🔀 Mixte : ${activeKeys.size} symbole(s) mélangés sur la face"
+        else -> "Symbole unique : " +
+            (findSymbol(sessionState, activeKeys.firstOrNull().orEmpty())?.str("label").orEmpty())
+    }
+
+    Section(modifier) {
+        SectionTitle("Symbole actif", fonts)
+        Text(text = summary, style = bodyStyle(fonts, 15.sp))
+        if (activeKeys.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                activeKeys.forEach { key ->
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.18f))
+                            .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        SymbolIcon(findSymbol(sessionState, key), 26.dp, 20.sp)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        ComicButton(
+            text = "Choisir le symbole",
+            onClick = { showDialog = true },
+            fonts = fonts,
+            kind = ButtonKind.Secondary,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    if (showDialog) {
+        SymbolPickerDialog(viewModel = viewModel, onDismiss = { showDialog = false })
+    }
+}
+
+/** Fenetre de choix : mode de lancer (unique / aleatoire / mixte) + liste des symboles. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SymbolPickerDialog(
+    viewModel: GameViewModel,
+    onDismiss: () -> Unit
+) {
+    val sessionState by viewModel.sessionState.collectAsState()
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
     val fonts = rememberAppFonts()
 
-    var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
-    var pipMode by remember { mutableStateOf("single") }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var expandedMode by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sessionState) {
-        symbols = buildMap {
-            sessionState?.optJSONArray("all_symbols")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    put(obj.optString("key"), obj)
-                }
-            }
+    val pipMode = sessionState?.optString("pip_mode").orEmpty().ifEmpty { "single" }
+    val activeSingle = sessionState?.optString("pip_symbol").orEmpty()
+    val enabled: Set<String> = sessionState?.optJSONArray("enabled_symbols")
+        ?.let { arr -> (0 until arr.length()).map { arr.optString(it) }.toSet() }
+        ?: emptySet()
+    val symbols = buildList<JSONObject> {
+        sessionState?.optJSONArray("all_symbols")?.let { arr ->
+            for (i in 0 until arr.length()) add(arr.getJSONObject(i))
         }
-        pipMode = sessionState?.optString("pip_mode") ?: "single"
     }
 
-    fun callApi(func: String, arg: String, after: () -> Unit = {}) {
+    fun callApi(func: String, arg: String) {
         viewModel.viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
                 isLoading = true
@@ -654,7 +719,6 @@ fun SymbolPicker(
                     .callAttr("call_json", func, arg)
                     .toString()
                 viewModel.loadSessionState(result)
-                after()
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
@@ -663,135 +727,166 @@ fun SymbolPicker(
         }
     }
 
-    Section(modifier) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+    Dialog(onDismissRequest = onDismiss) {
+        val shape = RoundedCornerShape(16.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 600.dp)
+                .clip(shape)
+                .background(Paper)
+                .border(3.dp, Ink, shape)
         ) {
-            SectionTitle("Symbole actif", fonts, Modifier.weight(1f))
-
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clickable { expandedMode = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "⚙️", style = TextStyle(fontSize = 22.sp, shadow = TextShadow))
-                }
-
-                DropdownMenu(
-                    expanded = expandedMode,
-                    onDismissRequest = { expandedMode = false },
-                    modifier = Modifier.background(Paper)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "Mode de lancer",
-                            style = TextStyle(fontFamily = fonts.display, fontSize = 20.sp, color = Ink),
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        listOf(
-                            "single" to "Symbole unique",
-                            "random" to "Aléatoire",
-                            "mixed" to "Mixte"
-                        ).forEach { (mode, label) ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .toggleable(
-                                        value = pipMode == mode,
-                                        onValueChange = { checked ->
-                                            if (checked) {
-                                                callApi("do_set_pip_mode", mode) { pipMode = mode }
-                                            }
-                                        },
-                                        role = Role.RadioButton
-                                    )
-                                    .padding(vertical = 6.dp)
-                            ) {
-                                RadioButton(selected = pipMode == mode, onClick = null)
-                                Text(
-                                    text = label,
-                                    style = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink),
-                                    modifier = Modifier.padding(start = 8.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
-            }
-        } else {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
             ) {
-                symbols.forEach { (key, symbol) ->
-                    val isActive = when (pipMode) {
-                        "single" -> sessionState?.optString("pip_symbol") == key
-                        "random", "mixed" -> sessionState
-                            ?.optJSONArray("enabled_symbols")
-                            ?.let { arr -> (0 until arr.length()).any { arr.getString(it) == key } }
-                            ?: false
-                        else -> false
-                    }
-                    SymbolChip(
-                        selected = isActive,
-                        label = symbol.optString("label"),
-                        symbol = symbol,
+                Text(
+                    text = "Symboles",
+                    style = TextStyle(fontFamily = fonts.display, fontSize = 26.sp, letterSpacing = 1.sp, color = Ink),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Text(
+                    text = "Mode de lancer",
+                    style = TextStyle(fontFamily = fonts.bodyBold, fontSize = 16.sp, color = Ink),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Le moteur (DiceSession.set_pip_mode) fonctionne en bascule : il
+                    // n'accepte que "random" / "mixed", et redemander le mode deja actif
+                    // le desactive (retour au symbole unique).
+                    ModeOption(
+                        text = "Unique",
+                        selected = pipMode == "single",
                         fonts = fonts,
-                        onClick = {
-                            if (pipMode == "single") {
-                                callApi("do_set_pip_symbol", key)
-                            } else {
-                                callApi("do_toggle_enabled_symbol", key)
-                            }
-                        }
+                        modifier = Modifier.weight(1f),
+                        onClick = { if (pipMode != "single") callApi("do_set_pip_mode", pipMode) }
+                    )
+                    ModeOption(
+                        text = "🎲 Aléatoire",
+                        selected = pipMode == "random",
+                        fonts = fonts,
+                        modifier = Modifier.weight(1f),
+                        onClick = { if (pipMode != "random") callApi("do_set_pip_mode", "random") }
+                    )
+                    ModeOption(
+                        text = "🔀 Mixte",
+                        selected = pipMode == "mixed",
+                        fonts = fonts,
+                        modifier = Modifier.weight(1f),
+                        onClick = { if (pipMode != "mixed") callApi("do_set_pip_mode", "mixed") }
                     )
                 }
-            }
-        }
+                Text(
+                    text = when (pipMode) {
+                        "random" -> "Un symbole tiré au sort par lancer. Touche les symboles pour les inclure ou les exclure du tirage (un au moins reste actif)."
+                        "mixed" -> "Un symbole différent sur chaque point du dé. Touche les symboles pour les inclure ou les exclure du tirage (un au moins reste actif)."
+                        else -> "Touche un symbole pour le choisir."
+                    },
+                    style = TextStyle(fontFamily = fonts.body, fontSize = 13.sp, color = Ink),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 14.dp)
+                )
 
-        error?.let {
-            Text(
-                text = it,
-                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
-                modifier = Modifier.padding(top = 8.dp)
-            )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    symbols.forEach { symbol ->
+                        val key = symbol.optString("key")
+                        val selected = if (pipMode == "single") key == activeSingle else key in enabled
+                        val chipShape = RoundedCornerShape(20.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .height(40.dp)
+                                .alpha(if (selected) 1f else 0.7f)
+                                .clip(chipShape)
+                                .background(if (selected) Red else Color.White)
+                                .border(2.dp, Ink, chipShape)
+                                .clickable(enabled = !isLoading) {
+                                    if (pipMode == "single") {
+                                        callApi("do_set_pip_symbol", key)
+                                    } else {
+                                        callApi("do_toggle_enabled_symbol", key)
+                                    }
+                                }
+                                .padding(horizontal = 12.dp)
+                        ) {
+                            SymbolIcon(symbol, 22.dp, 18.sp)
+                            Text(
+                                text = symbol.optString("label"),
+                                maxLines = 1,
+                                style = TextStyle(
+                                    fontFamily = fonts.bodyBold,
+                                    fontSize = 14.sp,
+                                    color = if (selected) Color.White else Ink
+                                )
+                            )
+                        }
+                    }
+                }
+
+                if (isLoading) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Ink)
+                    }
+                }
+                error?.let {
+                    Text(
+                        text = it,
+                        style = TextStyle(fontFamily = fonts.body, fontSize = 14.sp, color = DangerText),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                ComicButton(
+                    text = "Fermer",
+                    onClick = onDismiss,
+                    fonts = fonts,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SymbolChip(
+private fun ModeOption(
+    text: String,
     selected: Boolean,
-    label: String,
-    symbol: JSONObject,
     fonts: AppFonts,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(20.dp)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .height(40.dp)
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
             .clip(shape)
-            .background(if (selected) Red else Color.Transparent)
-            .border(2.dp, if (selected) Ink else Color.White.copy(alpha = 0.6f), shape)
+            .background(if (selected) Red else Color.White)
+            .border(2.dp, Ink, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        SymbolIcon(symbol, 22.dp, 18.sp)
-        Text(text = label, maxLines = 1, style = boldStyle(fonts, 14.sp))
+        Text(
+            text = text,
+            textAlign = TextAlign.Center,
+            style = TextStyle(
+                fontFamily = fonts.display,
+                fontSize = 14.sp,
+                letterSpacing = 0.5.sp,
+                color = if (selected) Color.White else Ink
+            )
+        )
     }
 }
 
