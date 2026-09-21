@@ -198,12 +198,11 @@ class DiceSession:
         # (AI_HISTORY_WINDOW) ci-dessus -- reinjecte a chaque appel pour
         # que l'IA garde la memoire des evenements/personnages/objets
         # anciens meme sur une tres longue partie, sans renvoyer tout le
-        # texte brut (voir dice_web.py: maybe_update_story_summary()).
+        # texte brut (voir game_api.py: maybe_update_story_digest()).
+        # Mis a jour dans le meme appel IA que le chapitre de journal
+        # (voir last_journal_index un peu plus bas) : un seul appel
+        # produit a la fois le chapitre et le resume mis a jour.
         self.story_summary = ""
-        # Nombre de messages de la conversation (hors message system,
-        # voir _rest_conversation) deja integres dans story_summary --
-        # permet de savoir lesquels restent "en attente" de resume.
-        self.last_summarized_index = 0
 
         # Id du dernier lancer (self.history) deja transmis a l'IA
         # narratrice, pour le nouveau flux "roll -> texte -> envoi groupe"
@@ -213,6 +212,15 @@ class DiceSession:
         # le dernier lancer a deja ete inclus dans un envoi ou non, pour
         # ne jamais l'envoyer deux fois.
         self.last_ai_sent_id = 0
+
+        # Nombre de messages de la conversation (hors message system, voir
+        # _rest_conversation) deja "digeres" -- transformes en un chapitre
+        # de journal (story_log) ET integres au resume long terme
+        # (story_summary), en un seul appel IA (voir game_api.py,
+        # maybe_update_story_digest()). Decoupe la conversation en
+        # tranches fixes de 6 messages (3 evenements envoyes + 3 reponses
+        # de l'IA) des qu'une tranche complete est disponible.
+        self.last_journal_index = 0
 
     # ---------- persistance ----------
     def save(self):
@@ -228,8 +236,8 @@ class DiceSession:
                  "story_log": self.story_log,
                  "ai_conversation": self.ai_conversation,
                  "story_summary": self.story_summary,
-                 "last_summarized_index": self.last_summarized_index,
                  "last_ai_sent_id": self.last_ai_sent_id,
+                 "last_journal_index": self.last_journal_index,
                  "custom_totems": self.custom_totems}
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -298,21 +306,18 @@ class DiceSession:
             ]
             summary = data.get("story_summary")
             self.story_summary = summary.strip() if isinstance(summary, str) else ""
-            try:
-                # borne a la taille reelle de la conversation chargee : une
-                # sauvegarde plus ancienne (avant l'ajout de ce champ) ou
-                # corrompue ne doit jamais produire un index hors bornes.
-                idx = int(data.get("last_summarized_index", 0))
-            except (TypeError, ValueError):
-                idx = 0
             rest_len = len(self.ai_conversation) - (
                 1 if self.ai_conversation and self.ai_conversation[0]["role"] == "system" else 0
             )
-            self.last_summarized_index = max(0, min(idx, rest_len))
             try:
                 self.last_ai_sent_id = int(data.get("last_ai_sent_id", 0))
             except (TypeError, ValueError):
                 self.last_ai_sent_id = 0
+            try:
+                jidx = int(data.get("last_journal_index", 0))
+            except (TypeError, ValueError):
+                jidx = 0
+            self.last_journal_index = max(0, min(jidx, rest_len))
             return True
         return False
 
@@ -563,7 +568,7 @@ class DiceSession:
         dans une mauvaise direction."""
         self.ai_conversation = []
         self.story_summary = ""
-        self.last_summarized_index = 0
+        self.last_journal_index = 0
         self.last_ai_sent_id = 0
         self.save()
 
@@ -575,29 +580,28 @@ class DiceSession:
             return self.ai_conversation[1:]
         return self.ai_conversation
 
-    def summary_cutoff(self):
-        """Index (dans _rest_conversation()) a partir duquel les messages
-        sont encore dans la fenetre recente envoyee telle quelle a l'IA.
-        Tout ce qui precede cet index est candidat au resume."""
-        return max(0, len(self._rest_conversation()) - AI_HISTORY_WINDOW)
+    def pending_digest_messages(self):
+        """Messages (hors message system) pas encore integres a une
+        "digestion" (chapitre de journal + mise a jour du resume long
+        terme, produits en un seul appel IA -- voir game_api.py,
+        maybe_update_story_digest()). On decoupe simplement la
+        conversation en tranches fixes de 6 messages des qu'une tranche
+        complete est disponible."""
+        return self._rest_conversation()[self.last_journal_index:]
 
-    def pending_summary_messages(self):
-        """Messages qui viennent de sortir de la fenetre recente et n'ont
-        pas encore ete integres a self.story_summary. Vide si rien de
-        nouveau a resumer (partie courte, ou resume deja a jour)."""
-        cutoff = self.summary_cutoff()
-        if cutoff <= self.last_summarized_index:
-            return []
-        return self._rest_conversation()[self.last_summarized_index:cutoff]
-
-    def apply_story_summary(self, new_summary):
-        """Enregistre le resume mis a jour (fusion ancien+nouveau, deja
-        faite par l'appelant) et avance le curseur jusqu'a la fenetre
-        recente actuelle : tout ce qui etait en attente est desormais
-        considere integre au resume."""
-        self.story_summary = (new_summary or "").strip()
-        self.last_summarized_index = self.summary_cutoff()
+    def apply_story_digest(self, chapter_text, updated_summary, messages_consumed):
+        """Enregistre en une fois le resultat d'une digestion : le
+        chapitre de journal (story_log) ET le resume long terme mis a
+        jour (deja fusionne ancien+nouveau par l'appelant), puis avance
+        le curseur partage d'autant de messages consommes, pour ne
+        jamais re-traiter la meme tranche."""
+        added = self.add_story_entry(chapter_text)
+        if not added:
+            return False
+        self.story_summary = (updated_summary or "").strip()
+        self.last_journal_index += messages_consumed
         self.save()
+        return True
 
     def mark_last_roll_as_sent(self):
         """A appeler juste apres avoir transmis le dernier lancer a l'IA
@@ -619,12 +623,12 @@ class DiceSession:
 
     def ai_messages_to_send(self):
         """Messages a effectivement transmettre a l'API : le message
-        systeme (mecaniques du jeu, toujours conserve) + un resume compact
-        de ce qui est sorti de la fenetre recente (si disponible, voir
-        story_summary/pending_summary_messages) + une fenetre recente de
-        l'echange, pour rester sous la limite de contexte du modele.
-        L'integralite de la conversation reste conservee dans
-        self.ai_conversation (et dans la sauvegarde) pour l'affichage."""
+        systeme (mecaniques du jeu, toujours conserve) + le resume long
+        terme s'il existe (voir story_summary/maybe_update_story_digest
+        dans game_api.py) + une fenetre recente de l'echange, pour rester
+        sous la limite de contexte du modele. L'integralite de la
+        conversation reste conservee dans self.ai_conversation (et dans
+        la sauvegarde) pour l'affichage."""
         if not self.ai_conversation:
             return []
         if self.ai_conversation[0]["role"] == "system":

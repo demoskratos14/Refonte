@@ -643,60 +643,106 @@ def build_ai_kickoff_message():
                       "premier lancer des que la situation l'exige.")
     return "\n".join(lines)
 
-def maybe_update_story_summary():
-    STORY_SUMMARY_TRIGGER = 6
-    STORY_SUMMARY_MODEL = "ministral-8b-2512"
-    STORY_SUMMARY_MAX_TOKENS = 400
-    pending = session.pending_summary_messages()
-    if len(pending) < STORY_SUMMARY_TRIGGER:
-        return
+def maybe_update_story_digest():
+    """Alimente automatiquement, en un seul appel a l'IA, le journal
+    (session.story_log) ET le resume long terme (session.story_summary)
+    quand la narration IA est active.
+
+    Des que 6 nouveaux messages se sont accumules (3 evenements envoyes
+    par le joueur/l'appli + 3 reponses de l'IA), on demande a l'IA de
+    produire les deux textes a la fois -- un chapitre de journal et une
+    mise a jour du resume -- separes par des balises, plutot que de
+    faire deux appels distincts pour la meme tranche : ca revient au
+    meme resultat pour deux fois moins de requetes/tokens factures.
+
+    Utilise le meme modele que la narration (get_mistral_model(), reglable
+    depuis ConfigureKeyScreen) : un seul selecteur pour tous les echanges
+    avec l'IA pour l'instant. A dissocier plus tard si besoin (ex. un
+    reglage "modele du digest" separe dans app_config.json).
+
+    Cet appel est "fantome" : il n'ecrit jamais dans ai_conversation et
+    n'est donc jamais affiche comme une suite de l'histoire dans le
+    panneau de narration -- seuls ses resultats apparaissent, dans le
+    journal (chapitre) et en interne pour le contexte IA (resume)."""
+    DIGEST_TRIGGER = 6
+    DIGEST_MAX_TOKENS = 700
+    CHAPTER_TAG = "###CHAPITRE###"
+    SUMMARY_TAG = "###RESUME###"
+
     if not has_mistral_key():
         return
 
-    existing = session.story_summary
-    block = _format_messages_for_summary(pending)
-    summarizer_system = (
-        "Tu condenses une histoire de jeu de role pour enfant (en francais) "
-        "en une liste tres compacte des faits a retenir : personnages "
-        "rencontres, objets/totems obtenus, lieux visites, quetes en cours "
-        "ou terminees, evenements marquants. Style neutre et factuel, pas "
-        "de tournures narratives ni de fioritures. 150 mots maximum."
-    )
-    user_prompt = (
-        (f"Resume existant :\n{existing}\n\n" if existing else "")
-        + f"Nouveaux evenements a integrer :\n{block}\n\n"
-        + "Donne le resume complet mis a jour (fusion de l'ancien resume et "
-          "des nouveaux evenements), 150 mots maximum."
-    )
-    import mistral_client
-    def get_mistral_key():
-        APP_CONFIG_FILE = "app_config.json"
-        if os.path.exists(APP_CONFIG_FILE):
-            try:
-                with open(APP_CONFIG_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    return str(data.get("mistral_api_key") or "")
-            except (OSError, ValueError):
-                pass
-        return ""
+    # Boucle (plutot qu'un seul passage) : rattrape le cas ou plusieurs
+    # tranches de 6 se seraient accumulees d'un coup (ex. reprise d'une
+    # sauvegarde ancienne).
+    while True:
+        pending = session.pending_digest_messages()
+        if len(pending) < DIGEST_TRIGGER:
+            return
+        chunk = pending[:DIGEST_TRIGGER]
+        block = _format_messages_for_summary(chunk)
+        existing_summary = session.story_summary
 
-    def has_mistral_key():
-        return bool(get_mistral_key())
+        digest_system = (
+            "Tu recois un extrait recent d'une histoire de jeu de role "
+            "pour enfant (en francais) et dois produire DEUX textes bien "
+            "distincts, chacun introduit par sa balise exacte sur sa "
+            "propre ligne, rien d'autre avant/apres/entre :\n"
+            f"{CHAPTER_TAG}\n"
+            "Un chapitre de journal racontant cet extrait : a la "
+            "troisieme personne, fluide et narratif (pas une liste de "
+            "faits, pas de dialogue au style direct), 80 a 120 mots.\n"
+            f"{SUMMARY_TAG}\n"
+            "Le resume long terme mis a jour : fusion du resume "
+            "existant (s'il y en a un) et des nouveaux faits marquants "
+            "de cet extrait -- personnages, objets/totems, lieux, "
+            "quetes, evenements a retenir. Style neutre et factuel, pas "
+            "de tournures narratives. 150 mots maximum."
+        )
+        user_prompt = (
+            (f"Resume existant :\n{existing_summary}\n\n" if existing_summary else "")
+            + f"Extrait de l'histoire (echanges joueur/narrateur) :\n{block}\n\n"
+            + f"Reponds avec les deux textes demandes, balises {CHAPTER_TAG} "
+              f"et {SUMMARY_TAG} incluses."
+        )
+        import mistral_client
+        text, error = mistral_client.chat(
+            get_mistral_key(),
+            [
+                {"role": "system", "content": digest_system},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=get_mistral_model(),
+            max_tokens=DIGEST_MAX_TOKENS,
+            prompt_cache_key=(f"{CURRENT_STORY}-digest" if CURRENT_STORY else None),
+        )
+        if error or not text:
+            # On reessaiera au prochain appel (ex. prochaine reponse de
+            # l'IA narratrice) -- le curseur n'avance pas, rien n'est perdu.
+            return
 
-    text, error = mistral_client.chat(
-        get_mistral_key(),
-        [
-            {"role": "system", "content": summarizer_system},
-            {"role": "user", "content": user_prompt},
-        ],
-        model=STORY_SUMMARY_MODEL,
-        max_tokens=STORY_SUMMARY_MAX_TOKENS,
-        prompt_cache_key=(f"{CURRENT_STORY}-summary" if CURRENT_STORY else None),
-    )
-    if error or not text:
-        return
-    session.apply_story_summary(text)
+        chapter, updated_summary = _parse_digest_response(text, existing_summary)
+        if not chapter:
+            # Reponse mal formee (balises absentes/dans le desordre) :
+            # on ne devine pas, on reessaiera au prochain appel plutot
+            # que de risquer d'ecrire n'importe quoi dans le journal.
+            return
+        session.apply_story_digest(chapter, updated_summary, len(chunk))
+
+def _parse_digest_response(text, fallback_summary):
+    """Coupe la reponse de l'IA en (chapitre, resume) selon les balises
+    ###CHAPITRE### / ###RESUME###. Si les balises sont absentes ou dans
+    le desordre, on renvoie ("", fallback_summary) pour signaler a
+    l'appelant de ne rien appliquer plutot que de mal decouper le texte."""
+    CHAPTER_TAG = "###CHAPITRE###"
+    SUMMARY_TAG = "###RESUME###"
+    chapter_pos = text.find(CHAPTER_TAG)
+    summary_pos = text.find(SUMMARY_TAG)
+    if chapter_pos == -1 or summary_pos == -1 or summary_pos <= chapter_pos:
+        return "", fallback_summary
+    chapter = text[chapter_pos + len(CHAPTER_TAG):summary_pos].strip()
+    updated_summary = text[summary_pos + len(SUMMARY_TAG):].strip()
+    return chapter, (updated_summary or fallback_summary)
 
 def _format_messages_for_summary(messages):
     lines = []
@@ -783,7 +829,7 @@ def run_ai_narrator(event_text):
     if error:
         return None, error
     session.add_ai_message("assistant", text)
-    maybe_update_story_summary()
+    maybe_update_story_digest()
     return text, None
 
 def reset_story_to_origin():
