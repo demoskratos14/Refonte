@@ -49,7 +49,7 @@ ANIMORPH_PIP_SYMBOLS = {
     "jaguar":      {"emoji": "\U0001f406", "label": "Jaguar"},
     "bond":        {"emoji": "\U0001f998", "label": "Grand Bond"},
     "profondeurs": {"emoji": "\U0001f42c", "label": "Profondeurs"},
-    "patte":       {"emoji": "\U0001f43e", "label": "Emblazon d'Animorph"},
+    "patte":       {"emoji": "\U0001f43e", "label": "Blason d'Animorph"},
     "bouclier":    {"emoji": "\U0001f6e1\ufe0f", "label": "Bouclier (Captain America)"},
     "etoile":      {"emoji": "\U0001f31f", "label": "Etoile (Shuri / Wakanda)"},
 }
@@ -103,7 +103,7 @@ ANIMORPH_TOTEMS = [
 ANIMORPH_FIXED_ALLIES_LINE = (
     "\U0001f577\ufe0fAraignee=allie Spider-Man | \U0001f6e1\ufe0fBouclier=allie "
     "Captain America | \U0001f31fEtoile=allie Shuri (Wakanda) | "
-    "\U0001f43ePatte (Emblazon d'Animorph)=pas d'allie exterieur, declenche "
+    "\U0001f43ePatte (Blason d'Animorph)=pas d'allie exterieur, declenche "
     "'Second Souffle' (relance immediatement le dernier lancer de reussite)."
 )
 

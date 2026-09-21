@@ -45,6 +45,26 @@ def _totem_info(sess: DiceSession) -> Dict[str, Any]:
             "powers": list(t.get("powers") or []),
             "special": t.get("special") or "",
         }
+    # Symboles SANS fiche de totem : allies fixes lies a une face du de (Araignee,
+    # Bouclier, Etoile sur Animorph) et symbole "relance" (Blason d'Animorph). On
+    # leur associe l'effet qu'ils declenchent (voir do_use_totem_energy), pour que
+    # leur icone ouvre aussi une fiche. "badge": False -> pas de badge sous le titre.
+    for key, sym in sess.all_symbols().items():
+        if key in info:
+            continue
+        if key in ALLY_HELP_TEXT:
+            special = ALLY_HELP_TEXT[key]
+        elif key in ("patte", "baguette"):
+            special = "\U0001f504 Second Souffle : relance immediatement le dernier lancer de reussite."
+        else:
+            continue
+        info[key] = {
+            "icon": sym.get("emoji") or "",
+            "label": sym.get("label") or key,
+            "powers": [],
+            "special": special,
+            "badge": False,
+        }
     return info
 
 def session_to_dict(sess: DiceSession) -> Dict[str, Any]:
