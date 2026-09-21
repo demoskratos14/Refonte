@@ -125,9 +125,11 @@ private val ScrimBottom = Color(0x8C000000)
 internal val DividerColor = Color(0x4DFFFFFF)
 // Ombre portee des textes poses directement sur l'image.
 internal val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
-// Fond des boutons "secondaires" : transparent (comme l'ecran Nouvelle histoire).
-// Mettre Color.White pour retrouver des boutons blancs.
-private val SecondaryButtonFill = Color.Transparent
+// Fond des boutons "secondaires" : voile sombre a 25 % (0x40 = 25 % d'opacite) pour qu'ils
+// restent visibles tout en laissant voir l'image. Augmenter 0x40 (ex. 0x66 = 40 %) pour un
+// fond plus marque, Color.Transparent pour des boutons entierement transparents, ou
+// Color.White pour des boutons blancs.
+private val SecondaryButtonFill = Color(0x4014161A)
 
 private const val TOTEM_THRESHOLD = 15
 private const val THREAT_THRESHOLD = 10
@@ -1806,9 +1808,9 @@ internal fun ComicButton(
         ButtonKind.Secondary -> SecondaryButtonFill
         ButtonKind.Paper -> Color.White
     }
-    // "Ombre" decalee facon BD : uniquement si le bouton a un fond. Sur un bouton
-    // transparent elle serait visible A TRAVERS le bouton.
-    val hasFill = fill.alpha > 0f
+    // "Ombre" decalee facon BD : uniquement si le fond est OPAQUE. Sur un bouton
+    // transparent ou translucide elle serait visible A TRAVERS le bouton.
+    val hasFill = fill.alpha >= 0.99f
     val contentColor = textColor ?: if (kind == ButtonKind.Paper) Ink else Color.White
     val shape = RoundedCornerShape(10.dp)
 
