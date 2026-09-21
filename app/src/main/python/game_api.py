@@ -54,6 +54,7 @@ def session_to_dict(sess: DiceSession) -> Dict[str, Any]:
         # directs de DiceSession, on les reconstruit ici a chaque appel).
         "all_symbols": [dict(v, key=k) for k, v in sess.all_symbols().items()],
         "story_title": CURRENT_STORY_CONFIG.get("title", ""),
+        "header_title": CURRENT_STORY_CONFIG.get("header_title", "Les Dés de l'Aventure"),
         "last_result": last_result,
     }
 
