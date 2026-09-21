@@ -52,6 +52,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -69,6 +70,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aventure.desdice.R
@@ -84,6 +87,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -126,6 +130,23 @@ private data class ClassicRoll(
 )
 
 internal data class FateFace(val emoji: String, val label: String)
+
+/**
+ * Symbole (image, ou emoji deja mesure) dessine a la place d'un point noir sur les
+ * faces du de de reussite qui roule -- utilise par l'ecran de jeu, ou chaque pip est
+ * le symbole d'un totem. Sans glyphes, le de garde ses points noirs.
+ */
+internal class PipGlyph(val image: ImageBitmap?, val emoji: TextLayoutResult?)
+
+/** Taille (dp) d'un symbole sur une face portant `count` points (comme l'ancienne page de jeu). */
+internal fun pipGlyphSizeDp(count: Int): Int = when (count) {
+    1 -> 96
+    2 -> 38
+    3 -> 32
+    4 -> 29
+    5 -> 26
+    else -> 22
+}
 
 private fun parseHistory(result: String): List<ClassicRoll> {
     val parsed = JSONObject(result)
@@ -833,7 +854,10 @@ internal fun TumblingDie(
     progress: Animatable<Float, AnimationVector1D>,
     cubeFateFaces: List<FateFace>?,
     fonts: AppFonts,
-    faceColor: Color
+    faceColor: Color,
+    // De de reussite seulement : symboles a dessiner sur chaque face, par face (index 0..5)
+    // puis par point. null = points noirs (page "Des classiques").
+    pipGlyphs: List<List<PipGlyph>>? = null
 ) {
     val textMeasurer = rememberTextMeasurer()
     val emojiLayouts = remember(cubeFateFaces) {
@@ -851,7 +875,7 @@ internal fun TumblingDie(
 
     Canvas(Modifier.fillMaxSize()) {
         val p = (progress.value / spec.timeScale).coerceIn(0f, 1f)
-        drawTumblingCube(spec, finalR, p, faceColor, emojiLayouts, labelLayouts)
+        drawTumblingCube(spec, finalR, p, faceColor, emojiLayouts, labelLayouts, pipGlyphs)
     }
 }
 
@@ -862,7 +886,8 @@ private fun DrawScope.drawTumblingCube(
     p: Float,
     faceColor: Color,
     emojiLayouts: List<TextLayoutResult>?,
-    labelLayouts: List<TextLayoutResult>?
+    labelLayouts: List<TextLayoutResult>?,
+    pipGlyphs: List<List<PipGlyph>>? = null
 ) {
     val base = size.width // arete du de au repos = 150 dp
     val q = 1f - p
@@ -958,12 +983,26 @@ private fun DrawScope.drawTumblingCube(
             val pad = border + 10.dp.toPx()
             val cell = (base - 2 * pad) / 3f
             val radius = 11.dp.toPx()
-            PIP_POSITIONS[i + 1]?.forEach { (row, col) ->
-                drawCircle(
-                    color = Ink,
-                    radius = radius,
-                    center = Offset(pad + (col - 0.5f) * cell, pad + (row - 0.5f) * cell)
-                )
+            val glyphs = pipGlyphs?.getOrNull(i)
+            if (glyphs != null && glyphs.isNotEmpty()) {
+                // Symboles des totems a la place des points noirs.
+                val box = pipGlyphSizeDp(i + 1).dp.toPx()
+                PIP_POSITIONS[i + 1]?.forEachIndexed { index, (row, col) ->
+                    val glyph = glyphs.getOrNull(index) ?: glyphs.first()
+                    drawPipGlyph(
+                        glyph,
+                        Offset(pad + (col - 0.5f) * cell, pad + (row - 0.5f) * cell),
+                        box
+                    )
+                }
+            } else {
+                PIP_POSITIONS[i + 1]?.forEach { (row, col) ->
+                    drawCircle(
+                        color = Ink,
+                        radius = radius,
+                        center = Offset(pad + (col - 0.5f) * cell, pad + (row - 0.5f) * cell)
+                    )
+                }
             }
         } else if (i < emojiLayouts.size) {
             // De du destin : emoji + libelle centres sur la face.
@@ -987,5 +1026,27 @@ private fun DrawScope.drawTumblingCube(
         }
 
         nc.restore()
+    }
+}
+
+/** Dessine un symbole (image ajustee dans un carre `box`, ou emoji) centre en `center`. */
+@OptIn(ExperimentalTextApi::class)
+private fun DrawScope.drawPipGlyph(glyph: PipGlyph, center: Offset, box: Float) {
+    val image = glyph.image
+    val emoji = glyph.emoji
+    if (image != null) {
+        val k = minOf(box / image.width, box / image.height)
+        val w = image.width * k
+        val h = image.height * k
+        drawImage(
+            image = image,
+            dstOffset = IntOffset((center.x - w / 2f).roundToInt(), (center.y - h / 2f).roundToInt()),
+            dstSize = IntSize(w.roundToInt(), h.roundToInt())
+        )
+    } else if (emoji != null) {
+        drawText(
+            emoji,
+            topLeft = Offset(center.x - emoji.size.width / 2f, center.y - emoji.size.height / 2f)
+        )
     }
 }
