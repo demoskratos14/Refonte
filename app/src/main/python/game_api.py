@@ -89,7 +89,7 @@ def session_to_dict(sess: DiceSession) -> Dict[str, Any]:
         "story_log": sess.story_log,
         "ai_conversation": sess.ai_conversation,
         "story_summary": sess.story_summary,
-        "last_summarized_index": sess.last_summarized_index,
+        "last_journal_index": sess.last_journal_index,
         "last_ai_sent_id": sess.last_ai_sent_id,
         # Champs derives, ajoutes pour correspondre a ce que lit MainGameScreen.kt
         # (all_symbols/story_title/last_result n'existent pas comme attributs
