@@ -25,6 +25,28 @@ def _rebuild_totem_derived_globals():
     TOTEMS_BY_KEY = {t["key"]: t for t in TOTEMS}
     ALLY_HELP_TEXT = dict(CURRENT_STORY_CONFIG.get("ally_help_text") or {})
 
+def _totem_info(sess: DiceSession) -> Dict[str, Any]:
+    """Fiche (icone, nom, pouvoirs, capacite speciale) de chaque totem : totems de
+    base de l'histoire active + totems ajoutes par le joueur. Meme fusion que
+    _totem_modal_info() dans dice_web.py -- alimente la fenetre affichee au clic
+    sur un totem (badges sous le titre, jauges totemiques)."""
+    info: Dict[str, Any] = {}
+    for t in TOTEMS:
+        info[t["key"]] = {
+            "icon": t.get("icon") or "",
+            "label": t.get("label") or t["key"],
+            "powers": list(t.get("powers") or []),
+            "special": t.get("special") or "",
+        }
+    for t in sess.custom_totems:
+        info[t["key"]] = {
+            "icon": t.get("emoji") or "",
+            "label": t.get("label") or t["key"],
+            "powers": list(t.get("powers") or []),
+            "special": t.get("special") or "",
+        }
+    return info
+
 def session_to_dict(sess: DiceSession) -> Dict[str, Any]:
     last_record = sess.history[-1] if sess.history else None
     last_result = None
@@ -55,6 +77,7 @@ def session_to_dict(sess: DiceSession) -> Dict[str, Any]:
         "all_symbols": [dict(v, key=k) for k, v in sess.all_symbols().items()],
         "story_title": CURRENT_STORY_CONFIG.get("title", ""),
         "header_title": CURRENT_STORY_CONFIG.get("header_title", "Les Dés de l'Aventure"),
+        "totem_info": _totem_info(sess),
         "last_result": last_result,
     }
 
