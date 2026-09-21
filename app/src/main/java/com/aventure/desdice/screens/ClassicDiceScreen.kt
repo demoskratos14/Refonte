@@ -106,7 +106,7 @@ private val DividerColor = Color(0x4DFFFFFF)
 // Ombre portee des textes poses directement sur la photo.
 private val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
 // Duree du lancer (millisecondes).
-private const val SpinDurationMs = 1800
+internal const val SpinDurationMs = 1800
 
 // Meme table que PIP_POSITIONS (dice_web.py) : (ligne, colonne) dans une grille 3x3.
 private val PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
@@ -125,7 +125,7 @@ private data class ClassicRoll(
     val fateLabel: String?
 )
 
-private data class FateFace(val emoji: String, val label: String)
+internal data class FateFace(val emoji: String, val label: String)
 
 private fun parseHistory(result: String): List<ClassicRoll> {
     val parsed = JSONObject(result)
@@ -662,7 +662,7 @@ private fun DieWithCaption(caption: String, fonts: AppFonts, die: @Composable ()
 }
 
 @Composable
-private fun DieBox(rotation: Float, background: Color, content: @Composable BoxScope.() -> Unit) {
+internal fun DieBox(rotation: Float, background: Color, content: @Composable BoxScope.() -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = Modifier
@@ -703,7 +703,7 @@ private fun SuccessDieFace(value: Int?) {
 }
 
 @Composable
-private fun FateDieFace(fate: FateFace?, fonts: AppFonts) {
+internal fun FateDieFace(fate: FateFace?, fonts: AppFonts) {
     if (fate == null) {
         Text(text = "🔮", style = TextStyle(fontSize = 54.sp))
     } else {
@@ -724,14 +724,14 @@ private fun FateDieFace(fate: FateFace?, fonts: AppFonts) {
 // ----------------------------------------------------------------------
 
 /** Ce qui est en train de rouler (null = ce de-la reste a plat). */
-private class SpinState(val success: SpinSpec?, val fate: SpinSpec?)
+internal class SpinState(val success: SpinSpec?, val fate: SpinSpec?)
 
 /**
  * Parametres aleatoires d'un lancer : deux axes de rotation avec leur
  * nombre de tours (le de "culbute" au lieu de tourner autour d'un seul
  * axe), le nombre de rebonds, et la face sur laquelle il doit s'arreter.
  */
-private class SpinSpec(
+internal class SpinSpec(
     val faceIndex: Int,
     val axis1: FloatArray,
     val axis2: FloatArray,
@@ -749,7 +749,7 @@ private fun randomAxis(): FloatArray {
     return if (len < 0.25f) floatArrayOf(0f, 1f, 0f) else floatArrayOf(x / len, y / len, z / len)
 }
 
-private fun newSpinSpec(faceIndex: Int, bounces: Int, timeScale: Float): SpinSpec {
+internal fun newSpinSpec(faceIndex: Int, bounces: Int, timeScale: Float): SpinSpec {
     val sign1 = if (Random.nextBoolean()) 1f else -1f
     val sign2 = if (Random.nextBoolean()) 1f else -1f
     return SpinSpec(
@@ -828,7 +828,7 @@ private fun smoothStep(x: Float): Float {
  */
 @OptIn(ExperimentalTextApi::class)
 @Composable
-private fun TumblingDie(
+internal fun TumblingDie(
     spec: SpinSpec,
     progress: Animatable<Float, AnimationVector1D>,
     cubeFateFaces: List<FateFace>?,
