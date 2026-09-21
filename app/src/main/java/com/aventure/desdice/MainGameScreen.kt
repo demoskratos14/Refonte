@@ -2,6 +2,21 @@ package com.aventure.desdice
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import com.aventure.desdice.screens.DieBox
+import com.aventure.desdice.screens.FateDieFace
+import com.aventure.desdice.screens.FateFace
+import com.aventure.desdice.screens.SpinDurationMs
+import com.aventure.desdice.screens.SpinState
+import com.aventure.desdice.screens.TumblingDie
+import com.aventure.desdice.screens.newSpinSpec
+import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -147,6 +162,8 @@ fun MainGameScreen(
     val fonts = rememberAppFonts()
 
     var showAllowedValues by remember { mutableStateOf(false) }
+    // Totem dont la fiche (pouvoirs / capacite speciale) est affichee.
+    var infoTotemKey by remember { mutableStateOf<String?>(null) }
 
     // Cle Mistral enregistree ou non : determine si la narration automatique est
     // active (panneau de narration) et le libelle du bloc "Continuer l'aventure".
@@ -186,6 +203,7 @@ fun MainGameScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             GameHeader(headerTitle = headerTitle, fonts = fonts, onChangeStory = onChangeStory)
+            TotemBadgesRow(state = sessionState, onTotemClick = { infoTotemKey = it })
 
             DiceResultCard(viewModel = viewModel)
             ThreatGauge(viewModel = viewModel)
@@ -209,12 +227,20 @@ fun MainGameScreen(
                 onConfigureKey = onConfigureKey
             )
 
-            TotemGaugesRow(viewModel = viewModel)
+            TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
             SideQuestsList(viewModel = viewModel)
             ContinueSection(viewModel = viewModel, hasKey = hasKey)
             HistoryList(viewModel = viewModel)
             JournalSection(viewModel = viewModel, isCustomStory = isCustomStory)
         }
+    }
+
+    infoTotemKey?.let { key ->
+        TotemInfoDialog(
+            totemKey = key,
+            state = sessionState,
+            onDismiss = { infoTotemKey = null }
+        )
     }
 
     if (showAllowedValues) {
@@ -311,167 +337,240 @@ fun DiceResultCard(
     val sessionState by viewModel.sessionState.collectAsState()
     val fateFaces by viewModel.fateFaces.collectAsState()
     val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
     val fonts = rememberAppFonts()
+    val scope = rememberCoroutineScope()
 
-    var lastResult by remember { mutableStateOf<JSONObject?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var rolling by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(sessionState) {
-        lastResult = sessionState?.optJSONObject("last_result")
-    }
+    // Animation de lancer : memes des 3D que la page "Des classiques". Le resultat
+    // est deja tire ; l'etat de session n'est publie qu'a la fin de l'animation
+    // pour ne pas gacher le suspense.
+    var spin by remember { mutableStateOf<SpinState?>(null) }
+    val progress = remember { Animatable(0f) }
 
     fun roll(kind: String) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-            }
+        if (rolling) return
+        scope.launch {
+            rolling = true
+            error = null
             try {
-                val result = python.getModule("game_api")
-                    .callAttr("call_json", "do_roll", kind)
-                    .toString()
+                val result = withContext(Dispatchers.IO) {
+                    python.getModule("game_api")
+                        .callAttr("call_json", "do_roll", kind)
+                        .toString()
+                }
+                val last = JSONObject(result).optJSONObject("last_result")
+                val successValue =
+                    if (last != null && !last.isNull("success")) last.optInt("success") else null
+                val fateKey = last?.str("fate").orEmpty()
+
+                val cubeFaces = fateFaces.take(6)
+                val successSpec =
+                    if (kind != "fate" && successValue != null && successValue in 1..6) {
+                        newSpinSpec(faceIndex = successValue - 1, bounces = 3, timeScale = 1f)
+                    } else null
+                val fateIndex =
+                    if (kind != "success" && fateKey.isNotEmpty() && cubeFaces.size == 6) {
+                        cubeFaces.indexOfFirst { it.optString("key") == fateKey }
+                    } else -1
+                val fateSpec =
+                    if (fateIndex >= 0) {
+                        newSpinSpec(faceIndex = fateIndex, bounces = 2, timeScale = 0.88f)
+                    } else null
+
+                if (successSpec != null || fateSpec != null) {
+                    spin = SpinState(successSpec, fateSpec)
+                    progress.snapTo(0f)
+                    progress.animateTo(
+                        1f,
+                        tween(durationMillis = SpinDurationMs, easing = LinearEasing)
+                    )
+                }
+                spin = null
                 viewModel.loadSessionState(result)
-                lastResult = JSONObject(result).optJSONObject("last_result")
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
-                mutex.withLock { isLoading = false }
+                spin = null
+                rolling = false
             }
         }
     }
 
+    // Derniere valeur montree sur chaque de (comme last_of("success") / last_of("fate")).
+    val history = sessionState?.optJSONArray("history")
+    val lastSuccessRec = lastRecordWith(history, "success")
+    val lastFateRec = lastRecordWith(history, "fate")
+    val lastRec = history?.let { if (it.length() > 0) it.getJSONObject(it.length() - 1) else null }
+    val successValue = lastSuccessRec?.optInt("success")
+    val pipKeys: List<String> = lastSuccessRec?.optJSONArray("pip_choice")
+        ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
+        ?.takeIf { it.isNotEmpty() }
+        ?: List(successValue ?: 1) { sessionState?.optString("pip_symbol").orEmpty() }
+    val fateFace: FateFace? = lastFateRec?.str("fate")?.let { key ->
+        fateFaces.firstOrNull { it.optString("key") == key }
+            ?.let { FateFace(it.optString("emoji"), it.optString("label")) }
+    }
+    // Comme l'ancienne page : le de qui n'a pas servi au dernier lancer est estompe.
+    val successUsed = lastRec == null || !lastRec.isNull("success")
+    val fateUsed = lastRec == null || lastRec.str("fate").isNotEmpty()
+    val cubeFateFaces = fateFaces.take(6).map { FateFace(it.optString("emoji"), it.optString("label")) }
+    val description = sessionState?.optJSONObject("last_result")?.str("description").orEmpty()
+
     Section(modifier) {
-        val result = lastResult
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
-            }
-        } else if (result != null) {
-            val success = result.optInt("success", -1)
-            val fate = result.str("fate")
-            val description = result.str("description")
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (success != -1) {
-                    val pipKey = result.optJSONArray("pip_choice")
-                        ?.let { if (it.length() > 0) it.optString(0) else null }
-                        ?: sessionState?.optString("pip_symbol").orEmpty()
-                    val symbol = findSymbol(sessionState, pipKey)
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Résultat : $success",
-                            style = TextStyle(
-                                fontFamily = fonts.display,
-                                fontSize = 34.sp,
-                                letterSpacing = 1.sp,
-                                color = Color.White,
-                                shadow = TextShadow
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val successDie: @Composable () -> Unit = {
+                DieColumn(
+                    caption = "Dé de réussite",
+                    buttonText = "🎲 Lancer",
+                    primary = true,
+                    enabled = !rolling,
+                    dimmed = !successUsed,
+                    onRoll = { roll("success") },
+                    fonts = fonts
+                ) {
+                    val spec = spin?.success
+                    if (spec != null) {
+                        Box(Modifier.size(150.dp).graphicsLayer { rotationZ = -1f }) {
+                            TumblingDie(spec, progress, null, fonts, Color.White)
+                        }
+                    } else {
+                        DieBox(rotation = -1f, background = Color.White) {
+                            SymbolSuccessDieFace(
+                                value = successValue,
+                                pipKeys = pipKeys,
+                                state = sessionState,
+                                placeholderKey = sessionState?.optString("pip_symbol").orEmpty()
                             )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.18f))
-                                .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            SymbolIcon(symbol, 32.dp, 24.sp, fallback = pipKey)
                         }
                     }
                 }
-
-                if (fate.isNotEmpty()) {
-                    val face = fateFaces.firstOrNull { it.optString("key") == fate }
-                    if (face != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = face.optString("emoji"),
-                                style = TextStyle(fontSize = 30.sp, shadow = TextShadow)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = face.optString("label"),
-                                style = boldStyle(fonts, 20.sp)
-                            )
+            }
+            val fateDie: @Composable () -> Unit = {
+                DieColumn(
+                    caption = "Dé du destin",
+                    buttonText = "🔮 Lancer",
+                    primary = false,
+                    enabled = !rolling,
+                    dimmed = !fateUsed,
+                    onRoll = { roll("fate") },
+                    fonts = fonts
+                ) {
+                    val spec = spin?.fate
+                    if (spec != null) {
+                        Box(Modifier.size(150.dp).graphicsLayer { rotationZ = 1f }) {
+                            TumblingDie(spec, progress, cubeFateFaces, fonts, FateDieBg)
                         }
-                        Text(
-                            text = face.optString("desc"),
-                            textAlign = TextAlign.Center,
-                            style = bodyStyle(fonts, 14.sp)
-                        )
+                    } else {
+                        DieBox(rotation = 1f, background = FateDieBg) {
+                            FateDieFace(fateFace, fonts)
+                        }
                     }
                 }
+            }
 
-                if (description.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = description,
-                        textAlign = TextAlign.Center,
-                        style = bodyStyle(fonts, 14.sp)
-                    )
+            if (maxWidth >= 316.dp) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                ) {
+                    successDie()
+                    fateDie()
                 }
-
-                // Evenements "?" / "!" : texte a signaler a l'IA narratrice (copiable).
-                val narratorNote = narratorNoteFor(result, fateFaces)
-                if (narratorNote.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    NarratorNoteBox(text = narratorNote, fonts = fonts)
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    successDie()
+                    fateDie()
                 }
             }
-        } else {
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        ComicButton(
+            text = "⚡ Lancer les deux dés ensemble",
+            onClick = { roll("both") },
+            fonts = fonts,
+            enabled = !rolling,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (description.isNotEmpty() && !rolling) {
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Aucun lancer effectué",
+                text = description,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                style = bodyStyle(fonts, 15.sp)
+                modifier = Modifier.fillMaxWidth(),
+                style = bodyStyle(fonts, 14.sp)
             )
+        }
+
+        // Evenements "?" / "!" : texte a signaler a l'IA narratrice (copiable).
+        val narratorNote = if (rolling) "" else narratorNoteFor(
+            sessionState?.optJSONObject("last_result"), fateFaces
+        )
+        if (narratorNote.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            NarratorNoteBox(text = narratorNote, fonts = fonts)
         }
 
         error?.let {
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = it, style = bodyStyle(fonts, 14.sp, ErrorOnPhoto))
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(14.dp))
+/** Fond creme du de du destin (comme la page "Des classiques"). */
+private val FateDieBg = Color(0xFFFFF7E0)
 
-        ComicButton(
-            text = "⚡ Lancer les deux",
-            onClick = { roll("both") },
-            fonts = fonts,
-            enabled = !isLoading,
-            modifier = Modifier.fillMaxWidth()
+/** Dernier enregistrement de l'historique dont le champ `field` est renseigne (ni absent, ni null, ni vide). */
+private fun lastRecordWith(history: org.json.JSONArray?, field: String): JSONObject? {
+    if (history == null) return null
+    for (i in history.length() - 1 downTo 0) {
+        val record = history.getJSONObject(i)
+        if (!record.isNull(field) && record.optString(field, "").isNotEmpty()) return record
+    }
+    return null
+}
+
+@Composable
+private fun DieColumn(
+    caption: String,
+    buttonText: String,
+    primary: Boolean,
+    enabled: Boolean,
+    dimmed: Boolean,
+    onRoll: () -> Unit,
+    fonts: AppFonts,
+    die: @Composable () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(modifier = Modifier.alpha(if (dimmed) 0.45f else 1f)) { die() }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = caption,
+            style = TextStyle(
+                fontFamily = fonts.display,
+                fontSize = 13.6.sp,
+                color = Color.White,
+                shadow = TextShadow
+            )
         )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ComicButton(
-                text = "Lancer réussite",
-                onClick = { roll("success") },
-                fonts = fonts,
-                kind = ButtonKind.Secondary,
-                enabled = !isLoading,
-                modifier = Modifier.weight(1f)
-            )
-            ComicButton(
-                text = "Lancer destin",
-                onClick = { roll("fate") },
-                fonts = fonts,
-                kind = ButtonKind.Secondary,
-                enabled = !isLoading,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        Spacer(modifier = Modifier.height(6.dp))
+        ComicButton(
+            text = buttonText,
+            onClick = onRoll,
+            fonts = fonts,
+            kind = if (primary) ButtonKind.Primary else ButtonKind.Secondary,
+            enabled = enabled,
+            compact = true,
+            modifier = Modifier.width(150.dp)
+        )
     }
 }
 
@@ -703,7 +802,9 @@ private fun SymbolChip(
 @Composable
 fun TotemGaugesRow(
     viewModel: GameViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Clic sur l'icone d'un totem : ouvre sa fiche (pouvoirs / capacite speciale).
+    onTotemClick: ((String) -> Unit)? = null
 ) {
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
@@ -767,11 +868,14 @@ fun TotemGaugesRow(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 items(symbols.toList()) { (key, symbol) ->
+                    // Comme l'ancienne page : icone cliquable seulement si une fiche existe.
+                    val hasInfo = sessionState?.optJSONObject("totem_info")?.has(key) == true
                     TotemGaugeItem(
                         symbol = symbol,
                         energy = sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0,
                         fonts = fonts,
-                        onUse = { useTotem(key) }
+                        onUse = { useTotem(key) },
+                        onInfo = if (hasInfo) ({ onTotemClick?.invoke(key) }) else null
                     )
                 }
             }
@@ -818,7 +922,8 @@ private fun TotemGaugeItem(
     symbol: JSONObject,
     energy: Int,
     fonts: AppFonts,
-    onUse: () -> Unit
+    onUse: () -> Unit,
+    onInfo: (() -> Unit)? = null
 ) {
     val isReady = energy >= TOTEM_THRESHOLD
 
@@ -837,6 +942,7 @@ private fun TotemGaugeItem(
                     if (isReady) Gold else Color.White.copy(alpha = 0.5f),
                     CircleShape
                 )
+                .then(if (onInfo != null) Modifier.clickable(onClick = onInfo) else Modifier)
         ) {
             SymbolIcon(symbol, 46.dp, 30.sp)
         }
@@ -1526,7 +1632,7 @@ private fun GaugeBar(fraction: Float, color: Color, height: Dp, modifier: Modifi
 internal fun JSONObject.str(name: String): String =
     if (isNull(name)) "" else optString(name, "")
 
-private fun findSymbol(state: JSONObject?, key: String): JSONObject? {
+internal fun findSymbol(state: JSONObject?, key: String): JSONObject? {
     val arr = state?.optJSONArray("all_symbols") ?: return null
     for (i in 0 until arr.length()) {
         val obj = arr.getJSONObject(i)
@@ -1535,7 +1641,15 @@ private fun findSymbol(state: JSONObject?, key: String): JSONObject? {
     return null
 }
 
-/** Image du symbole si elle existe, sinon son emoji (sinon le texte de repli). */
+// Petit cache : les images de totem (400 px max) sont reaffichees a chaque recomposition.
+private val totemBitmapCache = HashMap<String, ImageBitmap>()
+
+/**
+ * Icone d'un symbole/totem. `image` (game_api.all_symbols) est un NOM DE FICHIER stocke
+ * dans <filesDir>/totem_images/ (le dossier de travail Python est filesDir) -- pas du
+ * base64. Priorite comme dans l'ancienne page (render_pip_symbol) : image > emoji >
+ * texte de repli.
+ */
 @Composable
 internal fun SymbolIcon(
     symbol: JSONObject?,
@@ -1543,16 +1657,40 @@ internal fun SymbolIcon(
     fontSize: TextUnit,
     fallback: String = ""
 ) {
-    val image = symbol?.optString("image").orEmpty()
-    if (image.isNotEmpty()) {
-        val bytes = remember(image) { Base64.decode(image, Base64.DEFAULT) }
-        AsyncImage(
-            model = bytes,
-            contentDescription = symbol?.optString("label"),
-            modifier = Modifier.size(size)
-        )
+    val context = LocalContext.current
+    val imageName = symbol?.str("image").orEmpty()
+    val emoji = symbol?.str("emoji").orEmpty().ifEmpty { fallback }
+
+    if (imageName.isNotEmpty()) {
+        val cached = synchronized(totemBitmapCache) { totemBitmapCache[imageName] }
+        val bitmap by produceState<ImageBitmap?>(cached, imageName) {
+            if (value == null) {
+                value = withContext(Dispatchers.IO) {
+                    try {
+                        val file = File(context.filesDir, "totem_images/$imageName")
+                        val decoded = BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                        if (decoded != null) {
+                            synchronized(totemBitmapCache) { totemBitmapCache[imageName] = decoded }
+                        }
+                        decoded
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+        }
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = symbol?.str("label"),
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(size)
+            )
+        } else {
+            Text(text = emoji, style = TextStyle(fontSize = fontSize))
+        }
     } else {
-        val emoji = symbol?.optString("emoji").orEmpty().ifEmpty { fallback }
         Text(text = emoji, style = TextStyle(fontSize = fontSize))
     }
 }
