@@ -1,46 +1,42 @@
 package com.aventure.desdice
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,113 +44,176 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
+import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-@Composable
-fun MainGameScreen(viewModel: GameViewModel, onChangeStory: () -> Unit = {}) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
+// ---------------------------------------------------------------------
+// Palette (celle de l'ancienne version web et des autres ecrans restyles)
+// ---------------------------------------------------------------------
+internal val Ink = Color(0xFF14161A)
+internal val Paper = Color(0xFFFBF3E1)
+internal val Red = Color(0xFFE0263C)
+internal val Gold = Color(0xFFFFCD3C)
+internal val DangerText = Color(0xFF8A1020)
+internal val ErrorOnPhoto = Color(0xFFFFC9C9)
+private val PageBg = Color(0xFF14161A)
 
-    var showOptions by remember { mutableStateOf(false) }
+// ---------------------------------------------------------------------
+// Reglages de lisibilite (a ajuster si besoin)
+// ---------------------------------------------------------------------
+// Voile sombre par-dessus l'image de l'histoire (haut -> 30 % -> bas). Plus
+// l'alpha (les 2 premiers chiffres apres 0x) est petit, plus l'image se voit.
+private val ScrimTop = Color(0x4D000000)
+private val ScrimMid = Color(0x59000000)
+private val ScrimBottom = Color(0x8C000000)
+internal val DividerColor = Color(0x4DFFFFFF)
+// Ombre portee des textes poses directement sur l'image.
+internal val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
+// Fond des boutons "secondaires" : transparent (comme l'ecran Nouvelle histoire).
+// Mettre Color.White pour retrouver des boutons blancs.
+private val SecondaryButtonFill = Color.Transparent
+
+private const val TOTEM_THRESHOLD = 15
+private const val THREAT_THRESHOLD = 10
+
+private val FATE_OPTIONS = listOf(
+    "coeur" to "❤️ Cœur",
+    "question" to "❓ Question",
+    "soleil" to "☀️ Soleil",
+    "etoile" to "⭐ Étoile",
+    "exclamation" to "❗ Exclamation",
+    "spirale" to "🌀 Spirale"
+)
+
+// =====================================================================
+// Ecran de jeu
+// =====================================================================
+
+/**
+ * Page de jeu, habillee comme les autres ecrans : l'image de l'histoire en
+ * fond plein ecran (la meme que dans le carrousel de choix), sections sans
+ * carte, titres Bangers, boutons "BD".
+ *
+ * Le titre d'en-tete vient de session_to_dict()["header_title"] (a ajouter
+ * dans game_api.py, voir la note qui accompagne ce fichier).
+ */
+@Composable
+fun MainGameScreen(
+    viewModel: GameViewModel,
+    onChangeStory: () -> Unit = {},
+    // Pour le bouton "Ecouter" du panneau de narration (absent : bouton masque).
+    speechManager: SpeechManager? = null,
+    // Ouvre l'ecran de configuration de la cle Mistral (absent : bouton masque).
+    onConfigureKey: (() -> Unit)? = null
+) {
+    val sessionState by viewModel.sessionState.collectAsState()
+    val stories by viewModel.stories.collectAsState()
+    val currentSlug by viewModel.currentStorySlug.collectAsState()
+    val fonts = rememberAppFonts()
+
     var showAllowedValues by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            Surface(
-                shadowElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                ) {
-                    Text(
-                        text = "Animorph - Aventure héroïque",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = sessionState?.optString("story_title") ?: "Aventure",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    Text(
-                        text = "Le jeu de rôle par dés",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    // Equivalent du lien "Changer d'histoire" de l'ancienne page de jeu
-                    // (layout() dans dice_web.py) : ouvre le carrousel de choix
-                    // sans rien modifier tant qu'un autre choix n'est pas fait.
-                    TextButton(onClick = onChangeStory) {
-                        Text(
-                            text = "🔁 Changer d'histoire",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
+    // Cle Mistral enregistree ou non : determine si la narration automatique est
+    // active (panneau de narration) et le libelle du bloc "Continuer l'aventure".
+    val python = remember { Python.getInstance() }
+    var hasKey by remember { mutableStateOf(false) }
+    fun refreshKeyState() {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val r = python.getModule("game_api")
+                    .callAttr("call_json", "get_config_screen_state")
+                    .toString()
+                hasKey = JSONObject(r).optBoolean("has_key", false)
+            } catch (e: Exception) {
+                // On garde l'etat precedent.
             }
         }
-    ) { paddingValues ->
+    }
+    LaunchedEffect(Unit) { refreshKeyState() }
+
+    val bgB64 = stories.firstOrNull { it.slug == currentSlug }?.bgImageB64.orEmpty()
+    val isCustomStory = stories.firstOrNull { it.slug == currentSlug }?.isCustom == true
+    val headerTitle = sessionState?.optString("header_title").orEmpty()
+        .ifEmpty { "Les Dés de l'Aventure" }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PageBg)
+    ) {
+        StoryBackdrop(bgB64)
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 8.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            GameHeader(headerTitle = headerTitle, fonts = fonts, onChangeStory = onChangeStory)
+
             DiceResultCard(viewModel = viewModel)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TotemGaugesRow(viewModel = viewModel)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
             ThreatGauge(viewModel = viewModel)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            SideQuestsList(viewModel = viewModel)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             SymbolPicker(viewModel = viewModel)
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Button(
-                onClick = { showAllowedValues = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Configurer les valeurs autorisées")
+            Section {
+                ComicButton(
+                    text = "Configurer les valeurs autorisées",
+                    onClick = { showAllowedValues = true },
+                    fonts = fonts,
+                    kind = ButtonKind.Secondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            NarrationSection(
+                viewModel = viewModel,
+                hasKey = hasKey,
+                onKeyChanged = { refreshKeyState() },
+                speechManager = speechManager,
+                onConfigureKey = onConfigureKey
+            )
 
+            TotemGaugesRow(viewModel = viewModel)
+            SideQuestsList(viewModel = viewModel)
+            ContinueSection(viewModel = viewModel, hasKey = hasKey)
             HistoryList(viewModel = viewModel)
+            JournalSection(viewModel = viewModel, isCustomStory = isCustomStory)
         }
     }
 
@@ -167,14 +226,93 @@ fun MainGameScreen(viewModel: GameViewModel, onChangeStory: () -> Unit = {}) {
 }
 
 @Composable
+private fun GameHeader(headerTitle: String, fonts: AppFonts, onChangeStory: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = headerTitle,
+            textAlign = TextAlign.Center,
+            style = TextStyle(
+                fontFamily = fonts.display,
+                fontSize = 26.sp,
+                letterSpacing = 1.sp,
+                color = Color.White,
+                shadow = Shadow(Color(0xB3000000), Offset(0f, 3f), 8f)
+            )
+        )
+        Text(
+            text = "Prêt pour l'aventure !",
+            style = bodyStyle(fonts, 15.sp, Color.White.copy(alpha = 0.92f)),
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        // Equivalent du lien "Changer d'histoire" de l'ancienne page de jeu.
+        Text(
+            text = "\uD83D\uDD01 Changer d'histoire",
+            style = bodyStyle(fonts, 14.sp).copy(textDecoration = TextDecoration.Underline),
+            modifier = Modifier
+                .clickable(onClick = onChangeStory)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        )
+    }
+}
+
+/** Image de l'histoire en fond plein ecran + voile sombre (le contenu defile par-dessus). */
+@Composable
+private fun StoryBackdrop(b64: String) {
+    val bitmap by produceState<ImageBitmap?>(null, b64) {
+        value = if (b64.isEmpty()) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                try {
+                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+    }
+    val bmp = bitmap
+    if (bmp != null) {
+        Image(
+            bitmap = bmp,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    0f to ScrimTop,
+                    0.3f to ScrimMid,
+                    1f to ScrimBottom
+                )
+            )
+    )
+}
+
+// =====================================================================
+// Dernier resultat + boutons de lancer
+// =====================================================================
+
+@Composable
 fun DiceResultCard(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
+    val fateFaces by viewModel.fateFaces.collectAsState()
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
+    val fonts = rememberAppFonts()
 
     var lastResult by remember { mutableStateOf<JSONObject?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -184,552 +322,162 @@ fun DiceResultCard(
         lastResult = sessionState?.optJSONObject("last_result")
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    fun roll(kind: String) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                isLoading = true
+                error = null
+            }
+            try {
+                val result = python.getModule("game_api")
+                    .callAttr("call_json", "do_roll", kind)
+                    .toString()
+                viewModel.loadSessionState(result)
+                lastResult = JSONObject(result).optJSONObject("last_result")
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                mutex.withLock { isLoading = false }
+            }
+        }
+    }
+
+    Section(modifier) {
+        val result = lastResult
         if (isLoading) {
-            CircularProgressIndicator()
-            error?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
             }
-        } else {
-            lastResult?.let { result ->
-                val success = result.optInt("success", -1)
-                val fate = result.optString("fate", "")
-                val description = result.optString("description", "")
+        } else if (result != null) {
+            val success = result.optInt("success", -1)
+            val fate = result.str("fate")
+            val description = result.str("description")
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (success != -1) {
-                        val pipSymbol = sessionState?.optString("pip_symbol") ?: ""
-                        val pipMode = sessionState?.optString("pip_mode") ?: "single"
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        ) {
-                            Text(
-                                text = "Résultat : $success",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = pipSymbol,
-                                    style = MaterialTheme.typography.headlineMedium
-                                )
-                            }
-                        }
-                    }
-
-                    if (fate.isNotEmpty()) {
-                        val fateFaces by viewModel.fateFaces.collectAsState()
-                        val fateFace = fateFaces.find { it.optString("key") == fate }
-
-                        fateFace?.let {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            ) {
-                                Text(
-                                    text = it.optString("emoji"),
-                                    style = MaterialTheme.typography.headlineMedium
-                                )
-                                Spacer(modifier = Modifier.size(8.dp))
-                                Text(
-                                    text = it.optString("label"),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Text(
-                                text = it.optString("desc"),
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-
-                    if (description.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } ?: run {
-                Text(
-                    text = "Aucun lancer effectué",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Button(
-                onClick = {
-                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                        mutex.withLock {
-                            isLoading = true
-                            error = null
-                        }
-                        try {
-                            val result = python.getModule("game_api")
-                                .callAttr("call_json", "do_roll", "success")
-                                .toString()
-                            viewModel.loadSessionState(result)
-                            lastResult = JSONObject(result).optJSONObject("last_result")
-                        } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
-                        } finally {
-                            mutex.withLock { isLoading = false }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Lancer réussite")
-            }
-
-            Button(
-                onClick = {
-                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                        mutex.withLock {
-                            isLoading = true
-                            error = null
-                        }
-                        try {
-                            val result = python.getModule("game_api")
-                                .callAttr("call_json", "do_roll", "fate")
-                                .toString()
-                            viewModel.loadSessionState(result)
-                            lastResult = JSONObject(result).optJSONObject("last_result")
-                        } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
-                        } finally {
-                            mutex.withLock { isLoading = false }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Lancer destin")
-            }
-
-            Button(
-                onClick = {
-                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                        mutex.withLock {
-                            isLoading = true
-                            error = null
-                        }
-                        try {
-                            val result = python.getModule("game_api")
-                                .callAttr("call_json", "do_roll", "both")
-                                .toString()
-                            viewModel.loadSessionState(result)
-                            lastResult = JSONObject(result).optJSONObject("last_result")
-                        } catch (e: Exception) {
-                            error = "Erreur : ${e.message}"
-                        } finally {
-                            mutex.withLock { isLoading = false }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Lancer les deux")
-            }
-        }
-    }
-}
-
-@Composable
-fun HistoryList(
-    viewModel: GameViewModel,
-    modifier: Modifier = Modifier
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
-
-    val historyState = sessionState?.optJSONArray("history")
-    val listState = rememberLazyListState()
-
-    Column(modifier = modifier) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f)
-        ) {
-            historyState?.let { history ->
-                items((0 until history.length()).map { history.getJSONObject(it) }.reversed()) { record ->
-                    HistoryItem(
-                        record = record,
-                        viewModel = viewModel,
-                        python = python,
-                        mutex = mutex
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Button(
-                onClick = {
-                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                        mutex.withLock {
-                            mutex.withLock {
-                                try {
-                                    val result = python.getModule("game_api")
-                                        .callAttr("call_json", "do_undo")
-                                        .toString()
-                                    viewModel.loadSessionState(result)
-                                } catch (e: Exception) {
-                                    // Gérer l'erreur si nécessaire
-                                }
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Undo, contentDescription = "Annuler")
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("Annuler")
-            }
-
-            Button(
-                onClick = {
-                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                        mutex.withLock {
-                            try {
-                                val result = python.getModule("game_api")
-                                    .callAttr("call_json", "do_clear")
-                                    .toString()
-                                viewModel.loadSessionState(result)
-                            } catch (e: Exception) {
-                                // Gérer l'erreur si nécessaire
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Clear, contentDescription = "Réinitialiser")
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("Réinitialiser")
-            }
-        }
-    }
-}
-
-@Composable
-fun HistoryItem(
-    record: JSONObject,
-    viewModel: GameViewModel,
-    python: Python,
-    mutex: Mutex
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
-    val success = record.optInt("success", -1)
-    val fate = record.optString("fate", "")
-    val note = record.optString("note", "")
-    val pipChoice = record.optJSONArray("pip_choice")
-    val threatTriggered = record.optBoolean("threat_triggered")
-    val sideQuest = record.optJSONObject("side_quest")
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            if (success != -1) {
-                val pipSymbol = if (pipChoice != null && pipChoice.length() > 0) {
-                    pipChoice.getString(0)
-                } else {
-                    sessionState?.optString("pip_symbol") ?: ""
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "#${record.optInt("id")}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    if (note.isNotEmpty()) {
-                        Text(
-                            text = "[$note]",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.size(4.dp))
-                    }
-                    Text(
-                        text = "Réussite=$success",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = pipSymbol,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            } else if (fate.isNotEmpty()) {
-                val fateFaces by viewModel.fateFaces.collectAsState()
-                val fateFace = fateFaces.find { it.optString("key") == fate }
-
-                fateFace?.let {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "#${record.optInt("id")}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        if (note.isNotEmpty()) {
-                            Text(
-                                text = "[$note]",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.size(4.dp))
-                        }
-                        Text(
-                            text = "Destin=${it.optString("emoji")} ${it.optString("label")}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun TotemGaugesRow(
-    viewModel: GameViewModel,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
-    val sessionState by viewModel.sessionState.collectAsState()
-
-    var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // Texte narratif renvoyé par do_use_totem_energy quand un pouvoir se
-    // manifeste (ex. "Le pouvoir du totem Aigle se manifeste : vol...") --
-    // distinct de "error", qui reste réservé aux vraies erreurs techniques.
-    var effectMessage by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(sessionState) {
-        val session = sessionState
-        symbols = buildMap {
-            session?.optJSONArray("all_symbols")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    put(obj.optString("key"), obj)
-                }
-            }
-        }
-    }
-
-    Column(modifier = modifier) {
-        Text(
-            text = "Jauges totémiques",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-        } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(symbols.toList()) { (key, symbol) ->
-                    TotemGaugeItem(
-                        key = key,
-                        symbol = symbol,
-                        viewModel = viewModel,
-                        python = python,
-                        mutex = mutex,
-                        onLoadingChange = { isLoading = it },
-                        onError = { error = it },
-                        onEffect = { effectMessage = it }
+                if (success != -1) {
+                    val pipKey = result.optJSONArray("pip_choice")
+                        ?.let { if (it.length() > 0) it.optString(0) else null }
+                        ?: sessionState?.optString("pip_symbol").orEmpty()
+                    val symbol = findSymbol(sessionState, pipKey)
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Résultat : $success",
+                            style = TextStyle(
+                                fontFamily = fonts.display,
+                                fontSize = 34.sp,
+                                letterSpacing = 1.sp,
+                                color = Color.White,
+                                shadow = TextShadow
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.18f))
+                                .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SymbolIcon(symbol, 32.dp, 24.sp, fallback = pipKey)
+                        }
+                    }
+                }
+
+                if (fate.isNotEmpty()) {
+                    val face = fateFaces.firstOrNull { it.optString("key") == fate }
+                    if (face != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = face.optString("emoji"),
+                                style = TextStyle(fontSize = 30.sp, shadow = TextShadow)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = face.optString("label"),
+                                style = boldStyle(fonts, 20.sp)
+                            )
+                        }
+                        Text(
+                            text = face.optString("desc"),
+                            textAlign = TextAlign.Center,
+                            style = bodyStyle(fonts, 14.sp)
+                        )
+                    }
+                }
+
+                if (description.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = description,
+                        textAlign = TextAlign.Center,
+                        style = bodyStyle(fonts, 14.sp)
                     )
                 }
-            }
-        }
 
-        // Affichés en dehors du "if (isLoading)" : sinon le message posé juste
-        // avant la fin du chargement disparaissait aussitôt (on repasse dans
-        // la branche "else" qui ne les affichait pas).
-        error?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        effectMessage?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun TotemGaugeItem(
-    key: String,
-    symbol: JSONObject,
-    viewModel: GameViewModel,
-    python: Python,
-    mutex: Mutex,
-    onLoadingChange: (Boolean) -> Unit,
-    onError: (String) -> Unit,
-    onEffect: (String) -> Unit
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val energy = sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0
-    val threshold = 15
-    val isReady = energy >= threshold
-    val label = symbol.optString("label")
-    val emoji = symbol.optString("emoji")
-    val image = symbol.optString("image")
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(80.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-			.size(60.dp)
-                .clip(CircleShape)
-                .background(if (isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            if (image.isNotEmpty()) {
-                AsyncImage(
-                    model = android.util.Base64.decode(image, android.util.Base64.DEFAULT),
-                    contentDescription = label,
-                    modifier = Modifier.size(56.dp)
-                )
-            } else {
-                Text(
-                    text = emoji,
-                    style = MaterialTheme.typography.headlineMedium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "$energy/$threshold",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold
-        )
-
-        LinearProgressIndicator(
-            progress = { energy.toFloat() / threshold },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-        )
-
-        Button(
-            onClick = {
-                viewModel.viewModelScope.launch(Dispatchers.IO) {
-                    mutex.withLock {
-                        onLoadingChange(true)
-                        onError("")
-                    }
-                    try {
-                        val result = python.getModule("game_api")
-                            .callAttr("call_json", "do_use_totem_energy", key)
-                            .toString()
-                        val parsed = JSONObject(result)
-                        val effect = parsed.optString("effect", "")
-                        val aiError = parsed.optString("ai_error", "")
-                        if (effect.isNotEmpty()) onEffect(effect)
-                        if (aiError.isNotEmpty()) onError(aiError)
-                        viewModel.loadSessionState(result)
-                    } catch (e: Exception) {
-                        onError("Erreur : ${e.message}")
-                    } finally {
-                        mutex.withLock { onLoadingChange(false) }
-                    }
+                // Evenements "?" / "!" : texte a signaler a l'IA narratrice (copiable).
+                val narratorNote = narratorNoteFor(result, fateFaces)
+                if (narratorNote.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NarratorNoteBox(text = narratorNote, fonts = fonts)
                 }
-            },
-            enabled = isReady,
+            }
+        } else {
+            Text(
+                text = "Aucun lancer effectué",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                style = bodyStyle(fonts, 15.sp)
+            )
+        }
+
+        error?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = it, style = bodyStyle(fonts, 14.sp, ErrorOnPhoto))
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        ComicButton(
+            text = "⚡ Lancer les deux",
+            onClick = { roll("both") },
+            fonts = fonts,
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(Icons.Default.Check, contentDescription = "Utiliser")
-            Spacer(modifier = Modifier.size(4.dp))
-            Text("Utiliser")
+            ComicButton(
+                text = "Lancer réussite",
+                onClick = { roll("success") },
+                fonts = fonts,
+                kind = ButtonKind.Secondary,
+                enabled = !isLoading,
+                modifier = Modifier.weight(1f)
+            )
+            ComicButton(
+                text = "Lancer destin",
+                onClick = { roll("fate") },
+                fonts = fonts,
+                kind = ButtonKind.Secondary,
+                enabled = !isLoading,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
+
+// =====================================================================
+// Jauge de menace
+// =====================================================================
 
 @Composable
 fun ThreatGauge(
@@ -737,179 +485,36 @@ fun ThreatGauge(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
+    val fonts = rememberAppFonts()
     val threatLevel = sessionState?.optInt("threat_level", 0) ?: 0
-    val threshold = 10
+    val reached = threatLevel >= THREAT_THRESHOLD
 
-    Column(modifier = modifier) {
+    Section(modifier) {
+        SectionTitle("Jauge de menace", fonts)
         Text(
-            text = "Jauge de menace",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
+            text = "Niveau actuel : $threatLevel/$THREAT_THRESHOLD",
+            style = bodyStyle(fonts, 15.sp)
         )
-
-        Text(
-            text = "Niveau actuel : $threatLevel/$threshold",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(bottom = 4.dp)
+        Spacer(modifier = Modifier.height(6.dp))
+        GaugeBar(
+            fraction = threatLevel.toFloat() / THREAT_THRESHOLD,
+            color = if (reached) Red else Gold,
+            height = 12.dp
         )
-
-        LinearProgressIndicator(
-            progress = { threatLevel.toFloat() / threshold },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
-            color = if (threatLevel >= threshold) MaterialTheme.colorScheme.error
-                   else MaterialTheme.colorScheme.primary
-        )
-
-        if (threatLevel >= threshold) {
+        if (reached) {
             Text(
                 text = "⚠️ Seuil atteint : complication secondaire !",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp)
+                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
+                modifier = Modifier.padding(top = 6.dp)
             )
         }
     }
 }
 
-@Composable
-fun SideQuestsList(
-    viewModel: GameViewModel,
-    modifier: Modifier = Modifier
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
+// =====================================================================
+// Symbole actif (selection + mode de lancer)
+// =====================================================================
 
-    var sideQuests by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(sessionState) {
-        sideQuests = buildList {
-            sessionState?.optJSONArray("side_quests")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    add(arr.getJSONObject(i))
-                }
-            }
-        }
-    }
-
-    Column(modifier = modifier) {
-        Text(
-            text = "Quêtes secondaires",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-            error?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        } else if (sideQuests.isEmpty()) {
-            Text(
-                text = "Aucune quête secondaire en cours",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(16.dp)
-            )
-        } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(sideQuests) { quest ->
-                    SideQuestItem(
-                        quest = quest,
-                        viewModel = viewModel,
-                        python = python,
-                        mutex = mutex,
-                        onLoadingChange = { isLoading = it },
-                        onError = { error = it },
-                        onQuestCompleted = { completedQuest ->
-                            sideQuests = sideQuests.filter { it.optInt("id") != completedQuest.optInt("id") }
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SideQuestItem(
-    quest: JSONObject,
-    viewModel: GameViewModel,
-    python: Python,
-    mutex: Mutex,
-    onLoadingChange: (Boolean) -> Unit,
-    onError: (String) -> Unit,
-    onQuestCompleted: (JSONObject) -> Unit
-) {
-    val kind = quest.optString("kind")
-    val status = quest.optString("status")
-    val kindText = if (kind == "ami") "Nouvel ami" else "Nouvel objet/totem"
-
-    Column(
-        modifier = Modifier
-            .width(120.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(8.dp)
-    ) {
-        Text(
-            text = "⭐ Quête secondaire",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = kindText,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = {
-                viewModel.viewModelScope.launch(Dispatchers.IO) {
-                    mutex.withLock {
-                        onLoadingChange(true)
-                        onError("")
-                    }
-                    try {
-                        val result = python.getModule("game_api")
-                            .callAttr("call_json", "do_complete_side_quest", quest.optInt("id"))
-                            .toString()
-                        viewModel.loadSessionState(result)
-                        onQuestCompleted(quest)
-                    } catch (e: Exception) {
-                        onError("Erreur : ${e.message}")
-                    } finally {
-                        mutex.withLock { onLoadingChange(false) }
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = status == "ouverte"
-        ) {
-            Text("Terminer")
-        }
-    }
-}
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SymbolPicker(
@@ -917,9 +522,9 @@ fun SymbolPicker(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
+    val fonts = rememberAppFonts()
 
     var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
     var pipMode by remember { mutableStateOf("single") }
@@ -939,31 +544,90 @@ fun SymbolPicker(
         pipMode = sessionState?.optString("pip_mode") ?: "single"
     }
 
-    Column(modifier = modifier) {
+    fun callApi(func: String, arg: String, after: () -> Unit = {}) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                isLoading = true
+                error = null
+            }
+            try {
+                val result = python.getModule("game_api")
+                    .callAttr("call_json", func, arg)
+                    .toString()
+                viewModel.loadSessionState(result)
+                after()
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                mutex.withLock { isLoading = false }
+            }
+        }
+    }
+
+    Section(modifier) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = "Symbole actif",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
+            SectionTitle("Symbole actif", fonts, Modifier.weight(1f))
 
-            IconButton(onClick = { expandedMode = true }) {
-                Icon(Icons.Default.Settings, contentDescription = "Paramètres de mode")
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable { expandedMode = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "⚙️", style = TextStyle(fontSize = 22.sp, shadow = TextShadow))
+                }
+
+                DropdownMenu(
+                    expanded = expandedMode,
+                    onDismissRequest = { expandedMode = false },
+                    modifier = Modifier.background(Paper)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Mode de lancer",
+                            style = TextStyle(fontFamily = fonts.display, fontSize = 20.sp, color = Ink),
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        listOf(
+                            "single" to "Symbole unique",
+                            "random" to "Aléatoire",
+                            "mixed" to "Mixte"
+                        ).forEach { (mode, label) ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(
+                                        value = pipMode == mode,
+                                        onValueChange = { checked ->
+                                            if (checked) {
+                                                callApi("do_set_pip_mode", mode) { pipMode = mode }
+                                            }
+                                        },
+                                        role = Role.RadioButton
+                                    )
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                RadioButton(selected = pipMode == mode, onClick = null)
+                                Text(
+                                    text = label,
+                                    style = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink),
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
         if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-            error?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
             }
         } else {
             FlowRow(
@@ -976,128 +640,552 @@ fun SymbolPicker(
                         "single" -> sessionState?.optString("pip_symbol") == key
                         "random", "mixed" -> sessionState
                             ?.optJSONArray("enabled_symbols")
-                            ?.let { arr ->
-                                (0 until arr.length()).any { arr.getString(it) == key }
-                            } ?: false
+                            ?.let { arr -> (0 until arr.length()).any { arr.getString(it) == key } }
+                            ?: false
                         else -> false
                     }
-
-                    val label = symbol.optString("label")
-                    val emoji = symbol.optString("emoji")
-                    val image = symbol.optString("image")
-
-                    FilterChip(
+                    SymbolChip(
                         selected = isActive,
+                        label = symbol.optString("label"),
+                        symbol = symbol,
+                        fonts = fonts,
                         onClick = {
-                            viewModel.viewModelScope.launch(Dispatchers.IO) {
-                                mutex.withLock {
-                                    isLoading = true
-                                    error = null
-                                }
-                                try {
-                                    val result = if (pipMode == "single") {
-                                        python.getModule("game_api")
-                                            .callAttr("call_json", "do_set_pip_symbol", key)
-                                            .toString()
-                                    } else {
-                                        python.getModule("game_api")
-                                            .callAttr("call_json", "do_toggle_enabled_symbol", key)
-                                            .toString()
-                                    }
-                                    viewModel.loadSessionState(result)
-                                } catch (e: Exception) {
-                                    error = "Erreur : ${e.message}"
-                                } finally {
-                                    mutex.withLock { isLoading = false }
-                                }
+                            if (pipMode == "single") {
+                                callApi("do_set_pip_symbol", key)
+                            } else {
+                                callApi("do_toggle_enabled_symbol", key)
                             }
-                        },
-                        label = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                if (image.isNotEmpty()) {
-                                    AsyncImage(
-                                        model = android.util.Base64.decode(image, android.util.Base64.DEFAULT),
-                                        contentDescription = label,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                } else {
-                                    Text(text = emoji)
-                                }
-                                Text(text = label, maxLines = 1)
-                            }
-                        },
-                        modifier = Modifier.height(40.dp)
+                        }
                     )
                 }
             }
         }
 
-        DropdownMenu(
-            expanded = expandedMode,
-            onDismissRequest = { expandedMode = false },
-            modifier = Modifier.fillMaxWidth(0.8f)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Mode de lancer",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+        error?.let {
+            Text(
+                text = it,
+                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+}
 
-                listOf("single" to "Symbole unique", "random" to "Aléatoire", "mixed" to "Mixte").forEach { (mode, label) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                                value = pipMode == mode,
-                                onValueChange = { checked ->
-                                    if (checked) {
-                                        viewModel.viewModelScope.launch(Dispatchers.IO) {
-                                            mutex.withLock {
-                                                isLoading = true
-                                                error = null
-                                            }
-                                            try {
-                                                val result = python.getModule("game_api")
-                                                    .callAttr("call_json", "do_set_pip_mode", mode)
-                                                    .toString()
-                                                viewModel.loadSessionState(result)
-                                                pipMode = mode
-                                            } catch (e: Exception) {
-                                                error = "Erreur : ${e.message}"
-                                            } finally {
-                                                mutex.withLock { isLoading = false }
-                                            }
-                                        }
-                                    }
-                                },
-                                role = Role.RadioButton
-                            )
-                            .padding(8.dp)
-                    ) {
-                        RadioButton(
-                            selected = pipMode == mode,
-                            onClick = null
-                        )
-                        Text(
-                            text = label,
-                            modifier = Modifier.padding(start = 8.dp)
+@Composable
+private fun SymbolChip(
+    selected: Boolean,
+    label: String,
+    symbol: JSONObject,
+    fonts: AppFonts,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .height(40.dp)
+            .clip(shape)
+            .background(if (selected) Red else Color.Transparent)
+            .border(2.dp, if (selected) Ink else Color.White.copy(alpha = 0.6f), shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp)
+    ) {
+        SymbolIcon(symbol, 22.dp, 18.sp)
+        Text(text = label, maxLines = 1, style = boldStyle(fonts, 14.sp))
+    }
+}
+
+// =====================================================================
+// Jauges totemiques
+// =====================================================================
+
+@Composable
+fun TotemGaugesRow(
+    viewModel: GameViewModel,
+    modifier: Modifier = Modifier
+) {
+    val python = remember { Python.getInstance() }
+    val mutex = remember { Mutex() }
+    val sessionState by viewModel.sessionState.collectAsState()
+    val fonts = rememberAppFonts()
+
+    var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Texte narratif renvoye par do_use_totem_energy quand un pouvoir se
+    // manifeste -- distinct de "error", reserve aux vraies erreurs techniques.
+    var effectMessage by remember { mutableStateOf<String?>(null) }
+    var showTotemManager by remember { mutableStateOf(false) }
+
+    LaunchedEffect(sessionState) {
+        val session = sessionState
+        symbols = buildMap {
+            session?.optJSONArray("all_symbols")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    put(obj.optString("key"), obj)
+                }
+            }
+        }
+    }
+
+    fun useTotem(key: String) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                isLoading = true
+                error = null
+            }
+            try {
+                val result = python.getModule("game_api")
+                    .callAttr("call_json", "do_use_totem_energy", key)
+                    .toString()
+                val parsed = JSONObject(result)
+                val effect = parsed.str("effect")
+                val aiError = parsed.str("ai_error")
+                if (effect.isNotEmpty()) effectMessage = effect
+                if (aiError.isNotEmpty()) error = aiError
+                viewModel.loadSessionState(result)
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                mutex.withLock { isLoading = false }
+            }
+        }
+    }
+
+    Section(modifier) {
+        SectionTitle("Jauges totémiques", fonts)
+
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(symbols.toList()) { (key, symbol) ->
+                    TotemGaugeItem(
+                        symbol = symbol,
+                        energy = sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0,
+                        fonts = fonts,
+                        onUse = { useTotem(key) }
+                    )
+                }
+            }
+        }
+
+        // Affiches en dehors du "if (isLoading)" : sinon le message pose juste
+        // avant la fin du chargement disparaissait aussitot.
+        error?.let {
+            Text(
+                text = it,
+                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        effectMessage?.let {
+            Text(
+                text = it,
+                style = bodyStyle(fonts, 14.sp),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        ComicButton(
+            text = "➕ Ajouter / gérer les totems",
+            onClick = { showTotemManager = true },
+            fonts = fonts,
+            kind = ButtonKind.Secondary,
+            compact = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+
+    if (showTotemManager) {
+        TotemManagerDialog(
+            viewModel = viewModel,
+            onDismiss = { showTotemManager = false }
+        )
+    }
+}
+
+@Composable
+private fun TotemGaugeItem(
+    symbol: JSONObject,
+    energy: Int,
+    fonts: AppFonts,
+    onUse: () -> Unit
+) {
+    val isReady = energy >= TOTEM_THRESHOLD
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(92.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(if (isReady) Gold.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.25f))
+                .border(
+                    if (isReady) 3.dp else 2.dp,
+                    if (isReady) Gold else Color.White.copy(alpha = 0.5f),
+                    CircleShape
+                )
+        ) {
+            SymbolIcon(symbol, 46.dp, 30.sp)
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = symbol.optString("label"),
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            style = bodyStyle(fonts, 12.sp)
+        )
+        Text(
+            text = "$energy/$TOTEM_THRESHOLD",
+            style = boldStyle(fonts, 13.sp)
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        GaugeBar(
+            fraction = energy.toFloat() / TOTEM_THRESHOLD,
+            color = if (isReady) Gold else Color.White,
+            height = 8.dp
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        ComicButton(
+            text = "Utiliser",
+            onClick = onUse,
+            fonts = fonts,
+            enabled = isReady,
+            compact = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+// =====================================================================
+// Quetes secondaires
+// =====================================================================
+
+@Composable
+fun SideQuestsList(
+    viewModel: GameViewModel,
+    modifier: Modifier = Modifier
+) {
+    val sessionState by viewModel.sessionState.collectAsState()
+    val python = remember { Python.getInstance() }
+    val mutex = remember { Mutex() }
+    val fonts = rememberAppFonts()
+
+    var sideQuests by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(sessionState) {
+        sideQuests = buildList {
+            sessionState?.optJSONArray("side_quests")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    add(arr.getJSONObject(i))
+                }
+            }
+        }
+    }
+
+    fun completeQuest(quest: JSONObject) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                isLoading = true
+                error = null
+            }
+            try {
+                val result = python.getModule("game_api")
+                    .callAttr("call_json", "do_complete_side_quest", quest.optInt("id"))
+                    .toString()
+                viewModel.loadSessionState(result)
+                sideQuests = sideQuests.filter { it.optInt("id") != quest.optInt("id") }
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                mutex.withLock { isLoading = false }
+            }
+        }
+    }
+
+    Section(modifier) {
+        SectionTitle("Quêtes secondaires", fonts)
+
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        } else if (sideQuests.isEmpty()) {
+            Text(
+                text = "Aucune quête secondaire en cours",
+                style = bodyStyle(fonts, 14.sp)
+            )
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(sideQuests) { quest ->
+                    SideQuestItem(
+                        quest = quest,
+                        fonts = fonts,
+                        onComplete = { completeQuest(quest) }
+                    )
+                }
+            }
+        }
+
+        error?.let {
+            Text(
+                text = it,
+                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SideQuestItem(
+    quest: JSONObject,
+    fonts: AppFonts,
+    onComplete: () -> Unit
+) {
+    val kind = quest.optString("kind")
+    val status = quest.optString("status")
+    val kindText = if (kind == "ami") "Nouvel ami" else "Nouvel objet/totem"
+    val shape = RoundedCornerShape(10.dp)
+
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .clip(shape)
+            .background(Ink.copy(alpha = 0.45f))
+            .border(2.dp, Color.White.copy(alpha = 0.4f), shape)
+            .padding(10.dp)
+    ) {
+        Text(text = "⭐ Quête secondaire", style = boldStyle(fonts, 12.sp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = kindText, style = bodyStyle(fonts, 13.sp))
+        Spacer(modifier = Modifier.height(8.dp))
+        ComicButton(
+            text = "Terminer",
+            onClick = onComplete,
+            fonts = fonts,
+            enabled = status == "ouverte",
+            compact = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+// =====================================================================
+// Historique des lancers
+// =====================================================================
+
+@Composable
+fun HistoryList(
+    viewModel: GameViewModel,
+    modifier: Modifier = Modifier
+) {
+    val sessionState by viewModel.sessionState.collectAsState()
+    val fateFaces by viewModel.fateFaces.collectAsState()
+    val python = remember { Python.getInstance() }
+    val mutex = remember { Mutex() }
+    val fonts = rememberAppFonts()
+
+    var showClearConfirm by remember { mutableStateOf(false) }
+
+    // Du plus recent au plus ancien.
+    val records = buildList<JSONObject> {
+        sessionState?.optJSONArray("history")?.let { history ->
+            for (i in history.length() - 1 downTo 0) {
+                add(history.getJSONObject(i))
+            }
+        }
+    }
+
+    fun callSimple(func: String) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            // Un seul mutex.withLock : le Mutex de kotlinx.coroutines n'est pas
+            // reentrant, l'ancien code imbrique (withLock dans withLock) bloquait
+            // definitivement sur "Annuler".
+            mutex.withLock {
+                try {
+                    val result = python.getModule("game_api")
+                        .callAttr("call_json", func)
+                        .toString()
+                    viewModel.loadSessionState(result)
+                } catch (e: Exception) {
+                    // Ignore, comme avant.
+                }
+            }
+        }
+    }
+
+    Section(modifier) {
+        SectionTitle("Dernier lancer", fonts)
+
+        if (records.isEmpty()) {
+            Text(
+                text = "(aucun lancer pour l'instant)",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+                style = bodyStyle(fonts, 14.sp, Color.White.copy(alpha = 0.9f))
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                records.forEachIndexed { index, record ->
+                    HistoryItem(
+                        record = record,
+                        sessionState = sessionState,
+                        fateFaces = fateFaces,
+                        fonts = fonts
+                    )
+                    if (index < records.lastIndex) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(DividerColor)
                         )
                     }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            ComicButton(
+                text = "↩ Annuler",
+                onClick = { callSimple("do_undo") },
+                fonts = fonts,
+                kind = ButtonKind.Secondary,
+                modifier = Modifier.weight(1f)
+            )
+            ComicButton(
+                text = "Effacer",
+                onClick = { showClearConfirm = true },
+                fonts = fonts,
+                kind = ButtonKind.Secondary,
+                textColor = ErrorOnPhoto,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            containerColor = Paper,
+            title = {
+                Text(
+                    "Effacer l'historique",
+                    style = TextStyle(fontFamily = fonts.display, fontSize = 22.sp, color = Ink)
+                )
+            },
+            text = {
+                Text(
+                    "Effacer tout l'historique des lancers de cette histoire ?",
+                    style = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearConfirm = false
+                    callSimple("do_clear")
+                }) {
+                    Text(
+                        "Effacer",
+                        style = TextStyle(fontFamily = fonts.display, fontSize = 18.sp, color = DangerText)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) {
+                    Text(
+                        "Annuler",
+                        style = TextStyle(fontFamily = fonts.display, fontSize = 18.sp, color = Ink)
+                    )
+                }
+            }
+        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HistoryItem(
+    record: JSONObject,
+    sessionState: JSONObject?,
+    fateFaces: List<JSONObject>,
+    fonts: AppFonts
+) {
+    val success = record.optInt("success", -1)
+    val fate = record.str("fate")
+    val note = record.str("note")
+    val pipKey = record.optJSONArray("pip_choice")
+        ?.let { if (it.length() > 0) it.optString(0) else null }
+        ?: sessionState?.optString("pip_symbol").orEmpty()
+    val fateFace = if (fate.isNotEmpty()) {
+        fateFaces.firstOrNull { it.optString("key") == fate }
+    } else {
+        null
+    }
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 8.dp)
+    ) {
+        Text(text = "#${record.optInt("id")}", style = boldStyle(fonts, 15.sp))
+        if (note.isNotEmpty()) {
+            Text(text = "[$note]", style = bodyStyle(fonts, 13.sp, Gold))
+        }
+        if (success != -1) {
+            Text(text = "Réussite=$success", style = bodyStyle(fonts, 15.sp))
+            SymbolIcon(findSymbol(sessionState, pipKey), 20.dp, 16.sp, fallback = pipKey)
+        }
+        if (fateFace != null) {
+            Text(
+                text = "Destin=${fateFace.optString("emoji")} ${fateFace.optString("label")}",
+                style = bodyStyle(fonts, 15.sp)
+            )
+        }
+    }
+}
+
+// =====================================================================
+// Valeurs autorisees (fenetre)
+// =====================================================================
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AllowedValuesDialog(
     viewModel: GameViewModel,
@@ -1105,9 +1193,9 @@ fun AllowedValuesDialog(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val context = LocalContext.current
     val python = remember { Python.getInstance() }
     val mutex = remember { Mutex() }
+    val fonts = rememberAppFonts()
 
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -1122,247 +1210,349 @@ fun AllowedValuesDialog(
 
         allowedFates = sessionState?.optJSONArray("allowed_fate_keys")?.let { arr ->
             (0 until arr.length()).map { arr.getString(it) }
-        } ?: listOf("coeur", "question", "soleil", "etoile", "exclamation", "spirale")
+        } ?: FATE_OPTIONS.map { it.first }
+    }
+
+    // La liste affichee est rafraichie par le LaunchedEffect ci-dessus des que
+    // loadSessionState() publie le nouvel etat.
+    fun callApi(func: String, vararg args: Any) {
+        viewModel.viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                isLoading = true
+                error = null
+            }
+            try {
+                val result = python.getModule("game_api")
+                    .callAttr("call_json", func, *args)
+                    .toString()
+                viewModel.loadSessionState(result)
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                mutex.withLock { isLoading = false }
+            }
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        val shape = RoundedCornerShape(16.dp)
+        Box(
             modifier = modifier
                 .fillMaxWidth()
-                .height(500.dp)
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp)
+                .heightIn(max = 560.dp)
+                .clip(shape)
+                .background(Paper)
+                .border(3.dp, Ink, shape)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
             ) {
                 Text(
                     text = "Valeurs autorisées",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    style = TextStyle(fontFamily = fonts.display, fontSize = 26.sp, letterSpacing = 1.sp, color = Ink),
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
 
                 Text(
                     text = "Dé de réussite (1-6)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    style = TextStyle(fontFamily = fonts.bodyBold, fontSize = 16.sp, color = Ink),
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
-
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     (1..6).forEach { value ->
-                        val isChecked = value in allowedValues
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.toggleable(
-                                value = isChecked,
-                                onValueChange = { checked ->
-                                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                                        mutex.withLock {
-                                            isLoading = true
-                                            error = null
-                                        }
-                                        try {
-                                            val result = python.getModule("game_api")
-                                                .callAttr("call_json", "do_toggle_allowed_value", value)
-                                                .toString()
-                                            viewModel.loadSessionState(result)
-                                            allowedValues = sessionState?.optJSONArray("allowed_success_values")
-                                                ?.let { arr -> (0 until arr.length()).map { arr.getInt(it) } }
-                                                ?: emptyList()
-                                        } catch (e: Exception) {
-                                            error = "Erreur : ${e.message}"
-                                        } finally {
-                                            mutex.withLock { isLoading = false }
-                                        }
-                                    }
-                                },
-                                role = Role.Checkbox
-                            )
-                        ) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = null
-                            )
-                            Text(text = value.toString())
-                        }
+                        ToggleRow(
+                            checked = value in allowedValues,
+                            label = value.toString(),
+                            fonts = fonts,
+                            onToggle = { callApi("do_toggle_allowed_value", value) }
+                        )
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                ComicButton(
+                    text = "Réinitialiser",
+                    onClick = { callApi("do_reset_allowed_values") },
+                    fonts = fonts,
+                    kind = ButtonKind.Paper,
+                    compact = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Button(
-                    onClick = {
-                        viewModel.viewModelScope.launch(Dispatchers.IO) {
-                            mutex.withLock {
-                                isLoading = true
-                                error = null
-                            }
-                            try {
-                                val result = python.getModule("game_api")
-                                    .callAttr("call_json", "do_reset_allowed_values")
-                                    .toString()
-                                viewModel.loadSessionState(result)
-                                allowedValues = listOf(1, 2, 3, 4, 5, 6)
-                            } catch (e: Exception) {
-                                error = "Erreur : ${e.message}"
-                            } finally {
-                                mutex.withLock { isLoading = false }
-                            }
-                        }
-                    },
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    Text("Réinitialiser")
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 Text(
                     text = "Dé du destin",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    style = TextStyle(fontFamily = fonts.bodyBold, fontSize = 16.sp, color = Ink),
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
-
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    listOf(
-                        "coeur" to "❤️ Cœur",
-                        "question" to "❓ Question",
-                        "soleil" to "☀️ Soleil",
-                        "etoile" to "⭐ Étoile",
-                        "exclamation" to "❗ Exclamation",
-                        "spirale" to "🌀 Spirale"
-                    ).forEach { (key, label) ->
-                        val isChecked = key in allowedFates
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.toggleable(
-                                value = isChecked,
-                                onValueChange = { checked ->
-                                    viewModel.viewModelScope.launch(Dispatchers.IO) {
-                                        mutex.withLock {
-                                            isLoading = true
-                                            error = null
-                                        }
-                                        try {
-                                            val result = python.getModule("game_api")
-                                                .callAttr("call_json", "do_toggle_allowed_fate", key)
-                                                .toString()
-                                            viewModel.loadSessionState(result)
-                                            allowedFates = sessionState?.optJSONArray("allowed_fate_keys")
-                                                ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
-                                                ?: emptyList()
-                                        } catch (e: Exception) {
-                                            error = "Erreur : ${e.message}"
-                                        } finally {
-                                            mutex.withLock { isLoading = false }
-                                        }
-                                    }
-                                },
-                                role = Role.Checkbox
-                            )
-                        ) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = null
-                            )
-                            Text(text = label)
-                        }
+                    FATE_OPTIONS.forEach { (key, label) ->
+                        ToggleRow(
+                            checked = key in allowedFates,
+                            label = label,
+                            fonts = fonts,
+                            onToggle = { callApi("do_toggle_allowed_fate", key) }
+                        )
                     }
                 }
-
-                Button(
-                    onClick = {
-                        viewModel.viewModelScope.launch(Dispatchers.IO) {
-                            mutex.withLock {
-                                isLoading = true
-                                error = null
-                            }
-                            try {
-                                val result = python.getModule("game_api")
-                                    .callAttr("call_json", "do_reset_allowed_fate")
-                                    .toString()
-                                viewModel.loadSessionState(result)
-                                allowedFates = listOf("coeur", "question", "soleil", "etoile", "exclamation", "spirale")
-                            } catch (e: Exception) {
-                                error = "Erreur : ${e.message}"
-                            } finally {
-                                mutex.withLock { isLoading = false }
-                            }
-                        }
-                    },
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    Text("Réinitialiser")
-                }
+                Spacer(modifier = Modifier.height(8.dp))
+                ComicButton(
+                    text = "Réinitialiser",
+                    onClick = { callApi("do_reset_allowed_fate") },
+                    fonts = fonts,
+                    kind = ButtonKind.Paper,
+                    compact = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 if (isLoading) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Ink)
+                    }
                 }
 
                 error?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                        style = TextStyle(fontFamily = fonts.body, fontSize = 14.sp, color = DangerText)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Fermer")
-                    }
-                }
+                ComicButton(
+                    text = "Fermer",
+                    onClick = onDismiss,
+                    fonts = fonts,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Checkbox(
+private fun ToggleRow(
     checked: Boolean,
-    onCheckedChange: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    label: String,
+    fonts: AppFonts,
+    onToggle: () -> Unit
 ) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .toggleable(
+                value = checked,
+                onValueChange = { onToggle() },
+                role = Role.Checkbox
+            )
+            .padding(vertical = 6.dp, horizontal = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(if (checked) Red else Color.White)
+                .border(2.dp, Ink, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (checked) {
+                Text(text = "✓", style = TextStyle(fontSize = 15.sp, color = Color.White))
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink)
+        )
+    }
+}
+
+// =====================================================================
+// Briques visuelles communes
+// =====================================================================
+
+internal enum class ButtonKind { Primary, Secondary, Paper }
+
+/** Bloc sans fond ni bordure (l'image reste visible), largeur limitee. */
+@Composable
+internal fun Section(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = modifier
+            .widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        content = content
+    )
+}
+
+@Composable
+internal fun SectionTitle(text: String, fonts: AppFonts, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier.padding(bottom = 8.dp),
+        style = TextStyle(
+            fontFamily = fonts.display,
+            fontSize = 20.sp,
+            letterSpacing = 0.5.sp,
+            color = Color.White,
+            shadow = TextShadow
+        )
+    )
+}
+
+internal fun bodyStyle(fonts: AppFonts, size: TextUnit, color: Color = Color.White) = TextStyle(
+    fontFamily = fonts.body,
+    fontSize = size,
+    color = color,
+    shadow = TextShadow
+)
+
+internal fun boldStyle(fonts: AppFonts, size: TextUnit, color: Color = Color.White) = TextStyle(
+    fontFamily = fonts.bodyBold,
+    fontSize = size,
+    color = color,
+    shadow = TextShadow
+)
+
+/** Ombre pleine decalee vers le bas/droite, comme `box-shadow: Xpx Xpx 0 couleur` en CSS. */
+private fun Modifier.hardShadow(offset: Dp, radius: Dp, color: Color): Modifier =
+    this.drawBehind {
+        val o = offset.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(o, o),
+            size = size,
+            cornerRadius = CornerRadius(radius.toPx())
+        )
+    }
+
+/**
+ * Bouton "BD". Primary : rouge, texte blanc. Secondary : transparent, texte blanc
+ * ombre (l'image reste visible). Paper : fond blanc, texte noir (pour les fenetres
+ * sur fond creme).
+ */
+@Composable
+internal fun ComicButton(
+    text: String,
+    onClick: () -> Unit,
+    fonts: AppFonts,
+    modifier: Modifier = Modifier,
+    kind: ButtonKind = ButtonKind.Primary,
+    enabled: Boolean = true,
+    compact: Boolean = false,
+    textColor: Color? = null
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val fill = when (kind) {
+        ButtonKind.Primary -> Red
+        ButtonKind.Secondary -> SecondaryButtonFill
+        ButtonKind.Paper -> Color.White
+    }
+    // "Ombre" decalee facon BD : uniquement si le bouton a un fond. Sur un bouton
+    // transparent elle serait visible A TRAVERS le bouton.
+    val hasFill = fill.alpha > 0f
+    val contentColor = textColor ?: if (kind == ButtonKind.Paper) Ink else Color.White
+    val shape = RoundedCornerShape(10.dp)
+
     Box(
         modifier = modifier
-            .size(24.dp)
-            .clip(CircleShape)
-            .background(
-                if (checked) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
+            .alpha(if (enabled) 1f else 0.5f)
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .then(if (hasFill) Modifier.hardShadow(if (pressed) 1.dp else 3.dp, 10.dp, Ink) else Modifier)
+            .background(fill, shape)
+            .border(if (compact) 2.dp else 3.dp, Ink, shape)
             .clickable(
-                enabled = onCheckedChange != null,
-                role = Role.Checkbox,
-                onClick = { onCheckedChange?.invoke() }
-            ),
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .padding(horizontal = 8.dp, vertical = if (compact) 8.dp else 13.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (checked) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(16.dp)
+        Text(
+            text = text,
+            textAlign = TextAlign.Center,
+            style = TextStyle(
+                fontFamily = fonts.display,
+                fontSize = if (compact) 14.sp else 17.sp,
+                letterSpacing = 1.sp,
+                color = contentColor,
+                shadow = if (hasFill) null else TextShadow
             )
-        }
+        )
+    }
+}
+
+/** Barre de progression a plat (a la place de LinearProgressIndicator). */
+@Composable
+private fun GaugeBar(fraction: Float, color: Color, height: Dp, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(height / 2)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.25f))
+            .border(1.5.dp, Ink.copy(alpha = 0.7f), shape)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .background(color)
+        )
+    }
+}
+
+/**
+ * Chaine d'un champ JSON, "" si absent OU null. (optString(nom, "") renvoie la
+ * chaine "null" quand la valeur JSON est null -- ex. "ai_error": null.)
+ */
+internal fun JSONObject.str(name: String): String =
+    if (isNull(name)) "" else optString(name, "")
+
+private fun findSymbol(state: JSONObject?, key: String): JSONObject? {
+    val arr = state?.optJSONArray("all_symbols") ?: return null
+    for (i in 0 until arr.length()) {
+        val obj = arr.getJSONObject(i)
+        if (obj.optString("key") == key) return obj
+    }
+    return null
+}
+
+/** Image du symbole si elle existe, sinon son emoji (sinon le texte de repli). */
+@Composable
+internal fun SymbolIcon(
+    symbol: JSONObject?,
+    size: Dp,
+    fontSize: TextUnit,
+    fallback: String = ""
+) {
+    val image = symbol?.optString("image").orEmpty()
+    if (image.isNotEmpty()) {
+        val bytes = remember(image) { Base64.decode(image, Base64.DEFAULT) }
+        AsyncImage(
+            model = bytes,
+            contentDescription = symbol?.optString("label"),
+            modifier = Modifier.size(size)
+        )
+    } else {
+        val emoji = symbol?.optString("emoji").orEmpty().ifEmpty { fallback }
+        Text(text = emoji, style = TextStyle(fontSize = fontSize))
     }
 }
