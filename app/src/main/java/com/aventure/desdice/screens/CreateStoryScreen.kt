@@ -79,7 +79,7 @@ private val DividerColor = Color(0x4DFFFFFF)
 // a lire sur l'image, remplace par un voile leger, par exemple
 // Color.White.copy(alpha = 0.25f).
 private val FieldFill = Color.Transparent
-private val SecondaryButtonFill = Color.Transparent
+private val SecondaryButtonFill = Color(0x4014161A) // voile sombre a 25 % (0x40) ; Color.Transparent = totalement transparent
 // Ombre portee des textes poses directement sur l'image.
 private val TextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 // Voile sombre par-dessus l'image (haut -> 30 % -> bas). L'image est deja
@@ -632,7 +632,7 @@ private fun ComicButton(
         // "Ombre" decalee facon BD : uniquement si le bouton a un fond. Sur un
         // bouton transparent, elle serait visible A TRAVERS le bouton (rectangle
         // noir derriere le texte noir).
-        if (bg.alpha > 0f) {
+        if (bg.alpha >= 0.99f) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
