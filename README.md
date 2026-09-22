@@ -4,8 +4,9 @@ Application Android de narration interactive à base de dés : le joueur lance
 un **dé de réussite** (1 à 6) et un **dé du destin**, fait monter des jauges
 (totems, menace), débloque des quêtes secondaires, et une **IA narratrice**
 (API Mistral, optionnelle) écrit la suite de l'histoire à chaque lancer.
-Plusieurs histoires cohabitent : **Animorph**, **Poudlard**, et autant
-d'histoires personnalisées que l'on veut créer depuis l'appli.
+L'application démarre vierge (aucune histoire codée en dur) : on crée ses
+propres histoires depuis l'appli, ou on réimporte un fichier d'identité
+précédemment exporté.
 
 L'appli est écrite en **Kotlin / Jetpack Compose** pour l'interface, avec le
 moteur de jeu en **Python** embarqué grâce à **Chaquopy**.
@@ -91,14 +92,17 @@ Habillage commun « papier BD » : palette encre / papier / rouge / or, polices
 
 ## Les histoires
 
-Toute la différence entre deux histoires est centralisée dans **`stories.py`** :
-image de fond, fichier de sauvegarde, symboles et totems de départ, texte
-d'univers envoyé à l'IA.
+Il n'y a plus de registre d'histoires codées en dur : `stories.STORIES` est
+vide, et **toute** histoire (créée depuis l'appli ou réimportée depuis un
+fichier d'identité) passe par le même mécanisme, décrit par un fichier JSON
+(`custom_stories.json`) + une image dans `custom_story_bg/`. Au premier
+lancement, le carrousel est vide (seule la tuile « Nouvelle histoire »
+s'affiche) tant qu'aucune histoire n'a été créée ou réimportée.
 
-- **Animorph** : les 6 totems animaux (Aigle, Loup, Renard, Jaguar, Grand Bond, Profondeurs) sont acquis dès le début, plus trois alliés fixes liés à des symboles (Araignée = Spider-Man, Bouclier = Captain America, Étoile = Shuri) ; le contexte envoyé à l'IA précise l'univers Marvel.
-- **Poudlard** : part presque de zéro (un seul totem, la Baguette Magique) ; amis, créatures et sorts se construisent en jouant, avec une mécanique pédagogique (l'IA enseigne un fait scientifique réel, pose une question, et le sort débloqué en découle).
-- **Histoires personnalisées** (`CreateStoryScreen`) : titre, sous-titre, description d'univers, prénom du héros (optionnel), premier totem (nom, pouvoirs, capacité, image). Elles sont décrites par `custom_stories.json` + une image dans `custom_story_bg/`, et supprimables depuis le carrousel. Le prénom du héros, s'il est renseigné, devient `protagonist_ref` (l'IA s'adresse alors à lui par son nom, comme « Gabin » pour Animorph) ; laissé vide, il retombe sur la formule générique « le personnage principal » — utile par exemple quand le prénom doit être demandé au joueur en cours d'aventure plutôt que fixé à l'avance (voir Poudlard). Une histoire personnalisée peut être exportée en fichier JSON (« identité ») et réimportée (`export_identity` / `do_import_identity`). L'export embarque, en plus du totem de départ et du prénom du héros : tous les totems acquis en cours de partie (`session.custom_totems`, images comprises), les quêtes secondaires et le journal (`story_log` + résumé long terme `story_summary`) — l'inverse exact de ce que `stories.parse_identity_import` relit. À l'import, `CreateStoryScreen` crée d'abord l'histoire avec un seul totem de départ (la règle ne change pas : `do_create_story` n'en accepte jamais qu'un), puis recrée les totems supplémentaires un par un via `do_add_custom_totem`, et restaure enfin quêtes et journal en un seul appel à `do_apply_imported_progress` (qui délègue la validation à la nouvelle méthode `DiceSession.import_progress`). Un ancien fichier exporté (sans ces champs) s'importe toujours sans problème.
+- **Créées depuis l'appli** (`CreateStoryScreen`) : titre, sous-titre, description d'univers, prénom du héros (optionnel), premier totem (nom, pouvoirs, capacité, image). Le prénom du héros, s'il est renseigné, devient `protagonist_ref` (l'IA s'adresse alors à lui par son nom) ; laissé vide, il retombe sur la formule générique « le personnage principal » — utile par exemple quand le prénom doit être demandé au joueur en cours d'aventure plutôt que fixé à l'avance.
+- **Exportables et réimportables** : une histoire peut être exportée en fichier JSON (« identité ») et réimportée (`export_identity` / `do_import_identity`). L'export embarque, en plus du totem de départ et du prénom du héros : tous les totems acquis en cours de partie (`session.custom_totems`, images comprises), les quêtes secondaires et le journal (`story_log` + résumé long terme `story_summary`) — l'inverse exact de ce que `stories.parse_identity_import` relit. À l'import, `CreateStoryScreen` crée d'abord l'histoire avec un seul totem de départ (la règle ne change pas : `do_create_story` n'en accepte jamais qu'un), puis recrée les totems supplémentaires un par un via `do_add_custom_totem`, et restaure enfin quêtes et journal en un seul appel à `do_apply_imported_progress` (qui délègue la validation à la nouvelle méthode `DiceSession.import_progress`). Un ancien fichier exporté (sans ces champs) s'importe toujours sans problème.
 - **Sauvegardes totalement séparées** : `dice_state_<slug>.json` par histoire — dés, jauges, totems et quêtes d'une histoire n'influencent jamais une autre.
+- **Suppression** (`do_delete_story`) : efface l'entrée dans `custom_stories.json`, son image de fond, sa sauvegarde de partie et l'image de son totem de départ. Ne touche évidemment jamais aux autres histoires.
 - Ajouter une **troisième histoire intégrée** = ajouter une entrée dans `STORIES` (et `STORY_ORDER`) de `stories.py`, plus un module `bg_<nom>_data.py` pour son image de fond.
 
 ### Totems ajoutés en cours de partie
@@ -165,14 +169,15 @@ DesDeAventure/
         └── python/
             ├── game_api.py           # PORTE D'ENTRÉE unique Kotlin → Python (call_json)
             ├── dice_engine.py        # moteur de jeu (dés, jauges, menace, quêtes, session)
-            ├── stories.py            # registre des histoires + histoires personnalisées
+            ├── stories.py            # registre des histoires (vide par défaut) + histoires personnalisées
             ├── mistral_client.py     # client API Mistral (stdlib pure)
             ├── image_utils.py        # redimensionnement des fonds et des totems (Pillow)
-            ├── journal_export.py     # export PDF du journal (fpdf2)
-            ├── bg_animorph_data.py   # image de fond Animorph (base64)
-            ├── bg_poudlard_data.py   # image de fond Poudlard (base64)
-            └── dice_state_seed.json  # partie de départ d'Animorph
+            └── journal_export.py     # export PDF du journal (fpdf2)
 ```
+
+> `bg_animorph_data.py`, `bg_poudlard_data.py` et `dice_state_seed.json` ne
+> sont plus référencés par aucun fichier depuis le retrait des deux
+> histoires codées en dur : à supprimer du projet.
 
 ### Ressources attendues dans `res/`
 
