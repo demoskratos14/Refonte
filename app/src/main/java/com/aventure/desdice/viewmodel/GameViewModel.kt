@@ -16,6 +16,16 @@ class GameViewModel : ViewModel() {
     private val _stories = MutableStateFlow<List<Story>>(emptyList())
     val stories = _stories.asStateFlow()
 
+    // Distinct de "stories.isEmpty()" : depuis le retrait des histoires
+    // codees en dur (Animorph/Poudlard), un premier lancement peut tout a
+    // fait n'avoir AUCUNE histoire (ni integree, ni personnalisee) --
+    // stories.isEmpty() serait alors vrai en permanence, meme une fois le
+    // chargement termine, ce qui empechait StorySelectorScreen de
+    // distinguer "en cours de chargement" de "chargee, mais vide". Ce
+    // flag, lui, ne passe a true qu'une fois pour de bon.
+    private val _storiesLoaded = MutableStateFlow(false)
+    val storiesLoaded = _storiesLoaded.asStateFlow()
+
     private val _currentStorySlug = MutableStateFlow<String?>(null)
     val currentStorySlug = _currentStorySlug.asStateFlow()
 
@@ -84,6 +94,7 @@ class GameViewModel : ViewModel() {
 
                 _stories.value = storiesList
                 _currentStorySlug.value = storiesJson.getString("current_story").takeIf { it.isNotEmpty() }
+                _storiesLoaded.value = true
             }
         }
     }
