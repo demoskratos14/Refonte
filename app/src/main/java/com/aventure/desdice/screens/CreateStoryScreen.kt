@@ -65,6 +65,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
 import org.json.JSONObject
 
 // Palette et reglages identiques aux autres ecrans restyles (Des classiques,
@@ -141,6 +142,18 @@ fun CreateStoryScreen(
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // Totems supplementaires (au-dela du totem de depart), quetes
+    // secondaires et journal issus d'un import d'identite : le totem de
+    // depart reste seul pose par do_create_story (voir totemLabel/... plus
+    // haut) -- tout ceci est applique A PART, juste apres la creation de
+    // l'histoire (voir submit() plus bas), via do_add_custom_totem et
+    // do_apply_imported_progress.
+    var importedExtraTotems by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var importedSideQuests by remember { mutableStateOf<JSONArray?>(null) }
+    var importedNextQuestId by remember { mutableStateOf(1) }
+    var importedStoryLog by remember { mutableStateOf<JSONArray?>(null) }
+    var importedStorySummary by remember { mutableStateOf("") }
+
     val pickBgImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) { bgUri = uri; importedBgBytes = null } }
@@ -189,6 +202,19 @@ fun CreateStoryScreen(
                         importedTotemBytes = Base64.decode(totemB64, Base64.DEFAULT)
                         totemUri = null
                     }
+
+                    val extraArr = parsed.optJSONArray("extra_totems")
+                    val extras = mutableListOf<JSONObject>()
+                    if (extraArr != null) {
+                        for (i in 0 until extraArr.length()) extras.add(extraArr.getJSONObject(i))
+                    }
+                    importedExtraTotems = extras
+
+                    importedSideQuests = parsed.optJSONArray("side_quests")
+                    importedNextQuestId = parsed.optInt("next_quest_id", 1)
+                    importedStoryLog = parsed.optJSONArray("story_log")
+                    importedStorySummary = parsed.optString("story_summary", "")
+
                     if (bgB64.isEmpty() && title.isEmpty()) {
                         error = "Le texte collé ne ressemble pas à une identité exportée valide."
                     }
@@ -264,11 +290,60 @@ fun CreateStoryScreen(
                     totemLabel, totemPowers, totemSpecial,
                     bgBytes, bgExt, totemBytes, totemFilename
                 ).toString()
+                // Le totem de depart est deja pose par do_create_story (un
+                // seul, comme toujours). Les totems importes en plus (acquis
+                // en cours de partie sur l'appareil d'origine) sont ajoutes
+                // ensuite, un par un, exactement comme TotemManagerDialog le
+                // fait en cours de partie -- ca ne cree jamais un deuxieme
+                // totem "de depart".
+                var latestSession = created
+                for (extra in importedExtraTotems) {
+                    val extraLabel = extra.optString("label", "")
+                    if (extraLabel.isBlank()) continue
+                    val powersArr = extra.optJSONArray("powers")
+                    val powersText = buildList {
+                        if (powersArr != null) {
+                            for (i in 0 until powersArr.length()) add(powersArr.optString(i))
+                        }
+                    }.joinToString(", ")
+                    val extraImgB64 = extra.optString("image_b64", "")
+                    val extraImgBytes = if (extraImgB64.isNotEmpty()) {
+                        Base64.decode(extraImgB64, Base64.DEFAULT)
+                    } else {
+                        ByteArray(0)
+                    }
+                    val extraImgFilename = if (extraImgBytes.isNotEmpty()) "totem.png" else ""
+                    latestSession = Python.getInstance().getModule("game_api").callAttr(
+                        "call_json", "do_add_custom_totem",
+                        extraLabel, powersText, extra.optString("special", ""),
+                        extra.optString("emoji", ""), extraImgBytes, extraImgFilename
+                    ).toString()
+                }
+
+                // Quetes secondaires et journal importes : appliques en un
+                // seul appel, apres les totems, pour que la session finale
+                // charge dans le ViewModel contienne deja tout.
+                val questsArr = importedSideQuests
+                val logArr = importedStoryLog
+                if ((questsArr != null && questsArr.length() > 0) ||
+                    (logArr != null && logArr.length() > 0) ||
+                    importedStorySummary.isNotBlank()
+                ) {
+                    latestSession = Python.getInstance().getModule("game_api").callAttr(
+                        "call_json", "do_apply_imported_progress",
+                        (questsArr ?: JSONArray()).toString(),
+                        importedNextQuestId,
+                        (logArr ?: JSONArray()).toString(),
+                        importedStorySummary
+                    ).toString()
+                }
+
                 // do_create_story active la nouvelle histoire cote Python et
-                // renvoie sa session : on la charge avant de rafraichir la
-                // liste, pour que l'ecran de jeu n'affiche pas l'etat de
-                // l'histoire precedente.
-                viewModel.loadSessionState(created)
+                // renvoie sa session : on charge la version la plus a jour
+                // (totems/quetes/journal importes compris) avant de
+                // rafraichir la liste, pour que l'ecran de jeu n'affiche pas
+                // l'etat de l'histoire precedente.
+                viewModel.loadSessionState(latestSession)
                 viewModel.loadStories()
                 onCreated()
             } catch (e: Exception) {
