@@ -132,7 +132,7 @@ internal val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
 private val SecondaryButtonFill = Color(0x4014161A)
 
 private const val TOTEM_THRESHOLD = 15
-private const val THREAT_THRESHOLD = 10
+// THREAT_THRESHOLD est défini publiquement dans DiceSession.kt (même package) — pas besoin de le redéclarer ici.
 
 private val FATE_OPTIONS = listOf(
     "coeur" to "❤️ Cœur",
