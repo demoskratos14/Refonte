@@ -78,6 +78,7 @@ fun StorySelectorScreen(
     onConfigureKeyClick: () -> Unit = {}
 ) {
     val stories by viewModel.stories.collectAsState()
+    val storiesLoaded by viewModel.storiesLoaded.collectAsState()
     val fonts = rememberAppFonts()
     var storyToDelete by remember { mutableStateOf<Story?>(null) }
 
@@ -86,7 +87,7 @@ fun StorySelectorScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        if (stories.isEmpty()) {
+        if (!storiesLoaded) {
             CircularProgressIndicator(
                 color = Color.White,
                 modifier = Modifier.align(Alignment.Center)
