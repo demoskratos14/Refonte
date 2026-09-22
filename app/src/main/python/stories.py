@@ -301,7 +301,7 @@ def _save_custom_meta(meta_list):
 
 def create_custom_story(title, subtitle, lore_text, bg_image_bytes, bg_image_ext,
                          totem_label, totem_image_filename,
-                         totem_powers="", totem_special=""):
+                         totem_powers="", totem_special="", protagonist_name=""):
     """Cree une nouvelle histoire : enregistre son image de fond sur le
     disque et ajoute une entree dans CUSTOM_STORIES_FILE. Renvoie le slug
     attribue (utilise ensuite par dice_web.switch_story() pour y basculer
@@ -311,7 +311,15 @@ def create_custom_story(title, subtitle, lore_text, bg_image_bytes, bg_image_ext
     meme format que pour un totem ajoute en cours de partie (voir
     /add_custom_totem dans dice_web.py) : powers_text est une chaine de
     pouvoirs separes par des virgules, special est une capacite unique en
-    texte libre."""
+    texte libre.
+
+    protagonist_name (optionnel) : le prenom/nom du heros, pour que l'IA
+    s'adresse a lui par son nom (comme "Gabin" pour Animorph) plutot que
+    par la formule generique "le personnage principal" -- voir
+    _build_story_entry() plus bas, qui construit protagonist_ref a partir
+    de ce champ. Laisser vide reproduit le comportement d'avant (utile
+    par exemple si le prenom doit etre demande au joueur en cours
+    d'aventure, comme pour Poudlard)."""
     title = (title or "").strip() or "Nouvelle histoire"
     slug = _slugify_story_title(title)
 
@@ -336,6 +344,7 @@ def create_custom_story(title, subtitle, lore_text, bg_image_bytes, bg_image_ext
         "totem_image_filename": totem_image_filename,
         "totem_powers": (totem_powers or "").strip(),
         "totem_special": (totem_special or "").strip(),
+        "protagonist_name": (protagonist_name or "").strip(),
         "save_file": f"dice_state_{slug}.json",
     }
     meta_list = _load_custom_meta()
@@ -420,7 +429,7 @@ def _build_story_entry(meta):
         "pip_symbols": {},
         "totems": [],
         "default_pip_symbol": "",
-        "protagonist_ref": "le personnage principal",
+        "protagonist_ref": (meta.get("protagonist_name") or "").strip() or "le personnage principal",
         "fixed_allies_line": "",
         "ally_help_text": {},
         "is_custom": True,
@@ -487,7 +496,13 @@ def export_story_identity(slug, extra_totems=None, side_quests=None,
       (ouvertes ou terminees).
     - story_log / story_summary : le journal (un chapitre par entree) et
       le resume long terme qui l'accompagne, tels que produits par le
-      "digest" de l'IA narratrice."""
+      "digest" de l'IA narratrice.
+
+    protagonist_name (lu directement sur meta, pas en parametre : c'est
+    une metadonnee figee de l'histoire, comme totem_label) : le prenom du
+    heros, si renseigne a la creation -- voir create_custom_story() plus
+    haut. Permet a l'IA de s'adresser a lui par son nom (protagonist_ref)
+    plutot que par la formule generique "le personnage principal"."""
     meta = next((m for m in _load_custom_meta() if m["slug"] == slug), None)
     if meta is None:
         return None
@@ -514,6 +529,7 @@ def export_story_identity(slug, extra_totems=None, side_quests=None,
         "totem_label": meta.get("totem_label") or "",
         "totem_powers": meta.get("totem_powers") or "",
         "totem_special": meta.get("totem_special") or "",
+        "protagonist_name": meta.get("protagonist_name") or "",
         "bg_image_b64": bg_b64,
         "totem_image_b64": totem_b64,
         "extra_totems": extra_totems or [],
@@ -577,6 +593,7 @@ def parse_identity_import(raw_text):
         "totem_label": (data.get("totem_label") or "").strip(),
         "totem_powers": (data.get("totem_powers") or "").strip(),
         "totem_special": (data.get("totem_special") or "").strip(),
+        "protagonist_name": (data.get("protagonist_name") or "").strip(),
         "bg_image_b64": data.get("bg_image_b64") or "",
         "totem_image_b64": data.get("totem_image_b64") or "",
         "extra_totems": extra_totems,

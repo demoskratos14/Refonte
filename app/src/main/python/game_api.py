@@ -266,6 +266,7 @@ def do_create_story(
     bg_image_ext: str,
     totem_image_bytes: bytes,
     totem_image_filename: str,
+    protagonist_name: str = "",
 ) -> Dict[str, Any]:
     global CURRENT_STORY, CURRENT_STORY_CONFIG, session
     totem_image_filename = _save_totem_image(totem_image_bytes, totem_image_filename)
@@ -279,6 +280,7 @@ def do_create_story(
         totem_image_filename=totem_image_filename,
         totem_powers=totem_powers,
         totem_special=totem_special,
+        protagonist_name=protagonist_name,
     )
     switch_story(slug)
     return session_to_dict(session if session else DiceSession())
@@ -292,6 +294,7 @@ def do_import_identity(raw_text: str) -> Dict[str, Any]:
         "totem_label": parsed.get("totem_label", ""),
         "totem_powers": parsed.get("totem_powers", ""),
         "totem_special": parsed.get("totem_special", ""),
+        "protagonist_name": parsed.get("protagonist_name", ""),
         # Base64, pas des bytes bruts : bytes n'est pas serialisable en
         # JSON, et call_json (voir plus bas) fait json.dumps sur ce dict --
         # c'est CreateStoryScreen (Kotlin) qui decode le base64 avant de
