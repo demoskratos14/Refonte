@@ -462,14 +462,32 @@ def all_story_order():
     return STORY_ORDER + [m["slug"] for m in _load_custom_meta()]
 
 
-def export_story_identity(slug):
+def export_story_identity(slug, extra_totems=None, side_quests=None,
+                           next_quest_id=None, story_log=None, story_summary=None):
     """Empaquete tout ce qu'il faut pour recreer une histoire personnalisee
     ailleurs (autre appareil, sauvegarde manuelle...) en un seul dict
     JSON-serialisable -- l'inverse exact de parse_identity_import()
     ci-dessous. Renvoie None si slug ne correspond a aucune histoire
     personnalisee : les histoires integrees (Animorph, Poudlard) n'ont
     rien a exporter au sens de cette fonction (leurs donnees vivent dans
-    ce fichier, pas dans une sauvegarde a transferer)."""
+    ce fichier, pas dans une sauvegarde a transferer).
+
+    Tous les parametres optionnels ci-dessous viennent de la session en
+    cours (game_api.export_identity() les lit sur `session`, que ce
+    module n'a pas -- stories.py ne connait que les metadonnees figees de
+    l'histoire) :
+    - extra_totems : les totems acquis en cours de partie, en plus du
+      totem de depart deja porte par totem_label/totem_powers/... plus
+      bas. Chaque element : {label, emoji, powers (liste), special,
+      image_b64}. Ne change RIEN a la creation d'une histoire (un seul
+      totem de depart reste possible via do_create_story) : ces totems
+      supplementaires sont recrees a part, apres coup, par
+      do_add_custom_totem (voir do_import_identity).
+    - side_quests / next_quest_id : les quetes secondaires de la partie
+      (ouvertes ou terminees).
+    - story_log / story_summary : le journal (un chapitre par entree) et
+      le resume long terme qui l'accompagne, tels que produits par le
+      "digest" de l'IA narratrice."""
     meta = next((m for m in _load_custom_meta() if m["slug"] == slug), None)
     if meta is None:
         return None
@@ -498,6 +516,11 @@ def export_story_identity(slug):
         "totem_special": meta.get("totem_special") or "",
         "bg_image_b64": bg_b64,
         "totem_image_b64": totem_b64,
+        "extra_totems": extra_totems or [],
+        "side_quests": side_quests or [],
+        "next_quest_id": next_quest_id if next_quest_id is not None else 1,
+        "story_log": story_log or [],
+        "story_summary": story_summary or "",
     }
 
 
@@ -505,10 +528,11 @@ def parse_identity_import(raw_text):
     """Inverse d'export_story_identity() : relit le JSON colle par le
     joueur (voir do_import_identity dans game_api.py) et renvoie un dict
     aux memes cles (title, subtitle, lore_text, totem_label, totem_powers,
-    totem_special, bg_image_b64, totem_image_b64). Tolerant : un JSON
-    invalide, incomplet, ou qui n'est pas un objet renvoie un dict aux
-    champs vides plutot que de lever une exception -- l'appelant n'a pas
-    a se soucier du cas d'erreur, juste a verifier que les champs
+    totem_special, bg_image_b64, totem_image_b64, extra_totems,
+    side_quests, next_quest_id, story_log, story_summary). Tolerant : un
+    JSON invalide, incomplet, ou qui n'est pas un objet renvoie un dict
+    aux champs vides plutot que de lever une exception -- l'appelant n'a
+    pas a se soucier du cas d'erreur, juste a verifier que les champs
     attendus sont bien remplis avant de les utiliser."""
     try:
         data = json.loads(raw_text)
@@ -516,6 +540,36 @@ def parse_identity_import(raw_text):
         data = {}
     if not isinstance(data, dict):
         data = {}
+
+    extra_totems = []
+    for t in (data.get("extra_totems") or []):
+        if not isinstance(t, dict):
+            continue
+        label = (t.get("label") or "").strip()
+        if not label:
+            continue
+        powers = [p.strip() for p in (t.get("powers") or []) if isinstance(p, str) and p.strip()]
+        extra_totems.append({
+            "label": label,
+            "emoji": str(t.get("emoji") or "").strip(),
+            "powers": powers,
+            "special": str(t.get("special") or "").strip(),
+            "image_b64": t.get("image_b64") or "",
+        })
+
+    side_quests = [
+        q for q in (data.get("side_quests") or [])
+        if isinstance(q, dict) and "id" in q and "kind" in q and "status" in q
+    ]
+    try:
+        next_quest_id = int(data.get("next_quest_id"))
+    except (TypeError, ValueError):
+        next_quest_id = (max((q["id"] for q in side_quests), default=0) + 1)
+
+    story_log = [s for s in (data.get("story_log") or []) if isinstance(s, str) and s.strip()]
+    story_summary = data.get("story_summary")
+    story_summary = story_summary.strip() if isinstance(story_summary, str) else ""
+
     return {
         "title": (data.get("title") or "").strip(),
         "subtitle": (data.get("subtitle") or "").strip(),
@@ -525,4 +579,9 @@ def parse_identity_import(raw_text):
         "totem_special": (data.get("totem_special") or "").strip(),
         "bg_image_b64": data.get("bg_image_b64") or "",
         "totem_image_b64": data.get("totem_image_b64") or "",
+        "extra_totems": extra_totems,
+        "side_quests": side_quests,
+        "next_quest_id": next_quest_id,
+        "story_log": story_log,
+        "story_summary": story_summary,
     }

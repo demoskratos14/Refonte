@@ -1,4 +1,5 @@
 
+import base64
 import json
 import os
 import shutil
@@ -150,6 +151,21 @@ def _save_totem_image(file_bytes: bytes, filename: str) -> Optional[str]:
         f.write(resized_bytes)
     return generated_filename
 
+def _totem_image_to_b64(filename: Optional[str]) -> str:
+    """Relit une image de totem_images/ et la renvoie encodee en base64,
+    ou une chaine vide si le fichier est absent/inconnu -- utilise par
+    export_identity() pour embarquer les totems acquis en cours de partie
+    (session.custom_totems), en plus du totem de depart deja gere par
+    stories.export_story_identity()."""
+    if not filename:
+        return ""
+    path = os.path.join(TOTEM_IMAGES_DIR, filename)
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("ascii")
+
+
 def switch_story(slug: str) -> bool:
     global CURRENT_STORY, CURRENT_STORY_CONFIG, session
 
@@ -282,7 +298,57 @@ def do_import_identity(raw_text: str) -> Dict[str, Any]:
         # rappeler do_create_story avec les octets reconstitues.
         "bg_image_b64": parsed.get("bg_image_b64", ""),
         "totem_image_b64": parsed.get("totem_image_b64", ""),
+        # Totems supplementaires (acquis en cours de partie sur l'appareil
+        # d'origine) : recrees a part par CreateStoryScreen.kt, via
+        # do_add_custom_totem, juste apres do_create_story -- jamais
+        # passes a do_create_story lui-meme, qui ne doit jamais poser plus
+        # d'un totem de depart sur une histoire neuve.
+        "extra_totems": parsed.get("extra_totems", []),
+        # Quetes secondaires et journal : appliques a part par
+        # CreateStoryScreen.kt via do_apply_imported_progress, une fois
+        # l'histoire creee (voir cette fonction plus bas).
+        "side_quests": parsed.get("side_quests", []),
+        "next_quest_id": parsed.get("next_quest_id", 1),
+        "story_log": parsed.get("story_log", []),
+        "story_summary": parsed.get("story_summary", ""),
     }
+
+
+def do_apply_imported_progress(
+    side_quests_json: str = "[]",
+    next_quest_id: int = 1,
+    story_log_json: str = "[]",
+    story_summary: str = "",
+) -> Dict[str, Any]:
+    """Appelee par CreateStoryScreen.kt juste apres do_create_story (et
+    apres les eventuels do_add_custom_totem pour les totems
+    supplementaires) quand l'identite importee contenait des quetes
+    secondaires et/ou un journal : restaure ces deux elements dans la
+    session tout juste creee. side_quests_json et story_log_json sont des
+    chaines JSON (memes listes que dans do_import_identity/parse_identity
+    _import) -- des listes Kotlin/JSONArray ne passent pas directement
+    par Chaquopy aussi simplement qu'une chaine, d'ou ce choix, identique
+    a celui de do_import_identity(raw_text)."""
+    global session
+    try:
+        quests = json.loads(side_quests_json)
+    except (ValueError, TypeError):
+        quests = []
+    if not isinstance(quests, list):
+        quests = []
+    try:
+        log = json.loads(story_log_json)
+    except (ValueError, TypeError):
+        log = []
+    if not isinstance(log, list):
+        log = []
+    session.import_progress(
+        side_quests=quests,
+        next_quest_id=next_quest_id,
+        story_log=log,
+        story_summary=story_summary,
+    )
+    return session_to_dict(session)
 
 def do_roll(action: str) -> Dict[str, Any]:
     global session
@@ -921,7 +987,43 @@ def export_journal() -> tuple:
 def export_identity() -> tuple:
     if not CURRENT_STORY_CONFIG.get("is_custom"):
         return b"", "", ""  # a toi de decider comment Compose affiche ce cas
-    data = stories.export_story_identity(CURRENT_STORY)
+
+    extra_totems = []
+    side_quests = []
+    next_quest_id = 1
+    story_log = []
+    story_summary = ""
+    if session:
+        # Le totem de depart (deja porte par les champs totem_label/...
+        # geres par stories.export_story_identity) est toujours le premier
+        # element de session.custom_totems -- ajoute par switch_story() au
+        # tout premier lancement de l'histoire. Tout ce qui suit dans
+        # cette liste a ete ajoute ensuite par le joueur via
+        # TotemManagerDialog : on l'exporte a part, pour que
+        # do_import_identity puisse les recreer un par un apres coup sans
+        # jamais toucher a la regle "un seul totem de depart" de
+        # do_create_story.
+        for t in session.custom_totems[1:]:
+            extra_totems.append({
+                "label": t["label"],
+                "emoji": t.get("emoji") or "",
+                "powers": list(t.get("powers") or []),
+                "special": t.get("special") or "",
+                "image_b64": _totem_image_to_b64(t.get("image")),
+            })
+        side_quests = list(session.side_quests)
+        next_quest_id = session.next_quest_id
+        story_log = list(session.story_log)
+        story_summary = session.story_summary
+
+    data = stories.export_story_identity(
+        CURRENT_STORY,
+        extra_totems=extra_totems,
+        side_quests=side_quests,
+        next_quest_id=next_quest_id,
+        story_log=story_log,
+        story_summary=story_summary,
+    )
     if data is None:
         return b"", "", ""
     payload = json.dumps(data, ensure_ascii=False, indent=2)

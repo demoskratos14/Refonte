@@ -421,6 +421,30 @@ class DiceSession:
         self.save()
         return key
 
+    # ---------- import d'identite (quetes + journal) ----------
+    def import_progress(self, side_quests=None, next_quest_id=None,
+                         story_log=None, story_summary=None):
+        """Restaure quetes secondaires et journal a partir d'une identite
+        importee (voir game_api.do_apply_imported_progress) -- meme
+        validation que load(), pour ne jamais injecter de donnees
+        malformees dans la session en cours. Chaque parametre est
+        optionnel et laisse la session inchangee sur ce point si absent
+        (None) ; ne touche jamais aux totems, aux des ou a la menace.
+        Sauvegarde la session a la fin, comme les autres methodes do_*."""
+        if side_quests is not None:
+            quests = [q for q in side_quests
+                      if isinstance(q, dict) and "id" in q and "kind" in q and "status" in q]
+            self.side_quests = quests
+            try:
+                self.next_quest_id = int(next_quest_id)
+            except (TypeError, ValueError):
+                self.next_quest_id = (max((q["id"] for q in quests), default=0) + 1)
+        if story_log is not None:
+            self.story_log = [s for s in story_log if isinstance(s, str) and s.strip()]
+        if story_summary is not None:
+            self.story_summary = (story_summary or "").strip()
+        self.save()
+
     def remove_custom_totem(self, key):
         """Retire un totem ajoute par le joueur (jauge et image comprises
         -- le fichier image lui-meme doit etre supprime cote appelant).
