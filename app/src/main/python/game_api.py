@@ -46,10 +46,11 @@ def _totem_info(sess: DiceSession) -> Dict[str, Any]:
             "powers": list(t.get("powers") or []),
             "special": t.get("special") or "",
         }
-    # Symboles SANS fiche de totem : allies fixes lies a une face du de (Araignee,
-    # Bouclier, Etoile sur Animorph) et symbole "relance" (Blason d'Animorph). On
-    # leur associe l'effet qu'ils declenchent (voir do_use_totem_energy), pour que
-    # leur icone ouvre aussi une fiche. "badge": False -> pas de badge sous le titre.
+    # Symboles SANS fiche de totem : un symbole "relance" (cle exacte
+    # "patte" ou "baguette", voir do_use_totem_energy) ou un allie fixe
+    # (cle presente dans ALLY_HELP_TEXT) defini par une histoire. On leur
+    # associe l'effet qu'ils declenchent, pour que leur icone ouvre aussi
+    # une fiche. "badge": False -> pas de badge sous le titre.
     for key, sym in sess.all_symbols().items():
         if key in info:
             continue
@@ -589,23 +590,6 @@ def build_mechanics_context(auto_mode=False):
         "spirale": "chaos/transformation : effet imprevisible, mutation, ou "
                    "consequence inattendue",
     }
-    totems_compact = {
-        "aigle": (["vol", "vision exceptionnelle", "vitesse aerienne",
-                   "controle du vent", "rafales", "vol precis"],
-                  "Ascension Absolue : monte tres haut, vue globale depuis le ciel"),
-        "loup": (["force", "endurance", "odorat", "protection", "pistage"], ""),
-        "renard": (["agilite", "discretion", "ruse", "precision", "tactique"], ""),
-        "jaguar": (["vision nocturne", "intuition du danger", "perception spirituelle",
-                    "lien mental avec Gabin", "conseils"],
-                   "Fureur Astrale : 1x/aventure, boost reflexes/vitesse/lucidite"),
-        "bond": (["sauts tres hauts", "sauts tres longs", "atterrissage maitrise",
-                  "mobilite", "peut porter un allie"], ""),
-        "profondeurs": (["respiration aquatique", "vitesse aquatique",
-                         "resistance a la pression", "perception des vibrations",
-                         "echo-sens"],
-                        "Vague Primordiale : onde qui repousse et change les courants"),
-    }
-
     protagonist_ref = CURRENT_STORY_CONFIG.get("protagonist_ref", "le joueur")
     lines = []
     lines.append("=== CONTEXTE IA NARRATRICE ===")
@@ -627,20 +611,20 @@ def build_mechanics_context(auto_mode=False):
                              for f in FATE_FACES))
     lines.append("")
     lines.append("TOTEMS/ALLIES (symbole choisi sur le de de reussite) :")
-    for t in stories.all_stories().get(CURRENT_STORY, {}).get("totems", []):
-        compact = totems_compact.get(t["key"])
-        powers, special = compact if compact else (t["powers"], t["special"])
-        suffix = f" — spe: {special}" if special else ""
-        lines.append(f"{t['icon']}{t['label']}: {', '.join(powers)}{suffix}")
+    # Chaque histoire (creee dans l'application ou reimportee via une
+    # identite exportee) passe desormais entierement par les totems du
+    # joueur (session.custom_totems) -- y compris le tout premier, pose a
+    # la creation de l'histoire (voir switch_story()) : il n'y a plus de
+    # roster de totems code en dur a part.
     for t in session.custom_totems:
         icon = t.get("emoji") or "\U0001F43E"
         powers_txt = ", ".join(t["powers"]) if t["powers"] else "(pouvoirs non precises)"
         special_txt = f" — spe: {t['special']}" if t.get("special") else ""
-        lines.append(f"{icon}{t['label']} (ajoute par le joueur): {powers_txt}{special_txt}")
+        lines.append(f"{icon}{t['label']}: {powers_txt}{special_txt}")
     fixed_allies_line = CURRENT_STORY_CONFIG.get("fixed_allies_line") or ""
     if fixed_allies_line:
         lines.append(fixed_allies_line)
-    if not stories.all_stories().get(CURRENT_STORY, {}).get("totems", []) and not session.custom_totems:
+    if not session.custom_totems:
         lines.append("(aucun pour l'instant -- tout reste a decouvrir en jouant)")
     lines.append(
         f"Jauge par totem/allie : +score obtenu (symbole unique) ou +1/symbole "
@@ -708,7 +692,7 @@ def build_ai_kickoff_message():
         lines.append("")
         lines.append("Aucun chapitre n'a encore ete joue. Commence maintenant le tout "
                       "premier chapitre de cette aventure : plante le decor et presente "
-                      "la situation de depart de Gabin/Animorph, puis demande-moi le "
+                      f"la situation de depart de {protagonist_ref}, puis demande-moi le "
                       "premier lancer des que la situation l'exige.")
     return "\n".join(lines)
 

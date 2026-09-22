@@ -43,7 +43,6 @@ SUCCESS_LABELS = {
 }
 
 # Symboles disponibles pour les "constellations" (pips) du de de reussite.
-# Choix inspires de l'histoire d'Animorph : son mentor, ses totems, ses allies.
 PIP_SYMBOLS = {
     # Peuple au demarrage par dice_web.switch_story(), selon l'histoire
     # active. Reste un dict MUTABLE (jamais reassigne, seulement
@@ -757,10 +756,11 @@ class DiceSession:
         return record
 
     def second_souffle(self, note="Second Souffle"):
-        """Effet de relance immediate (utilise par la Patte d'Animorph, la
-        Baguette de Poudlard, ou tout autre totem futur ayant ce pouvoir) :
-        retire le dernier lancer de reussite (ou mixte) de l'historique et
-        relance immediatement le de de reussite a sa place."""
+        """Effet de relance immediate (utilise par tout totem ayant ce
+        pouvoir, identifie par sa cle exacte "patte" ou "baguette" -- voir
+        game_api.do_use_totem_energy) : retire le dernier lancer de
+        reussite (ou mixte) de l'historique et relance immediatement le
+        de de reussite a sa place."""
         for i in range(len(self.history) - 1, -1, -1):
             if self.history[i]["type"] in ("success", "both"):
                 self.history.pop(i)
