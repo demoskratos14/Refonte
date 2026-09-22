@@ -1,22 +1,33 @@
 // DiceSession.kt
-// Portage Kotlin de dice_engine.py — ÉTAPE 1 : cœur (dés, historique, sauvegarde)
+// Portage Kotlin de dice_engine.py — ÉTAPE 1 + ÉTAPE 2
 //
-// Ce que ce fichier couvre déjà (étape 1) :
+// Ce que ce fichier couvre déjà (étape 1 : cœur des lancers) :
 //   - constantes, libellés, faces du destin, combos narratifs
-//   - roll_success / roll_fate / roll_both / second_souffle / undo_last / clear_history / reset_all
+//   - rollSuccess / rollFate / rollBoth / secondSouffle / undoLast / clearHistory / resetAll
 //   - save() / load() avec EXACTEMENT les mêmes clés JSON que dice_state_<slug>.json
-//   - describe_record() / history_text()
+//   - describeRecord() / historyText()
 //   - la plomberie interne nécessaire aux lancers (jauge totem, jauge de menace,
-//     choix des pips, pool du destin, création de quête secondaire) : ce n'est
-//     pas de la "gestion" de totems/quêtes à proprement parler (ça, c'est l'étape 2),
-//     mais roll_success/roll_both ne peuvent pas fonctionner sans.
+//     choix des pips, pool du destin, création de quête secondaire)
 //
-// Ce qui reste pour l'ÉTAPE 2 (volontairement non traduit ici, cf. plan) :
-//   spend_totem_energy, add_custom_totem, remove_custom_totem, complete_side_quest,
-//   pending_digest_messages/apply_story_digest, reset_ai_conversation, ai_messages_to_send,
-//   mark_last_roll_as_sent, pending_roll, import_progress, tous les toggle_*,
-//   set_pip_symbol, set_pip_mode, add_story_entry, story_log_text, add_ai_message, all_symbols().
-//   Ces méthodes sont listées en TODO en bas de la classe pour mémoire.
+// Ce que ce fichier couvre en plus (étape 2 : gestion complète, miroir exact de
+// dice_engine.py) :
+//   - symboles/totems : toggleEnabledSymbol, setPipSymbol, setPipMode,
+//     addCustomTotem, removeCustomTotem, allSymbols(), spendTotemEnergy
+//   - contraintes de tirage : toggleAllowedValue/resetAllowedValues,
+//     toggleAllowedFate/resetAllowedFate
+//   - quêtes secondaires : completeSideQuest (openSideQuests() existait déjà)
+//   - journal de l'histoire : addStoryEntry/storyLogText
+//   - narration IA : addAiMessage, resetAiConversation, pendingDigestMessages,
+//     applyStoryDigest, markLastRollAsSent, pendingRoll, aiMessagesToSend
+//   - import d'identité : importProgress
+//
+// Ce qui reste pour l'ÉTAPE 3 (hors de cette classe) :
+//   - StoryRegistry côté Kotlin : peupler PIP_SYMBOLS selon l'histoire active
+//     et fournir le bon saveFile (dice_state_<slug>.json) par histoire
+//   - GameViewModel : orchestration UI <-> DiceSession, équivalent des routes
+//     do_* de dice_web.py
+//   - Portage de mistral_client.py (appel réseau à l'IA narratrice via Chaquopy
+//     ou HTTP direct), journal_export.py, image_utils.py
 //
 // NB save file : dans dice_engine.py, SAVE_FILE = "dice_state.json" est une constante
 // globale, mais dans l'appli réelle chaque histoire a son propre fichier
@@ -110,6 +121,16 @@ val COMBO_NOTES: Map<Pair<Int, String>, String> = mapOf(
 data class PipSymbolInfo(val emoji: String, val label: String)
 val PIP_SYMBOLS: MutableMap<String, PipSymbolInfo> = mutableMapOf()
 const val DEFAULT_PIP_SYMBOL = ""
+
+/** Symbole fusionné (base ou totem ajouté), miroir du dict renvoyé par all_symbols() en Python. */
+data class SymbolInfo(
+    val emoji: String,
+    val label: String,
+    val image: String?,
+    val powers: List<String>,
+    val special: String,
+    val isCustom: Boolean
+)
 
 // ------------------------------------------------------------------------
 // Structures de données
@@ -464,6 +485,13 @@ class DiceSession(private var saveFile: File) {
 
     fun openSideQuests(): List<SideQuest> = sideQuests.filter { it.status == "ouverte" }
 
+    fun completeSideQuest(questId: Int): Boolean {
+        val quest = sideQuests.find { it.id == questId } ?: return false
+        quest.status = "terminee"
+        save()
+        return true
+    }
+
     /**
      * Pool de tirage du dé du destin : symboles cochés (allowedFateKeys), moins
      * "question" si une quête secondaire est déjà ouverte — sauf si ça viderait
@@ -608,15 +636,330 @@ class DiceSession(private var saveFile: File) {
         }
     }
 
-    // ------------------------------------------------------------------
-    // TODO ÉTAPE 2 — pas encore portées ici, à ajouter sur cette même classe :
-    //   toggleEnabledSymbol, setPipSymbol, setPipMode,
-    //   addCustomTotem, removeCustomTotem, allSymbols(),
-    //   toggleAllowedValue/resetAllowedValues, toggleAllowedFate/resetAllowedFate,
-    //   spendTotemEnergy,
-    //   addStoryEntry/storyLogText,
-    //   addAiMessage, resetAiConversation, pendingDigestMessages, applyStoryDigest,
-    //   markLastRollAsSent, pendingRoll, aiMessagesToSend,
-    //   importProgress.
-    // ------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // ÉTAPE 2 — gestion des symboles / totems / contraintes de tirage
+    // ------------------------------------------------------------------------
+
+    /**
+     * Fusionne les symboles de base et les totems ajoutés par le joueur en un
+     * seul Map {clé -> SymbolInfo}, utilisé partout où l'appli doit afficher ou
+     * proposer TOUS les symboles disponibles (choix du pip, jauges totémiques,
+     * contexte envoyé à l'IA...). Miroir exact de all_symbols().
+     */
+    fun allSymbols(): Map<String, SymbolInfo> {
+        val merged = LinkedHashMap<String, SymbolInfo>()
+        for ((k, v) in PIP_SYMBOLS) {
+            merged[k] = SymbolInfo(
+                emoji = v.emoji, label = v.label, image = null,
+                powers = emptyList(), special = "", isCustom = false
+            )
+        }
+        for (t in customTotems) {
+            merged[t.key] = SymbolInfo(
+                emoji = t.emoji.ifEmpty { "\uD83D\uDC3E" }, // 🐾, miroir de "\U0001F43E"
+                label = t.label,
+                image = t.image,
+                powers = t.powers,
+                special = t.special,
+                isCustom = true
+            )
+        }
+        return merged
+    }
+
+    private fun slugifyTotemKey(label: String): String {
+        var base = label.map { c -> if (c.isLetterOrDigit()) c.lowercaseChar() else '_' }.joinToString("")
+        base = base.trim('_')
+        while ("__" in base) base = base.replace("__", "_")
+        if (base.isEmpty()) base = "totem"
+        var key = base
+        val existing = allSymbolKeys()
+        var n = 2
+        while (key in existing) {
+            key = "${base}_$n"
+            n += 1
+        }
+        return key
+    }
+
+    /**
+     * Ajoute un nouveau totem/allié en cours de partie : nouvelle entrée dans le
+     * sélecteur de symboles, nouvelle jauge d'énergie (à 0), actif par défaut.
+     * Renvoie la clé attribuée, ou null si le nom est vide. Miroir de add_custom_totem.
+     */
+    fun addCustomTotem(
+        label: String,
+        powersText: String = "",
+        special: String = "",
+        emoji: String = "",
+        imageFilename: String? = null
+    ): String? {
+        val trimmedLabel = label.trim()
+        if (trimmedLabel.isEmpty()) return null
+        val key = slugifyTotemKey(trimmedLabel)
+        val powers = powersText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        customTotems.add(
+            CustomTotem(
+                key = key, label = trimmedLabel, emoji = emoji.trim(),
+                image = imageFilename, powers = powers, special = special.trim()
+            )
+        )
+        if (key !in enabledSymbols) enabledSymbols.add(key)
+        totemEnergy[key] = 0
+        save()
+        return key
+    }
+
+    /**
+     * Retire un totem ajouté par le joueur (jauge et image comprises — le
+     * fichier image lui-même doit être supprimé côté appelant). Sans effet sur
+     * les symboles de base (PIP_SYMBOLS). Miroir de remove_custom_totem.
+     */
+    fun removeCustomTotem(key: String): Boolean {
+        val before = customTotems.size
+        customTotems = customTotems.filter { it.key != key }.toMutableList()
+        if (customTotems.size == before) return false
+        if (key in enabledSymbols && enabledSymbols.size > 1) enabledSymbols.remove(key)
+        totemEnergy.remove(key)
+        save()
+        return true
+    }
+
+    /** Coche/décoche un symbole dans le pool des modes aléatoire/mixte. Au moins un reste toujours actif. */
+    fun toggleEnabledSymbol(key: String): Boolean {
+        if (key !in allSymbolKeys()) return false
+        if (key in enabledSymbols) {
+            if (enabledSymbols.size > 1) enabledSymbols.remove(key)
+        } else {
+            enabledSymbols.add(key)
+        }
+        save()
+        return true
+    }
+
+    fun setPipSymbol(key: String): Boolean {
+        if (key in allSymbolKeys()) {
+            pipSymbol = key
+            pipMode = "single"
+            save()
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Active le mode "aléatoire" ou "mixte". Réactive au passage toutes les
+     * constellations (l'utilisateur peut ensuite en décocher). Si le mode
+     * demandé est déjà actif, un second appel le désactive et revient au choix
+     * d'une constellation simple. Miroir de set_pip_mode.
+     */
+    fun setPipMode(mode: String): Boolean {
+        if (mode !in setOf("random", "mixed")) return false
+        if (pipMode == mode) {
+            pipMode = "single"
+        } else {
+            pipMode = mode
+            enabledSymbols = allSymbolKeys().toMutableList()
+        }
+        save()
+        return true
+    }
+
+    /** Coche/décoche une valeur (1-6) du dé de réussite. Au moins une reste toujours active. */
+    fun toggleAllowedValue(value: Int): Boolean {
+        if (value !in 1..6) return false
+        if (value in allowedSuccessValues) {
+            if (allowedSuccessValues.size > 1) allowedSuccessValues.remove(value)
+        } else {
+            allowedSuccessValues.add(value)
+            allowedSuccessValues.sort()
+        }
+        save()
+        return true
+    }
+
+    /** Réactive les 6 valeurs (désactive toute contrainte). */
+    fun resetAllowedValues() {
+        allowedSuccessValues = mutableListOf(1, 2, 3, 4, 5, 6)
+        save()
+    }
+
+    /** Coche/décoche un symbole du dé du destin. Au moins un reste toujours actif. */
+    fun toggleAllowedFate(key: String): Boolean {
+        if (key !in FATE_BY_KEY) return false
+        if (key in allowedFateKeys) {
+            if (allowedFateKeys.size > 1) allowedFateKeys.remove(key)
+        } else {
+            allowedFateKeys.add(key)
+        }
+        save()
+        return true
+    }
+
+    /** Réactive les 6 symboles du dé du destin (désactive toute contrainte). */
+    fun resetAllowedFate() {
+        allowedFateKeys = FATE_FACES.map { it.key }.toMutableList()
+        save()
+    }
+
+    /**
+     * Consomme la jauge d'un totem/allié si elle est pleine. Renvoie true si
+     * elle a bien été dépensée (l'effet peut alors être déclenché côté
+     * appelant), false si elle n'était pas encore prête.
+     */
+    fun spendTotemEnergy(key: String): Boolean {
+        if (key !in allSymbolKeys() || !isTotemReady(key)) return false
+        totemEnergy[key] = 0
+        save()
+        return true
+    }
+
+    // ------------------------------------------------------------------------
+    // ÉTAPE 2 — journal de l'histoire
+    // ------------------------------------------------------------------------
+
+    fun addStoryEntry(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        storyLog.add(trimmed)
+        save()
+        return true
+    }
+
+    fun storyLogText(): String {
+        if (storyLog.isEmpty()) return ""
+        return storyLog.mapIndexed { i, entry -> "--- Chapitre ${i + 1} ---\n$entry" }
+            .joinToString("\n\n")
+    }
+
+    // ------------------------------------------------------------------------
+    // ÉTAPE 2 — narration automatique (IA)
+    // ------------------------------------------------------------------------
+
+    fun addAiMessage(role: String, content: String) {
+        if (role !in setOf("system", "user", "assistant")) return
+        val trimmed = content.trim()
+        if (trimmed.isEmpty()) return
+        aiConversation.add(AiMessage(role, trimmed))
+        save()
+    }
+
+    /**
+     * Efface uniquement la conversation avec l'IA narratrice (elle sera
+     * régénérée, mécaniques comprises, au prochain lancer) -- le reste de la
+     * partie (jauges, quêtes, historique des dés...) n'est pas touché.
+     */
+    fun resetAiConversation() {
+        aiConversation = mutableListOf()
+        storySummary = ""
+        lastJournalIndex = 0
+        lastAiSentId = 0
+        save()
+    }
+
+    /** aiConversation sans le message "system" initial (s'il existe). Miroir de _rest_conversation. */
+    private fun restConversation(): List<AiMessage> {
+        return if (aiConversation.isNotEmpty() && aiConversation[0].role == "system") {
+            aiConversation.drop(1)
+        } else {
+            aiConversation
+        }
+    }
+
+    /**
+     * Messages (hors message system) pas encore intégrés à une "digestion"
+     * (chapitre de journal + résumé long terme mis à jour, produits en un seul
+     * appel IA). Miroir de pending_digest_messages.
+     */
+    fun pendingDigestMessages(): List<AiMessage> = restConversation().drop(lastJournalIndex)
+
+    /**
+     * Enregistre en une fois le résultat d'une digestion : le chapitre de
+     * journal (storyLog) ET le résumé long terme mis à jour (déjà fusionné
+     * ancien+nouveau par l'appelant), puis avance le curseur partagé d'autant
+     * de messages consommés, pour ne jamais re-traiter la même tranche.
+     */
+    fun applyStoryDigest(chapterText: String, updatedSummary: String, messagesConsumed: Int): Boolean {
+        val added = addStoryEntry(chapterText)
+        if (!added) return false
+        storySummary = updatedSummary.trim()
+        lastJournalIndex += messagesConsumed
+        save()
+        return true
+    }
+
+    /** À appeler juste après avoir transmis le dernier lancer à l'IA, pour ne pas le renvoyer deux fois. */
+    fun markLastRollAsSent() {
+        if (history.isNotEmpty()) {
+            lastAiSentId = history.last().id
+            save()
+        }
+    }
+
+    /** Le dernier lancer effectué s'il n'a pas encore été transmis à l'IA narratrice, sinon null. */
+    fun pendingRoll(): RollRecord? {
+        if (history.isEmpty()) return null
+        val last = history.last()
+        if (last.id <= lastAiSentId) return null
+        return last
+    }
+
+    /**
+     * Messages à effectivement transmettre à l'API : le message système
+     * (mécaniques du jeu, toujours conservé) + le résumé long terme s'il existe
+     * + une fenêtre récente de l'échange, pour rester sous la limite de contexte
+     * du modèle. L'intégralité de la conversation reste conservée dans
+     * aiConversation (et dans la sauvegarde) pour l'affichage.
+     */
+    fun aiMessagesToSend(): List<AiMessage> {
+        if (aiConversation.isEmpty()) return emptyList()
+        val head = if (aiConversation[0].role == "system") listOf(aiConversation[0]) else emptyList()
+        val window = restConversation().takeLast(AI_HISTORY_WINDOW)
+        if (storySummary.isNotEmpty()) {
+            val summaryMsg = AiMessage(
+                "system",
+                "Résumé de l'histoire avant les échanges récents ci-dessous (personnages, " +
+                    "objets/totems, lieux, quêtes, événements marquants à ne pas oublier) :\n" +
+                    storySummary
+            )
+            return head + listOf(summaryMsg) + window
+        }
+        return head + window
+    }
+
+    // ------------------------------------------------------------------------
+    // ÉTAPE 2 — import d'identité (quêtes + journal)
+    // ------------------------------------------------------------------------
+
+    /**
+     * Restaure quêtes secondaires et journal à partir d'une identité importée,
+     * avec la même validation que load(), pour ne jamais injecter de données
+     * malformées dans la session en cours. Chaque paramètre est optionnel et
+     * laisse la session inchangée sur ce point si absent (null) ; ne touche
+     * jamais aux totems, aux dés ou à la menace. Miroir de import_progress.
+     */
+    fun importProgress(
+        sideQuests: JSONArray? = null,
+        nextQuestId: Int? = null,
+        storyLog: JSONArray? = null,
+        storySummary: String? = null
+    ) {
+        if (sideQuests != null) {
+            val quests = (0 until sideQuests.length())
+                .mapNotNull { sideQuests.optJSONObject(it) }
+                .mapNotNull { SideQuest.fromJson(it) }
+            this.sideQuests = quests.toMutableList()
+            this.nextQuestId = nextQuestId ?: ((quests.maxOfOrNull { it.id } ?: 0) + 1)
+        }
+        if (storyLog != null) {
+            this.storyLog = (0 until storyLog.length())
+                .map { storyLog.optString(it, "") }
+                .filter { it.isNotBlank() }
+                .toMutableList()
+        }
+        if (storySummary != null) {
+            this.storySummary = storySummary.trim()
+        }
+        save()
+    }
 }
