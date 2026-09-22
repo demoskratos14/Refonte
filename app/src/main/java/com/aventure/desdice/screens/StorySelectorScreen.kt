@@ -381,15 +381,18 @@ private fun NewStorySlide(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF2A2118), Color(0xFF14161A)))
-            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             )
     ) {
+        Image(
+            painter = painterResource(R.drawable.new_story_bg),
+            contentDescription = "Nouvelle histoire",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
         Box(modifier = Modifier.fillMaxSize().background(OverlayBrush))
         SlideTexts(
             title = "Nouvelle histoire",
