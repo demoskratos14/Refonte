@@ -125,6 +125,7 @@ fun CreateStoryScreen(
     var title by remember { mutableStateOf("") }
     var subtitle by remember { mutableStateOf("") }
     var loreText by remember { mutableStateOf("") }
+    var protagonistName by remember { mutableStateOf("") }
     var totemLabel by remember { mutableStateOf("") }
     var totemPowers by remember { mutableStateOf("") }
     var totemSpecial by remember { mutableStateOf("") }
@@ -188,6 +189,7 @@ fun CreateStoryScreen(
                     title = parsed.optString("title", "")
                     subtitle = parsed.optString("subtitle", "")
                     loreText = parsed.optString("lore_text", "")
+                    protagonistName = parsed.optString("protagonist_name", "")
                     totemLabel = parsed.optString("totem_label", "")
                     totemPowers = parsed.optString("totem_powers", "")
                     totemSpecial = parsed.optString("totem_special", "")
@@ -288,7 +290,8 @@ fun CreateStoryScreen(
                     "call_json", "do_create_story",
                     title, subtitle, loreText,
                     totemLabel, totemPowers, totemSpecial,
-                    bgBytes, bgExt, totemBytes, totemFilename
+                    bgBytes, bgExt, totemBytes, totemFilename,
+                    protagonistName
                 ).toString()
                 // Le totem de depart est deja pose par do_create_story (un
                 // seul, comme toujours). Les totems importes en plus (acquis
@@ -463,6 +466,14 @@ fun CreateStoryScreen(
                     fonts = fonts,
                     enabled = !saving,
                     minHeight = 110.dp
+                )
+                ComicTextField(
+                    label = "Prénom du héros (optionnel — laisser vide si le joueur doit le donner en jeu)",
+                    value = protagonistName,
+                    onValueChange = { protagonistName = it },
+                    fonts = fonts,
+                    enabled = !saving,
+                    singleLine = true
                 )
 
                 // --- Image de fond ---
