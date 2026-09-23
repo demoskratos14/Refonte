@@ -847,12 +847,7 @@ class GameEngine(private val baseDir: File) {
     /** Miroir de do_apply_imported_progress() : restaure quêtes/journal sur la session en cours. */
     fun applyImportedProgress(sideQuestsJson: JSONArray, nextQuestId: Int, storyLogJson: JSONArray, storySummary: String): JSONObject {
         val sess = session ?: return currentSessionJson()
-        val quests = (0 until sideQuestsJson.length()).mapNotNull { i ->
-            sideQuestsJson.optJSONObject(i)?.let { SideQuest.fromJson(it) }
-        }
-        val log = (0 until storyLogJson.length()).mapNotNull { i -> storyLogJson.opt(i) as? String }
-            .filter { it.isNotBlank() }
-        sess.importProgress(sideQuests = quests, nextQuestId = nextQuestId, storyLog = log, storySummary = storySummary)
+        sess.importProgress(sideQuests = sideQuestsJson, nextQuestId = nextQuestId, storyLog = storyLogJson, storySummary = storySummary)
         return sessionToJson(sess)
     }
 
