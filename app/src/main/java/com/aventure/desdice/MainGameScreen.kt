@@ -2,6 +2,8 @@ package com.aventure.desdice
 
 import android.graphics.BitmapFactory
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.SoundPool
 import android.util.Base64
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -62,6 +64,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,6 +86,8 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -345,6 +350,7 @@ fun DiceResultCard(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val textMeasurer = rememberTextMeasurer()
+    val playDiceRollSound = rememberDiceRollSound()
 
     var rolling by remember { mutableStateOf(false) }
     var sendingToAi by remember { mutableStateOf(false) }
@@ -403,6 +409,7 @@ fun DiceResultCard(
 
                 if (successSpec != null || fateSpec != null) {
                     spin = SpinState(successSpec, fateSpec)
+                    playDiceRollSound()
                     progress.snapTo(0f)
                     progress.animateTo(
                         1f,
@@ -458,23 +465,44 @@ fun DiceResultCard(
 
     Section(modifier) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val successDie: @Composable () -> Unit = {
+            val fullDieSize = 150.dp
+            val centerButtonSize = 56.dp
+            val gap = 12.dp
+
+            // Meme logique que ClassicDiceScreen.kt : le bouton rond central
+            // a besoin de sa propre place en plus des deux des ; si la
+            // largeur ne suffit pas a les ecarter a taille pleine, on
+            // retrecit legerement les deux des (jamais en dessous de 100dp)
+            // plutot que de les faire se chevaucher.
+            val rowDieSize = remember(maxWidth) {
+                val required = fullDieSize * 2 + centerButtonSize + gap * 2
+                if (maxWidth >= required) {
+                    fullDieSize
+                } else {
+                    val available = (maxWidth - centerButtonSize - gap * 2).coerceAtLeast(0.dp)
+                    (available / 2).coerceIn(100.dp, fullDieSize)
+                }
+            }
+
+            val successDie: @Composable (Dp) -> Unit = { dieSize ->
                 DieColumn(
                     caption = "Dé de réussite",
-                    buttonText = "🎲 Lancer",
-                    primary = true,
-                    enabled = !rolling,
                     dimmed = !successUsed,
-                    onRoll = { roll("success") },
                     fonts = fonts
                 ) {
                     val spec = spin?.success
                     if (spec != null) {
-                        Box(Modifier.size(150.dp).graphicsLayer { rotationZ = -1f }) {
+                        Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
                             TumblingDie(spec, progress, null, fonts, Color.White, pipGlyphs = spinGlyphs)
                         }
                     } else {
-                        DieBox(rotation = -1f, background = Color.White) {
+                        DieBox(
+                            rotation = -1f,
+                            background = Color.White,
+                            size = dieSize,
+                            onClick = { roll("success") },
+                            enabled = !rolling
+                        ) {
                             SymbolSuccessDieFace(
                                 value = successValue,
                                 pipKeys = pipKeys,
@@ -485,23 +513,25 @@ fun DiceResultCard(
                     }
                 }
             }
-            val fateDie: @Composable () -> Unit = {
+            val fateDie: @Composable (Dp) -> Unit = { dieSize ->
                 DieColumn(
                     caption = "Dé du destin",
-                    buttonText = "🔮 Lancer",
-                    primary = true,
-                    enabled = !rolling,
                     dimmed = !fateUsed,
-                    onRoll = { roll("fate") },
                     fonts = fonts
                 ) {
                     val spec = spin?.fate
                     if (spec != null) {
-                        Box(Modifier.size(150.dp).graphicsLayer { rotationZ = 1f }) {
+                        Box(Modifier.size(dieSize).graphicsLayer { rotationZ = 1f }) {
                             TumblingDie(spec, progress, cubeFateFaces, fonts, FateDieBg)
                         }
                     } else {
-                        DieBox(rotation = 1f, background = FateDieBg) {
+                        DieBox(
+                            rotation = 1f,
+                            background = FateDieBg,
+                            size = dieSize,
+                            onClick = { roll("fate") },
+                            enabled = !rolling
+                        ) {
                             FateDieFace(fateFace, fonts)
                         }
                     }
@@ -511,31 +541,27 @@ fun DiceResultCard(
             if (maxWidth >= 316.dp) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
                 ) {
-                    successDie()
-                    fateDie()
+                    successDie(rowDieSize)
+                    RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = { roll("both") })
+                    fateDie(rowDieSize)
                 }
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    successDie()
-                    fateDie()
+                    successDie(fullDieSize)
+                    RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = { roll("both") })
+                    fateDie(fullDieSize)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
-        ComicButton(
-            text = "⚡ Lancer les deux dés ensemble",
-            onClick = { roll("both") },
-            fonts = fonts,
-            enabled = !rolling,
-            modifier = Modifier.fillMaxWidth()
-        )
 
         if (description.isNotEmpty() && spin == null) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -629,14 +655,42 @@ private fun lastRecordWith(history: org.json.JSONArray?, field: String): JSONObj
     return null
 }
 
+/**
+ * Meme bruitage de lancer que ClassicDiceScreen.kt (dupliquee ici pour la
+ * meme raison que RollBothButton : la fonction source est private).
+ * Le fichier attendu est res/raw/dice_roll.<extension> (mp3, wav ou ogg),
+ * A AJOUTER TOI-MEME au projet -- ce fichier ne peut pas etre genere ici.
+ * L'animation de lancer dure SpinDurationMs = 1800 ms, un son de cette
+ * longueur ou un peu moins colle le mieux au mouvement des des.
+ */
+@Composable
+private fun rememberDiceRollSound(): () -> Unit {
+    val context = LocalContext.current
+    val soundPool = remember {
+        SoundPool.Builder()
+            .setMaxStreams(2)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+    }
+    var soundId by remember { mutableStateOf(0) }
+    DisposableEffect(Unit) {
+        soundId = soundPool.load(context, R.raw.dice_roll, 1)
+        onDispose { soundPool.release() }
+    }
+    return {
+        if (soundId != 0) soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
+    }
+}
+
 @Composable
 private fun DieColumn(
     caption: String,
-    buttonText: String,
-    primary: Boolean,
-    enabled: Boolean,
     dimmed: Boolean,
-    onRoll: () -> Unit,
     fonts: AppFonts,
     die: @Composable () -> Unit
 ) {
@@ -652,15 +706,35 @@ private fun DieColumn(
                 shadow = TextShadow
             )
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        ComicButton(
-            text = buttonText,
-            onClick = onRoll,
-            fonts = fonts,
-            kind = if (primary) ButtonKind.Primary else ButtonKind.Secondary,
-            enabled = enabled,
-            compact = true,
-            modifier = Modifier.width(150.dp)
+    }
+}
+
+/** Bouton rond "⚡" (lancer les deux dés a la fois), pose entre les deux des -- meme habillage "BD" (ombre/bordure) que ComicButton, en cercle. Identique a celui de ClassicDiceScreen.kt, duplique ici car private la-bas. */
+@Composable
+private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .size(size)
+            .alpha(if (enabled) 1f else 0.6f)
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .hardShadow(if (pressed) 1.dp else 3.dp, size / 2, Ink)
+            .background(Red, CircleShape)
+            .border(3.dp, Ink, CircleShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .semantics { contentDescription = "Lancer les deux dés" },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "⚡",
+            textAlign = TextAlign.Center,
+            style = TextStyle(fontSize = (size.value * 0.42f).sp, color = Color.White)
         )
     }
 }
