@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
@@ -377,7 +379,7 @@ fun CreateStoryScreen(
 
         // --- Fond plein ecran (fixe, le contenu defile par-dessus) ---
         Image(
-            painter = painterResource(id = R.drawable.bg_create_story),
+            painter = rememberBackgroundPainter(BackgroundSlot.CREATE_STORY),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             // Calee en haut et decalee vers la droite pour garder la lune visible.

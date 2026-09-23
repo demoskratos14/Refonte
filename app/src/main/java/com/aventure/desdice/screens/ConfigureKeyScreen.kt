@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
@@ -177,7 +179,7 @@ fun ConfigureKeyScreen(
 
         // --- Fond plein ecran (fixe, le contenu defile par-dessus) ---
         Image(
-            painter = painterResource(id = R.raw.bg_key_page),
+            painter = rememberBackgroundPainter(BackgroundSlot.KEY_PAGE),
             contentDescription = "Le Livre des Mille Histoires",
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopCenter,

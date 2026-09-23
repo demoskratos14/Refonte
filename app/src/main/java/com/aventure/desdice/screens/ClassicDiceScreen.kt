@@ -77,6 +77,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
@@ -295,7 +297,7 @@ fun ClassicDiceScreen(
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
         Image(
-            painter = painterResource(R.drawable.bg_classic_dice),
+            painter = rememberBackgroundPainter(BackgroundSlot.CLASSIC_DICE),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()

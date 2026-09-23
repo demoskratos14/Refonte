@@ -1,6 +1,8 @@
 package com.aventure.desdice.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,10 +52,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.BackgroundStore
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.FontOption
 import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.listAssetFonts
 import com.aventure.desdice.ui.rememberAppFonts
+import kotlinx.coroutines.launch
 
 // Palette identique aux autres écrans. Noms préfixés "S" et privés pour ne pas
 // entrer en conflit avec les vals privées de ConfigureKeyScreen / StorySelectorScreen.
@@ -99,6 +106,7 @@ fun SettingsScreen(
     val fonts = rememberAppFonts()
     val fontPrefs = remember(context) { FontPrefs.get(context) }
     val fontOptions = remember(context) { listAssetFonts(context) }
+    val bgStore = remember(context) { BackgroundStore.get(context) }
 
     Box(
         modifier = modifier
@@ -106,7 +114,7 @@ fun SettingsScreen(
             .background(SPageBg)
     ) {
         Image(
-            painter = painterResource(id = R.raw.bg_settings),
+            painter = rememberBackgroundPainter(BackgroundSlot.SETTINGS),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -206,6 +214,31 @@ fun SettingsScreen(
                 }
             }
 
+            // --- Images de fond ---
+            SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
+                Text(
+                    text = "Choisis une image de ta galerie pour chaque page. Une image en paysage " +
+                        "est complétée par un fond flouté pour remplir l'écran en portrait.",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.95f),
+                    fontFamily = fonts.body,
+                    style = TextStyle(shadow = STextShadow),
+                    modifier = Modifier.padding(bottom = 14.dp)
+                )
+                BackgroundSlot.values().forEachIndexed { index, slot ->
+                    if (index > 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 14.dp)
+                                .height(2.dp)
+                                .background(SLineColor)
+                        )
+                    }
+                    BackgroundRow(slot = slot, store = bgStore, fonts = fonts)
+                }
+            }
+
             SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
             Spacer(Modifier.height(8.dp))
         }
@@ -240,6 +273,67 @@ private fun SettingsCard(
             modifier = Modifier.padding(bottom = 12.dp)
         )
         content()
+    }
+}
+
+/** Une ligne « page » : miniature du fond actuel + choisir une image / revenir à l'image par défaut. */
+@Composable
+private fun BackgroundRow(slot: BackgroundSlot, store: BackgroundStore, fonts: AppFonts) {
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                message = "Chargement…"
+                message = if (store.setFromUri(slot, uri)) null else "Image illisible, essaie-en une autre."
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            painter = rememberBackgroundPainter(slot),
+            contentDescription = slot.label,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(width = 60.dp, height = 100.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(2.dp, SCardBorder, RoundedCornerShape(8.dp))
+        )
+        Spacer(Modifier.size(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = slot.label,
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            SettingsButton(
+                text = "Choisir une image",
+                onClick = { launcher.launch("image/*") },
+                fonts = fonts
+            )
+            if (store.hasCustom(slot)) {
+                Spacer(Modifier.height(8.dp))
+                SettingsButton(
+                    text = "Image par défaut",
+                    onClick = { store.reset(slot); message = null },
+                    fonts = fonts,
+                    secondary = true
+                )
+            }
+            message?.let {
+                Text(
+                    text = it,
+                    fontSize = 13.sp,
+                    color = Color(0xFFFFC9C9),
+                    fontFamily = fonts.body,
+                    style = TextStyle(shadow = STextShadow),
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
     }
 }
 

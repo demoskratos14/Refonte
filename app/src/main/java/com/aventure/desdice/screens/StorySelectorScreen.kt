@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.sp
 import com.aventure.desdice.R
 import com.aventure.desdice.model.Story
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
@@ -388,7 +390,7 @@ private fun NewStorySlide(
             )
     ) {
         Image(
-            painter = painterResource(R.drawable.new_story_bg),
+            painter = rememberBackgroundPainter(BackgroundSlot.NEW_STORY),
             contentDescription = "Nouvelle histoire",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
