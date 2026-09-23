@@ -60,7 +60,6 @@ import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
-import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -93,19 +92,21 @@ private val ScrimBottom = Color(0x73000000)
 private const val BgAspect = 1062f / 699f // hauteur / largeur
 
 /**
- * Equivalent Compose de render_create_story_page (dice_web.py). Appelle
- * game_api.do_create_story directement (plutot que via
- * viewModel.createStory, qui est fire-and-forget : on a besoin ici
- * d'attendre la fin de l'appel avant de naviguer), puis rafraichit
- * viewModel.loadStories() pour que le selecteur voie la nouvelle
- * histoire.
+ * Equivalent Compose de render_create_story_page (dice_web.py). Reconnecte
+ * a GameViewModel (createStoryAwait/addCustomTotemAwait/
+ * applyImportedProgress/importIdentity, toutes suspendues) : plus aucun
+ * appel a Python/Chaquopy. On utilise les variantes suspendues (plutot que
+ * les versions fire-and-forget de GameViewModel) car on a besoin
+ * d'attendre la fin de chaque etape avant la suivante, et la fin de tout
+ * avant de naviguer (onCreated) ; GameViewModel publie lui-meme
+ * sessionState a chaque etape, donc plus besoin de suivre une session
+ * "latest" a la main comme du temps de l'appel direct a game_api.
  *
- * Inclut le bloc "importer une identite exportee" (do_import_identity) :
- * stories.parse_identity_import/export_story_identity ont ete ajoutees a
- * stories.py pour le rendre fonctionnel (voir le message qui accompagne
- * ce fichier). Une image importee (bg ou totem) est prioritaire tant que
- * l'utilisateur n'en choisit pas explicitement une autre via les
- * selecteurs -- re-choisir une image l'efface au profit de la nouvelle.
+ * Inclut le bloc "importer une identite exportee" (viewModel.importIdentity,
+ * qui analyse sans rien appliquer) : une image importee (bg ou totem) est
+ * prioritaire tant que l'utilisateur n'en choisit pas explicitement une
+ * autre via les selecteurs -- re-choisir une image l'efface au profit de
+ * la nouvelle.
  *
  * Habillage : fond plein ecran fixe (res/drawable/bg_create_story.jpg), sections
  * sans carte, champs blancs a bordure noire, boutons "BD" rouges/blancs,
@@ -181,10 +182,7 @@ fun CreateStoryScreen(
         scope.launch(Dispatchers.IO) {
             mutex.withLock { importing = true; error = null }
             try {
-                val result = Python.getInstance().getModule("game_api")
-                    .callAttr("call_json", "do_import_identity", importText)
-                    .toString()
-                val parsed = JSONObject(result)
+                val parsed = viewModel.importIdentity(importText)
                 mutex.withLock {
                     title = parsed.optString("title", "")
                     subtitle = parsed.optString("subtitle", "")
@@ -272,8 +270,10 @@ fun CreateStoryScreen(
                 // L'image explicitement choisie (bgUri) est toujours
                 // prioritaire sur celle d'un import -- coherent avec le
                 // fait que la choisir efface deja importedBgBytes plus haut.
+                // bgExt n'est plus necessaire : GameEngine.createStory ne
+                // le prend plus en parametre (l'image de fond est de toute
+                // facon toujours reencodee en JPEG par StoryRegistry).
                 val bgBytes = bg?.let { uriBytes(it) } ?: importedBg!!
-                val bgExt = bg?.let { uriExtension(it) } ?: "jpg"
                 val totemBytes = totemUri?.let { uriBytes(it) }
                     ?: importedTotemBytes ?: ByteArray(0)
                 val totemFilename = when {
@@ -282,24 +282,31 @@ fun CreateStoryScreen(
                     else -> ""
                 }
 
-                // Appel direct (plutot que viewModel.createStory, qui est
-                // "fire-and-forget" -- lance sa propre coroutine sans
+                // Variante suspendue (plutot que viewModel.createStory, qui
+                // est "fire-and-forget" -- lance sa propre coroutine sans
                 // moyen d'attendre sa fin) : on a besoin de savoir que la
                 // creation est terminee avant de naviguer (onCreated).
-                val created = Python.getInstance().getModule("game_api").callAttr(
-                    "call_json", "do_create_story",
-                    title, subtitle, loreText,
-                    totemLabel, totemPowers, totemSpecial,
-                    bgBytes, bgExt, totemBytes, totemFilename,
-                    protagonistName
-                ).toString()
-                // Le totem de depart est deja pose par do_create_story (un
+                // GameEngine garde la session courante en interne, donc pas
+                // besoin de recuperer/repasser un JSON de session a la main
+                // comme du temps de l'appel direct a game_api.
+                viewModel.createStoryAwait(
+                    title = title,
+                    subtitle = subtitle,
+                    loreText = loreText,
+                    totemLabel = totemLabel,
+                    totemPowers = totemPowers,
+                    totemSpecial = totemSpecial,
+                    bgImageBytes = bgBytes,
+                    totemImageBytes = totemBytes,
+                    totemImageFilename = totemFilename,
+                    protagonistName = protagonistName
+                )
+                // Le totem de depart est deja pose par createStoryAwait (un
                 // seul, comme toujours). Les totems importes en plus (acquis
                 // en cours de partie sur l'appareil d'origine) sont ajoutes
                 // ensuite, un par un, exactement comme TotemManagerDialog le
                 // fait en cours de partie -- ca ne cree jamais un deuxieme
                 // totem "de depart".
-                var latestSession = created
                 for (extra in importedExtraTotems) {
                     val extraLabel = extra.optString("label", "")
                     if (extraLabel.isBlank()) continue
@@ -316,11 +323,14 @@ fun CreateStoryScreen(
                         ByteArray(0)
                     }
                     val extraImgFilename = if (extraImgBytes.isNotEmpty()) "totem.png" else ""
-                    latestSession = Python.getInstance().getModule("game_api").callAttr(
-                        "call_json", "do_add_custom_totem",
-                        extraLabel, powersText, extra.optString("special", ""),
-                        extra.optString("emoji", ""), extraImgBytes, extraImgFilename
-                    ).toString()
+                    viewModel.addCustomTotemAwait(
+                        label = extraLabel,
+                        powers = powersText,
+                        special = extra.optString("special", ""),
+                        emoji = extra.optString("emoji", ""),
+                        imageBytes = extraImgBytes,
+                        imageFilename = extraImgFilename
+                    )
                 }
 
                 // Quetes secondaires et journal importes : appliques en un
@@ -332,21 +342,20 @@ fun CreateStoryScreen(
                     (logArr != null && logArr.length() > 0) ||
                     importedStorySummary.isNotBlank()
                 ) {
-                    latestSession = Python.getInstance().getModule("game_api").callAttr(
-                        "call_json", "do_apply_imported_progress",
-                        (questsArr ?: JSONArray()).toString(),
+                    viewModel.applyImportedProgress(
+                        questsArr ?: JSONArray(),
                         importedNextQuestId,
-                        (logArr ?: JSONArray()).toString(),
+                        logArr ?: JSONArray(),
                         importedStorySummary
-                    ).toString()
+                    )
                 }
 
-                // do_create_story active la nouvelle histoire cote Python et
-                // renvoie sa session : on charge la version la plus a jour
-                // (totems/quetes/journal importes compris) avant de
+                // createStoryAwait/addCustomTotemAwait/applyImportedProgress
+                // publient deja chacun sessionState au fil de l'eau (voir
+                // GameViewModel) : la version la plus a jour (totems/quetes/
+                // journal importes compris) est donc deja chargee avant de
                 // rafraichir la liste, pour que l'ecran de jeu n'affiche pas
                 // l'etat de l'histoire precedente.
-                viewModel.loadSessionState(latestSession)
                 viewModel.loadStories()
                 onCreated()
             } catch (e: Exception) {

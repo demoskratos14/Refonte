@@ -146,6 +146,43 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Variante suspendue de createStory() : CreateStoryScreen a besoin
+     * d'attendre la création (et la publication de sessionState) avant de
+     * naviguer vers l'écran de jeu, contrairement à la version
+     * fire-and-forget ci-dessus. Ne prend plus bgImageExt (jamais utilisé
+     * côté GameEngine, l'image de fond étant toujours réencodée en JPEG
+     * par StoryRegistry) ni protagonistName en position fixe : ce dernier
+     * est optionnel, comme côté GameEngine.createStory().
+     */
+    suspend fun createStoryAwait(
+        title: String,
+        subtitle: String,
+        loreText: String,
+        totemLabel: String,
+        totemPowers: String,
+        totemSpecial: String,
+        bgImageBytes: ByteArray,
+        totemImageBytes: ByteArray,
+        totemImageFilename: String,
+        protagonistName: String = ""
+    ): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            engine.createStory(
+                title = title,
+                subtitle = subtitle,
+                loreText = loreText,
+                totemLabel = totemLabel,
+                totemPowers = totemPowers,
+                totemSpecial = totemSpecial,
+                bgImageBytes = bgImageBytes,
+                totemImageBytes = totemImageBytes,
+                totemImageFilename = totemImageFilename,
+                protagonistName = protagonistName
+            ).also { loadSessionState(it) }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Lancers de des
     // ------------------------------------------------------------------
@@ -156,6 +193,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 loadSessionState(engine.roll(action))
             }
         }
+    }
+
+    /**
+     * Variante suspendue de roll() : calcule le résultat mais ne le publie
+     * PAS tout de suite dans sessionState -- contrairement à la version
+     * fire-and-forget ci-dessus, l'appelant doit lui-même appeler
+     * publishSessionState(result) une fois prêt. Sert à MainGameScreen.kt
+     * (DiceResultCard) : le résultat est déjà tiré, mais l'animation du dé
+     * doit jouer AVANT que le reste de l'écran (jauges, quêtes...) ne se
+     * mette à jour, pour ne pas gâcher le suspense.
+     */
+    suspend fun rollAwaitingAnimation(action: String): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.roll(action) } }
+
+    /** À appeler une fois l'animation terminée, pour publier le résultat
+     * calculé par rollAwaitingAnimation(). */
+    fun publishSessionState(result: JSONObject) {
+        loadSessionState(result)
     }
 
     fun undo() {
@@ -188,6 +243,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Miroir de do_use_totem_energy (narration IA pas encore branchée — voir GameEngine.useTotemEnergy). */
     fun useTotemEnergy(key: String) = runEngine { engine.useTotemEnergy(key) }
+
+    /** Variante suspendue de useTotemEnergy() : publie sessionState comme la
+     * version normale, mais renvoie aussi le JSONObject à l'appelant pour
+     * qu'il puisse lire les champs "effect" / "ai_error" (voir
+     * TotemGaugesRow dans MainGameScreen.kt). */
+    suspend fun useTotemEnergyAwait(key: String): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.useTotemEnergy(key).also { loadSessionState(it) } } }
 
     private fun runEngine(block: () -> JSONObject) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -228,6 +290,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Charge l'état courant de "Des classiques" et le renvoie directement à
+     * l'appelant (en plus de le publier dans classicDiceState) -- utilisé au
+     * chargement de ClassicDiceScreen.kt, qui a besoin de la valeur tout de
+     * suite plutôt que d'attendre une recomposition sur le StateFlow. */
+    suspend fun classicDiceStateAwait(): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceState().also { _classicDiceState.value = it } } }
+
+    /**
+     * Variante suspendue de classicDiceRoll() : calcule le résultat mais ne
+     * le publie PAS tout de suite dans classicDiceState -- l'appelant doit
+     * lui-même appeler publishClassicDiceState(result) une fois prêt. Sert
+     * à ClassicDiceScreen.kt : le résultat est déjà tiré, mais l'animation
+     * du dé doit jouer AVANT que l'historique affiché ne se mette à jour,
+     * pour ne pas gâcher le suspense (même logique que rollAwaitingAnimation()).
+     */
+    suspend fun classicDiceRollAwait(kind: String): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceRoll(kind) } }
+
+    /** À appeler une fois l'animation terminée, pour publier le résultat
+     * calculé par classicDiceRollAwait(). */
+    fun publishClassicDiceState(result: JSONObject) {
+        _classicDiceState.value = result
+    }
+
+    /** Variante suspendue de classicDiceClear() : publie comme la version
+     * normale, mais renvoie aussi le JSONObject à l'appelant. */
+    suspend fun classicDiceClearAwait(): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceClear().also { _classicDiceState.value = it } } }
+
     // ------------------------------------------------------------------
     // Totems ajoutés en cours de partie / quêtes / journal
     // ------------------------------------------------------------------
@@ -241,17 +332,55 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         imageFilename: String = ""
     ) = runEngine { engine.addCustomTotem(label, powers, special, emoji, imageBytes, imageFilename) }
 
+    /** Variante suspendue de addCustomTotem() : utilisée par
+     * CreateStoryScreen.kt pour poser, un par un et dans l'ordre, les
+     * totems supplémentaires d'une identité importée juste après
+     * createStoryAwait() -- doit attendre chaque ajout avant le suivant
+     * (et avant applyImportedProgress()), d'où le besoin d'une variante
+     * suspendue plutôt que la version fire-and-forget ci-dessous. */
+    suspend fun addCustomTotemAwait(
+        label: String,
+        powers: String = "",
+        special: String = "",
+        emoji: String = "",
+        imageBytes: ByteArray = ByteArray(0),
+        imageFilename: String = ""
+    ): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            engine.addCustomTotem(label, powers, special, emoji, imageBytes, imageFilename).also { loadSessionState(it) }
+        }
+    }
+
     fun removeCustomTotem(key: String) = runEngine { engine.removeCustomTotem(key) }
     fun completeSideQuest(questId: Int) = runEngine { engine.completeSideQuest(questId) }
     fun addStoryEntry(text: String) = runEngine { engine.addStoryEntry(text) }
+
+    /** Variante suspendue de completeSideQuest(), utile pour l'enchaîner
+     * après sendAiMessageAwait() (voir SideQuestsList.startQuest() dans
+     * MainGameScreen.kt : la quête n'est retirée qu'une fois le message
+     * envoyé sans erreur). */
+    suspend fun completeSideQuestAwait(questId: Int): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.completeSideQuest(questId).also { loadSessionState(it) } } }
 
     // ------------------------------------------------------------------
     // Narration IA
     // ------------------------------------------------------------------
 
     fun sendFullPrompt() = runEngine { engine.sendFullPrompt() }
+
+    /** Texte du prompt complet à copier (mode manuel, sans clé Mistral). Voir ContinueSection. */
+    suspend fun buildFullPromptText(): String =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.buildFullPromptText() } }
+
     fun sendAiMessage(text: String = "") = runEngine { engine.sendAiMessage(text) }
     fun resetAiConversation() = runEngine { engine.resetAiConversation() }
+
+    /** Variante suspendue de sendAiMessage() : publie sessionState comme la
+     * version normale, mais renvoie aussi le JSONObject à l'appelant pour
+     * qu'il puisse lire "ai_error" avant de décider la suite (voir
+     * DiceResultCard et SideQuestsList dans MainGameScreen.kt). */
+    suspend fun sendAiMessageAwait(text: String = ""): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.sendAiMessage(text).also { loadSessionState(it) } } }
 
     // ------------------------------------------------------------------
     // Configuration Mistral
@@ -288,6 +417,42 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMistralModel(model: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                engine.setMistralModel(model)
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    /**
+     * Variantes suspendues de setMistralKey()/clearMistralKey()/setMistralModel() :
+     * publient configScreenState comme les versions fire-and-forget ci-dessus,
+     * mais permettent à l'appelant d'attendre la fin de l'opération avant de
+     * réinitialiser son propre état local -- sert à ConfigureKeyScreen.kt, qui
+     * doit vider le champ de saisie et replier le formulaire de changement de
+     * clé seulement une fois la nouvelle clé effectivement enregistrée (même
+     * logique que useTotemEnergyAwait()/classicDiceClearAwait() ailleurs).
+     */
+    suspend fun setMistralKeyAwait(key: String) {
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                engine.setMistralKey(key)
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    suspend fun clearMistralKeyAwait() {
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                engine.clearMistralKey()
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    suspend fun setMistralModelAwait(model: String) {
+        withContext(Dispatchers.IO) {
             mutex.withLock {
                 engine.setMistralModel(model)
                 _configScreenState.value = engine.getConfigScreenState()

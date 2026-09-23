@@ -21,8 +21,6 @@ import com.aventure.desdice.screens.ConfigureKeyScreen
 import com.aventure.desdice.screens.CreateStoryScreen
 import com.aventure.desdice.screens.StorySelectorScreen
 import com.aventure.desdice.viewmodel.GameViewModel
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 
 class MainActivity : ComponentActivity() {
     private lateinit var speechManager: SpeechManager
@@ -30,16 +28,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
-        // Doit etre appele avant tout autre acces a game_api (voir
-        // init_app_dir() dans game_api.py : fixe le repertoire de travail
-        // Python sur le stockage prive de l'app, pour que les chemins
-        // relatifs -- app_config.json, totem_images/, sauvegarde de
-        // session -- pointent au bon endroit).
-        Python.getInstance().getModule("game_api").callAttr("init_app_dir")
-
+        // Plus de demarrage Python/init_app_dir ici : GameEngine (construit
+        // par GameViewModel) recoit directement context.filesDir, comme le
+        // README l'indique ("il n'y a plus de repertoire de travail a
+        // fixer au demarrage").
         speechManager = SpeechManager(this)
 
         setContent {
@@ -73,9 +65,8 @@ class MainActivity : ComponentActivity() {
  *
  * A completer plus tard : bouton "changer d'histoire" depuis
  * MainGameScreen (repasser currentStorySlug a null cote ViewModel ou
- * ajouter un etat de nav dedie), et integration d'AiPanel (non appele
- * depuis MainGameScreen pour l'instant -- a brancher comme onglet,
- * section ou bottom sheet).
+ * ajouter un etat de nav dedie). AiPanel est deja integre a
+ * MainGameScreen (voir AiPanel.kt) -- rien a brancher ici de ce cote.
  */
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {

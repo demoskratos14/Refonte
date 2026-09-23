@@ -32,7 +32,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,37 +40,46 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aventure.desdice.viewmodel.GameViewModel
-import com.chaquo.python.Python
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Panneau de narration IA (equivalent Compose de render_ai_panel_html dans
  * dice_web.py). Affiche la conversation (session.ai_conversation, sans le
- * premier message "system"), un champ de texte libre (do_send_ai_message),
- * un bouton pour amorcer/relancer un chapitre sans lancer de de
- * (do_send_full_prompt), un bouton pour ecouter le dernier message de
- * l'IA (SpeechManager, cf. etape 2), et un bouton de reinitialisation
- * (do_reset_ai_conversation) qui, cote Python, remet TOUTE l'histoire a
- * zero (pas seulement la conversation) -- d'ou la confirmation avant
- * de l'executer.
+ * premier message "system"), un champ de texte libre, un bouton pour
+ * amorcer/relancer un chapitre sans lancer de de, un bouton pour ecouter
+ * le dernier message de l'IA (SpeechManager), et un bouton de
+ * reinitialisation (qui, cote moteur, remet TOUTE l'histoire a zero --
+ * d'ou la confirmation avant de l'executer).
+ *
+ * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
+ * n'appelle plus Python/Chaquopy. GameViewModel.sendFullPrompt(),
+ * .sendAiMessage() et .resetAiConversation() ecrivent elles-memes le
+ * resultat dans sessionState (y compris le champ "ai_error" en cas
+ * d'echec cote IA) ; ce composable se contente de reagir aux changements
+ * de sessionState (voir le LaunchedEffect ci-dessous), il n'y a plus de
+ * resultat synchrone a intercepter.
  *
  * speechManager attend une methode speak(text: String) -- adapte le nom
- * si ta classe SpeechManager (etape 2) expose une signature differente.
+ * si ta classe SpeechManager expose une signature differente. Peut etre
+ * null (bouton "Ecouter" alors masque), comme dans MainGameScreen.kt.
+ *
+ * hasKey / onKeyChanged / onConfigureKey reprennent le role qu'ils avaient
+ * dans l'ancienne NarrationSection (GameExtras.kt, desormais remplacee par
+ * ce fichier) : sans cle Mistral enregistree, le panneau de conversation
+ * est masque au profit d'un message + bouton vers l'ecran de configuration
+ * (le mode manuel reste possible via ContinueSection, qui permet de copier
+ * le prompt complet). onKeyChanged est appele apres le retrait de la cle,
+ * pour que l'ecran appelant rafraichisse son propre etat (configScreenState).
  */
 @Composable
 fun AiPanel(
     viewModel: GameViewModel,
-    speechManager: SpeechManager,
+    hasKey: Boolean,
+    onKeyChanged: () -> Unit = {},
+    onConfigureKey: (() -> Unit)? = null,
+    speechManager: SpeechManager? = null,
     modifier: Modifier = Modifier
 ) {
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
     var messages by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
@@ -82,9 +90,10 @@ fun AiPanel(
 
     val sessionState by viewModel.sessionState.collectAsState()
 
-    // Reconstuit la liste affichable a chaque changement d'etat de session
-    // (le premier message, "system", n'est jamais montre au joueur -- c'est
-    // le contexte de mecaniques, pas un tour de conversation).
+    // Reconstruit la liste affichable et relit ai_error a chaque
+    // changement d'etat de session (le premier message, "system", n'est
+    // jamais montre au joueur). C'est aussi ce qui fait retomber
+    // isLoading a false une fois l'action terminee cote moteur.
     LaunchedEffect(sessionState) {
         val conv: JSONArray? = sessionState?.optJSONArray("ai_conversation")
         val list = mutableListOf<Pair<String, String>>()
@@ -97,35 +106,13 @@ fun AiPanel(
             }
         }
         messages = list
+        error = sessionState?.optString("ai_error", "")?.ifEmpty { null }
+        isLoading = false
     }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
-        }
-    }
-
-    fun callGameApi(funcName: String, vararg args: Any) {
-        scope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-            }
-            try {
-                val result = python.getModule("game_api")
-                    .callAttr("call_json", funcName, *args)
-                    .toString()
-                val parsed = JSONObject(result)
-                val aiError = parsed.optString("ai_error", "")
-                if (aiError.isNotEmpty()) {
-                    mutex.withLock { error = aiError }
-                }
-                viewModel.loadSessionState(result)
-            } catch (e: Exception) {
-                mutex.withLock { error = "Erreur : ${e.message}" }
-            } finally {
-                mutex.withLock { isLoading = false }
-            }
         }
     }
 
@@ -151,6 +138,22 @@ fun AiPanel(
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        if (!hasKey) {
+            Text(
+                text = "Aucune clé API Mistral configurée pour l'instant — l'histoire ne " +
+                    "s'écrit donc pas ici automatiquement (le prompt complet reste copiable " +
+                    "plus bas, en mode manuel).",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (onConfigureKey != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(onClick = onConfigureKey, modifier = Modifier.fillMaxWidth()) {
+                    Text("🔑 Configurer la clé API")
+                }
+            }
+            return@Column
+        }
+
         if (messages.isEmpty() && !isLoading) {
             Text(
                 text = "Aucun échange pour l'instant.",
@@ -158,7 +161,11 @@ fun AiPanel(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
             Button(
-                onClick = { callGameApi("do_send_full_prompt") },
+                onClick = {
+                    isLoading = true
+                    error = null
+                    viewModel.sendFullPrompt()
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Envoyer le prompt à l'IA")
@@ -188,7 +195,7 @@ fun AiPanel(
                                 .padding(10.dp)
                         ) {
                             Text(text = content, style = MaterialTheme.typography.bodyMedium)
-                            if (isAssistant) {
+                            if (isAssistant && speechManager != null) {
                                 IconButton(
                                     onClick = { speechManager.speak(content) },
                                     modifier = Modifier.height(28.dp)
@@ -238,7 +245,9 @@ fun AiPanel(
                 onClick = {
                     val text = inputText.trim()
                     if (text.isNotEmpty()) {
-                        callGameApi("do_send_ai_message", text)
+                        isLoading = true
+                        error = null
+                        viewModel.sendAiMessage(text)
                         inputText = ""
                     }
                 },
@@ -246,6 +255,17 @@ fun AiPanel(
             ) {
                 Icon(Icons.Default.Send, contentDescription = "Envoyer")
             }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(
+            onClick = {
+                viewModel.clearMistralKey()
+                onKeyChanged()
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("❌ Retirer la clé", color = MaterialTheme.colorScheme.error)
         }
     }
 
@@ -264,7 +284,9 @@ fun AiPanel(
             confirmButton = {
                 TextButton(onClick = {
                     showResetConfirm = false
-                    callGameApi("do_reset_ai_conversation")
+                    isLoading = true
+                    error = null
+                    viewModel.resetAiConversation()
                 }) {
                     Text("Réinitialiser", color = MaterialTheme.colorScheme.error)
                 }

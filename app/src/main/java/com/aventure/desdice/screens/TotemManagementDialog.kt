@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
@@ -41,12 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.aventure.desdice.viewmodel.GameViewModel
-import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import org.json.JSONObject
 
 private data class CustomTotem(
     val key: String,
@@ -56,15 +51,13 @@ private data class CustomTotem(
 
 /**
  * Equivalent Compose du formulaire "totems ajoutes en cours de partie"
- * de dice_web.py (do_add_custom_totem/do_remove_custom_totem, deja
- * presentes dans game_api.py, inchangees).
+ * de dice_web.py (do_add_custom_totem/do_remove_custom_totem).
  *
- * Lit la liste actuelle depuis viewModel.sessionState (champ
- * "custom_totems") -- cette propriete et viewModel.loadSessionState(String)
- * sont deja utilisees par MainGameScreen.kt/AiPanel.kt : ce fichier
- * suppose qu'elles existent bien sur GameViewModel (la copie de
- * GameViewModel.kt recue ici ne les montre pas encore, elle est
- * probablement en retard sur le reste du projet).
+ * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
+ * n'appelle plus Python/Chaquopy. GameViewModel.addCustomTotem() et
+ * .removeCustomTotem() mettent a jour sessionState elles-memes ; ce
+ * composable se contente de lire sessionState et de reagir a ses
+ * changements (voir refreshFromSessionState()).
  */
 @Composable
 fun TotemManagementDialog(
@@ -73,7 +66,6 @@ fun TotemManagementDialog(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val mutex = remember { Mutex() }
     val scope = rememberCoroutineScope()
 
     var totems by remember { mutableStateOf<List<CustomTotem>>(emptyList()) }
@@ -91,7 +83,12 @@ fun TotemManagementDialog(
 
     val sessionState by viewModel.sessionState.collectAsState()
 
-    fun refreshFromSessionState() {
+    // Se redeclenche a chaque mise a jour de sessionState -- y compris
+    // celles provoquees par addCustomTotem()/removeCustomTotem() plus bas,
+    // qui l'ecrivent elles-memes une fois l'action terminee cote moteur.
+    // C'est ce qui fait retomber "saving" a false : il n'y a plus de
+    // resultat synchrone a attendre comme avec l'ancien pont Chaquopy.
+    LaunchedEffect(sessionState) {
         val custom = sessionState?.optJSONArray("custom_totems")
         val list = mutableListOf<CustomTotem>()
         if (custom != null) {
@@ -107,52 +104,39 @@ fun TotemManagementDialog(
             }
         }
         totems = list
+        saving = false
     }
-
-    LaunchedEffect(sessionState) { refreshFromSessionState() }
 
     fun addTotem() {
         if (label.isBlank()) {
             error = "Le nom du totem est obligatoire."
             return
         }
+        error = null
+        saving = true
+
+        // On capture les valeurs des champs avant de les vider (le
+        // formulaire se remet a zero tout de suite, l'ajout se termine en
+        // tache de fond).
+        val labelSnapshot = label
+        val powersSnapshot = powers
+        val specialSnapshot = special
+        val emojiSnapshot = emoji
+        val uriSnapshot = imageUri
+        label = ""; powers = ""; special = ""; emoji = ""; imageUri = null
+
         scope.launch(Dispatchers.IO) {
-            mutex.withLock { saving = true; error = null }
-            try {
-                val bytes = imageUri?.let {
-                    context.contentResolver.openInputStream(it)?.use { s -> s.readBytes() }
-                } ?: ByteArray(0)
-                val filename = imageUri?.let { "totem.jpg" } ?: ""
-                val result = Python.getInstance().getModule("game_api").callAttr(
-                    "call_json", "do_add_custom_totem",
-                    label, powers, special, emoji, bytes, filename
-                ).toString()
-                viewModel.loadSessionState(result)
-                mutex.withLock {
-                    label = ""; powers = ""; special = ""; emoji = ""; imageUri = null
-                }
-            } catch (e: Exception) {
-                mutex.withLock { error = "Erreur : ${e.message}" }
-            } finally {
-                mutex.withLock { saving = false }
-            }
+            val bytes = uriSnapshot?.let {
+                context.contentResolver.openInputStream(it)?.use { s -> s.readBytes() }
+            } ?: ByteArray(0)
+            val filename = if (uriSnapshot != null) "totem.jpg" else ""
+            viewModel.addCustomTotem(labelSnapshot, powersSnapshot, specialSnapshot, emojiSnapshot, bytes, filename)
         }
     }
 
     fun removeTotem(key: String) {
-        scope.launch(Dispatchers.IO) {
-            mutex.withLock { saving = true; error = null }
-            try {
-                val result = Python.getInstance().getModule("game_api")
-                    .callAttr("call_json", "do_remove_custom_totem", key)
-                    .toString()
-                viewModel.loadSessionState(result)
-            } catch (e: Exception) {
-                mutex.withLock { error = "Erreur : ${e.message}" }
-            } finally {
-                mutex.withLock { saving = false }
-            }
-        }
+        saving = true
+        viewModel.removeCustomTotem(key)
     }
 
     AlertDialog(

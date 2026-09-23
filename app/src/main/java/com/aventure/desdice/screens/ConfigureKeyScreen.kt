@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,15 +49,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.rememberAppFonts
-import com.chaquo.python.Python
-import kotlinx.coroutines.Dispatchers
+import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import org.json.JSONObject
 
 // Palette recopiee des variables CSS de l'ancienne page HTML
 // (render_configure_key_page, dice_web.py) -- gardee identique aux
@@ -77,8 +75,9 @@ private val ErrorOnPhoto = Color(0xFFFFC9C9)
  * Equivalent Compose de render_configure_key_page (dice_web.py), restyle
  * dans le theme "papier BD" de l'ancienne page HTML (meme palette, memes
  * polices Bangers/Nunito que StorySelectorScreen). Repose sur
- * game_api.get_config_screen_state et set_mistral_key/clear_mistral_key/
- * set_mistral_model, deja presentes dans game_api.py (sans prefixe "do_").
+ * GameViewModel.configScreenState / setMistralKeyAwait / clearMistralKeyAwait /
+ * setMistralModelAwait (portage Kotlin pur, ex game_api.get_config_screen_state
+ * et set_mistral_key/clear_mistral_key/set_mistral_model).
  *
  * L'image de fond (bg_key_page.jpg, a placer dans res/raw/) est affichee
  * en plein ecran (Crop, calee en haut) derriere le contenu : le haut de
@@ -89,67 +88,79 @@ private val ErrorOnPhoto = Color(0xFFFFC9C9)
 @Composable
 fun ConfigureKeyScreen(
     onDone: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: GameViewModel = viewModel()
 ) {
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
     val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
 
-    var loading by remember { mutableStateOf(true) }
+    val configState by viewModel.configScreenState.collectAsState()
+    val loading = configState == null
+    val hasKey = configState?.optBoolean("has_key", false) ?: false
+    val maskedKey = configState?.optString("masked_key", "") ?: ""
+    val selectedModel = configState?.optString("model", "") ?: ""
+    val modelChoices = remember(configState) {
+        val choicesArray = configState?.optJSONArray("model_choices")
+        val choices = mutableListOf<Pair<String, String>>()
+        if (choicesArray != null) {
+            for (i in 0 until choicesArray.length()) {
+                val pair = choicesArray.getJSONArray(i)
+                choices.add(pair.getString(0) to pair.getString(1))
+            }
+        }
+        choices
+    }
     var saving by remember { mutableStateOf(false) }
-    var hasKey by remember { mutableStateOf(false) }
-    var maskedKey by remember { mutableStateOf("") }
-    var modelChoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-    var selectedModel by remember { mutableStateOf("") }
     var keyInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     // Equivalent du toggleKeyForm() JS de l'ancienne page : le formulaire
     // de changement de cle reste replie tant qu'une cle est deja active.
     var showChangeForm by remember { mutableStateOf(false) }
 
-    fun refreshState() {
-        scope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                try {
-                    val result = python.getModule("game_api")
-                        .callAttr("call_json", "get_config_screen_state")
-                        .toString()
-                    val parsed = JSONObject(result)
-                    hasKey = parsed.optBoolean("has_key", false)
-                    maskedKey = parsed.optString("masked_key", "")
-                    selectedModel = parsed.optString("model", "")
-                    val choicesArray = parsed.optJSONArray("model_choices")
-                    val choices = mutableListOf<Pair<String, String>>()
-                    if (choicesArray != null) {
-                        for (i in 0 until choicesArray.length()) {
-                            val pair = choicesArray.getJSONArray(i)
-                            choices.add(pair.getString(0) to pair.getString(1))
-                        }
-                    }
-                    modelChoices = choices
-                } catch (e: Exception) {
-                    error = "Erreur : ${e.message}"
-                } finally {
-                    loading = false
-                }
+    LaunchedEffect(Unit) { viewModel.loadConfigScreenState() }
+
+    fun setKey() {
+        scope.launch {
+            saving = true
+            error = null
+            try {
+                viewModel.setMistralKeyAwait(keyInput)
+                keyInput = ""
+                showChangeForm = false
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                saving = false
             }
         }
     }
 
-    LaunchedEffect(Unit) { refreshState() }
-
-    fun callGameApi(funcName: String, vararg args: Any, after: () -> Unit = {}) {
-        scope.launch(Dispatchers.IO) {
-            mutex.withLock { saving = true; error = null }
+    fun removeKey() {
+        scope.launch {
+            saving = true
+            error = null
             try {
-                python.getModule("game_api").callAttr("call_json", funcName, *args)
+                viewModel.clearMistralKeyAwait()
+                keyInput = ""
             } catch (e: Exception) {
-                mutex.withLock { error = "Erreur : ${e.message}" }
+                error = "Erreur : ${e.message}"
             } finally {
-                mutex.withLock { saving = false }
+                saving = false
             }
-            after()
+        }
+    }
+
+    fun selectModel(value: String) {
+        scope.launch {
+            saving = true
+            error = null
+            try {
+                viewModel.setMistralModelAwait(value)
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                saving = false
+            }
         }
     }
 
@@ -232,7 +243,7 @@ fun ConfigureKeyScreen(
                                 saving = saving,
                                 onContinue = onDone,
                                 onChangeKey = { showChangeForm = true },
-                                onRemoveKey = { callGameApi("clear_mistral_key") { keyInput = ""; refreshState() } }
+                                onRemoveKey = { removeKey() }
                             )
                         } else {
                             NoKeyBlock(
@@ -242,13 +253,7 @@ fun ConfigureKeyScreen(
                                 saving = saving,
                                 showCancel = hasKey,
                                 onCancel = { showChangeForm = false },
-                                onActivate = {
-                                    callGameApi("set_mistral_key", keyInput) {
-                                        keyInput = ""
-                                        showChangeForm = false
-                                        refreshState()
-                                    }
-                                },
+                                onActivate = { setKey() },
                                 onSkip = onDone
                             )
                         }
@@ -294,10 +299,7 @@ fun ConfigureKeyScreen(
                             selectedModel = selectedModel,
                             enabled = !saving,
                             fonts = fonts,
-                            onSelect = { value ->
-                                selectedModel = value
-                                callGameApi("set_mistral_model", value)
-                            }
+                            onSelect = { value -> selectModel(value) }
                         )
                     }
                 }

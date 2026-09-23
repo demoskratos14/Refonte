@@ -74,14 +74,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.rememberAppFonts
-import com.chaquo.python.Python
-import kotlinx.coroutines.Dispatchers
+import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.PI
 import kotlin.math.abs
@@ -148,9 +146,8 @@ internal fun pipGlyphSizeDp(count: Int): Int = when (count) {
     else -> 22
 }
 
-private fun parseHistory(result: String): List<ClassicRoll> {
-    val parsed = JSONObject(result)
-    val arr = parsed.optJSONArray("history") ?: return emptyList()
+private fun parseHistory(result: JSONObject): List<ClassicRoll> {
+    val arr = result.optJSONArray("history") ?: return emptyList()
     val list = mutableListOf<ClassicRoll>()
     for (i in 0 until arr.length()) {
         val entry = arr.getJSONObject(i)
@@ -174,13 +171,17 @@ private fun parseHistory(result: String): List<ClassicRoll> {
  * Les des sont de vrais cubes 3D qui roulent, rebondissent et s'immobilisent
  * sur la face tiree (le resultat est deja tire avant l'animation).
  *
- * S'appuie sur classic_dice_state / do_classic_dice_roll /
- * do_classic_dice_clear / get_fate_faces de game_api.py.
+ * S'appuie sur GameViewModel.classicDiceStateAwait / classicDiceRollAwait /
+ * classicDiceClearAwait / fateFaces (portage Kotlin pur, ex game_api.py).
  *
  * Necessite res/drawable/bg_classic_dice.jpg.
  */
 @Composable
-fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
+fun ClassicDiceScreen(
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    viewModel: GameViewModel = viewModel()
+) {
     val fonts = rememberAppFonts()
     // Fleche retour : si onBack n'est pas fourni, on declenche le meme retour que
     // le bouton du telephone (le BackHandler de MainActivity ferme alors la page).
@@ -188,30 +189,28 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
     val goBack: () -> Unit = {
         if (onBack != null) onBack() else backDispatcher?.onBackPressed()
     }
-    val python = remember { Python.getInstance() }
     val scope = rememberCoroutineScope()
 
     var loading by remember { mutableStateOf(true) }
     var rolling by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<ClassicRoll>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
-    var fateFaces by remember { mutableStateOf<List<FateFace>>(emptyList()) }
+    // Faces du destin : exposees directement par GameViewModel (FATE_FACES
+    // cote Kotlin, DiceSession.kt) -- plus besoin d'appel asynchrone a
+    // get_fate_faces. On les reduit au type local FateFace (emoji +
+    // libelle), seul necessaire au dessin du cube.
+    val fateFaces = remember(viewModel.fateFaces) {
+        viewModel.fateFaces.map { FateFace(it.emoji, it.label) }
+    }
     var showClearConfirm by remember { mutableStateOf(false) }
 
     // Animation de lancer : progression 0 -> 1 partagee par les deux des.
     var spin by remember { mutableStateOf<SpinState?>(null) }
     val progress = remember { Animatable(0f) }
 
-    fun applyResult(result: String) {
+    fun applyResult(result: JSONObject) {
         history = parseHistory(result).reversed() // plus recent en premier
     }
-
-    suspend fun callPython(funcName: String, vararg args: Any): String =
-        withContext(Dispatchers.IO) {
-            python.getModule("game_api")
-                .callAttr("call_json", funcName, *args)
-                .toString()
-        }
 
     fun roll(kind: String) {
         if (rolling) return
@@ -219,10 +218,13 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
             rolling = true
             error = null
             try {
-                // Le lancer est tire et enregistre tout de suite ; l'animation
-                // ne fait que "raconter" ce resultat, et l'historique n'est mis
-                // a jour qu'a la fin pour ne pas spoiler le suspense.
-                val result = callPython("do_classic_dice_roll", kind)
+                // Le lancer est tire et enregistre tout de suite (cote
+                // GameEngine/DiceSession) ; l'animation ne fait que "raconter"
+                // ce resultat, et l'historique n'est mis a jour (et publie
+                // dans le StateFlow du ViewModel) qu'a la fin, pour ne pas
+                // spoiler le suspense -- meme logique que rollAwaitingAnimation()
+                // sur l'ecran de jeu principal.
+                val result = viewModel.classicDiceRollAwait(kind)
                 val newest = parseHistory(result).lastOrNull()
 
                 val successValue = newest?.success
@@ -247,6 +249,7 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
                 }
                 spin = null
                 applyResult(result)
+                viewModel.publishClassicDiceState(result)
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
@@ -262,7 +265,7 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
             rolling = true
             error = null
             try {
-                applyResult(callPython("do_classic_dice_clear"))
+                applyResult(viewModel.classicDiceClearAwait())
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
@@ -273,23 +276,12 @@ fun ClassicDiceScreen(modifier: Modifier = Modifier, onBack: (() -> Unit)? = nul
 
     LaunchedEffect(Unit) {
         try {
-            applyResult(callPython("classic_dice_state"))
+            applyResult(viewModel.classicDiceStateAwait())
         } catch (e: Exception) {
             error = "Erreur : ${e.message}"
         }
-        // Faces du destin : necessaires pour construire le cube du de du destin.
-        try {
-            val arr = JSONArray(callPython("get_fate_faces"))
-            val faces = mutableListOf<FateFace>()
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val emoji = o.optString("emoji", "")
-                if (emoji.isNotEmpty()) faces.add(FateFace(emoji, o.optString("label", "")))
-            }
-            fateFaces = faces
-        } catch (e: Exception) {
-            // Sans les faces, le de du destin s'affiche sans animation 3D.
-        }
+        // Les faces du destin (fateFaces, ci-dessus) viennent directement de
+        // GameViewModel.fateFaces -- plus besoin d'appel asynchrone dedie.
         loading = false
     }
 

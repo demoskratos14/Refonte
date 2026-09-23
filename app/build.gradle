@@ -1,7 +1,6 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
-    id 'com.chaquo.python'
 }
 
 android {
@@ -15,8 +14,13 @@ android {
         versionCode 1
         versionName "1.0"
 
+        // Ce filtrage d'ABI n'a plus de raison technique imperative
+        // maintenant que Chaquopy (qui n'embarque des binaires Python que
+        // pour certaines ABI) est retire -- garde ici par simple continuite
+        // avec la config precedente (couvre appareils recents + emulateurs).
+        // Tu peux elargir/retirer ce bloc si tu veux couvrir armeabi-v7a/x86
+        // (vieux appareils 32 bits), ce n'est plus bloquant pour personne.
         ndk {
-            // Couvre les appareils recents (arm64) et les emulateurs (x86_64).
             abiFilters "arm64-v8a", "x86_64"
         }
     }
@@ -40,8 +44,6 @@ android {
         jvmTarget = "17"
     }
 
-    // Necessaire pour que le module Kotlin sache compiler du Compose --
-    // absent du fichier original, qui datait encore de la version WebView.
     buildFeatures {
         compose true
     }
@@ -66,23 +68,6 @@ android {
     packagingOptions {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-}
-
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-        pip {
-            // flask retire (etape 8 du plan de migration Compose : plus
-            // aucun fichier Python n'importe flask depuis la suppression
-            // de dice_web.py/android_bridge.py).
-            install("pillow")
-            // Ajoute : journal_export.py (generation du PDF du journal,
-            // voir game_api.export_journal) en depend. A garder meme si
-            // tu changes plus tard la generation PDF (voir etape 8 du
-            // plan), sinon revois aussi journal_export.py en consequence.
-            install("fpdf2")
         }
     }
 }

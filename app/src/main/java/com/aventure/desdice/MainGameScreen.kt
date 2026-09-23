@@ -20,6 +20,7 @@ import com.aventure.desdice.screens.FateFace
 import com.aventure.desdice.screens.PipGlyph
 import com.aventure.desdice.screens.SpinDurationMs
 import com.aventure.desdice.screens.SpinState
+import com.aventure.desdice.screens.TotemManagementDialog
 import com.aventure.desdice.screens.TumblingDie
 import com.aventure.desdice.screens.newSpinSpec
 import java.io.File
@@ -90,16 +91,12 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
-import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -175,21 +172,14 @@ fun MainGameScreen(
 
     // Cle Mistral enregistree ou non : determine si la narration automatique est
     // active (panneau de narration) et le libelle du bloc "Continuer l'aventure".
-    val python = remember { Python.getInstance() }
-    var hasKey by remember { mutableStateOf(false) }
+    // Vient de GameViewModel.configScreenState (deja branche sur GameEngine),
+    // plus d'appel Python direct ici.
+    val configScreenState by viewModel.configScreenState.collectAsState()
     fun refreshKeyState() {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val r = python.getModule("game_api")
-                    .callAttr("call_json", "get_config_screen_state")
-                    .toString()
-                hasKey = JSONObject(r).optBoolean("has_key", false)
-            } catch (e: Exception) {
-                // On garde l'etat precedent.
-            }
-        }
+        viewModel.loadConfigScreenState()
     }
     LaunchedEffect(Unit) { refreshKeyState() }
+    val hasKey = configScreenState?.optBoolean("has_key", false) ?: false
 
     val bgB64 = stories.firstOrNull { it.slug == currentSlug }?.bgImageB64.orEmpty()
     val isCustomStory = stories.firstOrNull { it.slug == currentSlug }?.isCustom == true
@@ -227,12 +217,12 @@ fun MainGameScreen(
                 )
             }
 
-            NarrationSection(
+            AiPanel(
                 viewModel = viewModel,
                 hasKey = hasKey,
                 onKeyChanged = { refreshKeyState() },
-                speechManager = speechManager,
-                onConfigureKey = onConfigureKey
+                onConfigureKey = onConfigureKey,
+                speechManager = speechManager
             )
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
@@ -347,8 +337,10 @@ fun DiceResultCard(
     hasKey: Boolean = false
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val fateFaces by viewModel.fateFaces.collectAsState()
-    val python = remember { Python.getInstance() }
+    // fateFaces n'est plus un etat Python recupere de facon asynchrone : c'est
+    // une simple liste Kotlin statique (FATE_FACES, cf. DiceSession.kt),
+    // exposee telle quelle par GameViewModel -- pas de collectAsState().
+    val fateFaces = viewModel.fateFaces
     val fonts = rememberAppFonts()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -372,12 +364,11 @@ fun DiceResultCard(
             rolling = true
             error = null
             try {
-                val result = withContext(Dispatchers.IO) {
-                    python.getModule("game_api")
-                        .callAttr("call_json", "do_roll", kind)
-                        .toString()
-                }
-                val last = JSONObject(result).optJSONObject("last_result")
+                // rollAwaitingAnimation() calcule le resultat sans le publier tout de
+                // suite dans sessionState -- on ne le fait qu'apres l'animation
+                // (publishSessionState plus bas), pour ne pas gacher le suspense.
+                val result = viewModel.rollAwaitingAnimation(kind)
+                val last = result.optJSONObject("last_result")
                 val successValue =
                     if (last != null && !last.isNull("success")) last.optInt("success") else null
                 val fateKey = last?.str("fate").orEmpty()
@@ -389,7 +380,7 @@ fun DiceResultCard(
                     } else null
                 val fateIndex =
                     if (kind != "success" && fateKey.isNotEmpty() && cubeFaces.size == 6) {
-                        cubeFaces.indexOfFirst { it.optString("key") == fateKey }
+                        cubeFaces.indexOfFirst { it.key == fateKey }
                     } else -1
                 val fateSpec =
                     if (fateIndex >= 0) {
@@ -403,7 +394,7 @@ fun DiceResultCard(
                             ?.let { arr -> (0 until arr.length()).map { arr.optString(it) } }
                             ?: emptyList()
                         buildSuccessDieGlyphs(
-                            context, JSONObject(result), textMeasurer, successValue, finalKeys
+                            context, result, textMeasurer, successValue, finalKeys
                         )
                     } catch (e: Exception) {
                         null
@@ -420,7 +411,7 @@ fun DiceResultCard(
                 }
                 spin = null
                 spinGlyphs = null
-                viewModel.loadSessionState(result)
+                viewModel.publishSessionState(result)
 
                 // Narration automatique active : un "!" est envoye directement a l'IA (avec
                 // le lancer en attente). Le "?" n'est PAS envoye : il debloque une quete
@@ -428,13 +419,8 @@ fun DiceResultCard(
                 if (hasKey && fateKey == "exclamation") {
                     sendingToAi = true
                     try {
-                        val sent = withContext(Dispatchers.IO) {
-                            python.getModule("game_api")
-                                .callAttr("call_json", "do_send_ai_message", "")
-                                .toString()
-                        }
-                        val aiError = JSONObject(sent).str("ai_error")
-                        viewModel.loadSessionState(sent)
+                        val sent = viewModel.sendAiMessageAwait("")
+                        val aiError = sent.str("ai_error")
                         if (aiError.isNotEmpty()) error = aiError
                     } finally {
                         sendingToAi = false
@@ -461,13 +447,13 @@ fun DiceResultCard(
         ?.takeIf { it.isNotEmpty() }
         ?: List(successValue ?: 1) { sessionState?.optString("pip_symbol").orEmpty() }
     val fateFace: FateFace? = lastFateRec?.str("fate")?.let { key ->
-        fateFaces.firstOrNull { it.optString("key") == key }
-            ?.let { FateFace(it.optString("emoji"), it.optString("label")) }
+        fateFaces.firstOrNull { it.key == key }
+            ?.let { FateFace(it.emoji, it.label) }
     }
     // Comme l'ancienne page : le de qui n'a pas servi au dernier lancer est estompe.
     val successUsed = lastRec == null || !lastRec.isNull("success")
     val fateUsed = lastRec == null || lastRec.str("fate").isNotEmpty()
-    val cubeFateFaces = fateFaces.take(6).map { FateFace(it.optString("emoji"), it.optString("label")) }
+    val cubeFateFaces = fateFaces.take(6).map { FateFace(it.emoji, it.label) }
     val description = sessionState?.optJSONObject("last_result")?.str("description").orEmpty()
 
     Section(modifier) {
@@ -795,12 +781,12 @@ private fun SymbolPickerDialog(
     onDismiss: () -> Unit
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
     val fonts = rememberAppFonts()
 
+    // Purement cosmetique (ces reglages ne peuvent pas echouer cote moteur) :
+    // retombe a false des que sessionState se met a jour.
     var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(sessionState) { isLoading = false }
 
     val pipMode = sessionState?.optString("pip_mode").orEmpty().ifEmpty { "single" }
     val activeSingle = sessionState?.optString("pip_symbol").orEmpty()
@@ -810,25 +796,6 @@ private fun SymbolPickerDialog(
     val symbols = buildList<JSONObject> {
         sessionState?.optJSONArray("all_symbols")?.let { arr ->
             for (i in 0 until arr.length()) add(arr.getJSONObject(i))
-        }
-    }
-
-    fun callApi(func: String, arg: String) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-            }
-            try {
-                val result = python.getModule("game_api")
-                    .callAttr("call_json", func, arg)
-                    .toString()
-                viewModel.loadSessionState(result)
-            } catch (e: Exception) {
-                error = "Erreur : ${e.message}"
-            } finally {
-                mutex.withLock { isLoading = false }
-            }
         }
     }
 
@@ -870,21 +837,21 @@ private fun SymbolPickerDialog(
                         selected = pipMode == "single",
                         fonts = fonts,
                         modifier = Modifier.weight(1f),
-                        onClick = { if (pipMode != "single") callApi("do_set_pip_mode", pipMode) }
+                        onClick = { if (pipMode != "single") { isLoading = true; viewModel.setPipMode(pipMode) } }
                     )
                     ModeOption(
                         text = "🎲 Aléatoire",
                         selected = pipMode == "random",
                         fonts = fonts,
                         modifier = Modifier.weight(1f),
-                        onClick = { if (pipMode != "random") callApi("do_set_pip_mode", "random") }
+                        onClick = { if (pipMode != "random") { isLoading = true; viewModel.setPipMode("random") } }
                     )
                     ModeOption(
                         text = "🔀 Mixte",
                         selected = pipMode == "mixed",
                         fonts = fonts,
                         modifier = Modifier.weight(1f),
-                        onClick = { if (pipMode != "mixed") callApi("do_set_pip_mode", "mixed") }
+                        onClick = { if (pipMode != "mixed") { isLoading = true; viewModel.setPipMode("mixed") } }
                     )
                 }
                 Text(
@@ -916,10 +883,11 @@ private fun SymbolPickerDialog(
                                 .background(if (selected) Red else Color.White)
                                 .border(2.dp, Ink, chipShape)
                                 .clickable(enabled = !isLoading) {
+                                    isLoading = true
                                     if (pipMode == "single") {
-                                        callApi("do_set_pip_symbol", key)
+                                        viewModel.setPipSymbol(key)
                                     } else {
-                                        callApi("do_toggle_enabled_symbol", key)
+                                        viewModel.toggleEnabledSymbol(key)
                                     }
                                 }
                                 .padding(horizontal = 12.dp)
@@ -943,13 +911,6 @@ private fun SymbolPickerDialog(
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Ink)
                     }
-                }
-                error?.let {
-                    Text(
-                        text = it,
-                        style = TextStyle(fontFamily = fonts.body, fontSize = 14.sp, color = DangerText),
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1006,15 +967,14 @@ fun TotemGaugesRow(
     // Clic sur l'icone d'un totem : ouvre sa fiche (pouvoirs / capacite speciale).
     onTotemClick: ((String) -> Unit)? = null
 ) {
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
     val sessionState by viewModel.sessionState.collectAsState()
+    val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
 
     var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    // Texte narratif renvoye par do_use_totem_energy quand un pouvoir se
+    // Texte narratif renvoye par useTotemEnergyAwait quand un pouvoir se
     // manifeste -- distinct de "error", reserve aux vraies erreurs techniques.
     var effectMessage by remember { mutableStateOf<String?>(null) }
     var showTotemManager by remember { mutableStateOf(false) }
@@ -1029,28 +989,23 @@ fun TotemGaugesRow(
                 }
             }
         }
+        isLoading = false
     }
 
     fun useTotem(key: String) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-            }
+        scope.launch {
+            isLoading = true
+            error = null
             try {
-                val result = python.getModule("game_api")
-                    .callAttr("call_json", "do_use_totem_energy", key)
-                    .toString()
-                val parsed = JSONObject(result)
-                val effect = parsed.str("effect")
-                val aiError = parsed.str("ai_error")
+                val result = viewModel.useTotemEnergyAwait(key)
+                val effect = result.str("effect")
+                val aiError = result.str("ai_error")
                 if (effect.isNotEmpty()) effectMessage = effect
                 if (aiError.isNotEmpty()) error = aiError
-                viewModel.loadSessionState(result)
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
-                mutex.withLock { isLoading = false }
+                isLoading = false
             }
         }
     }
@@ -1110,7 +1065,7 @@ fun TotemGaugesRow(
     }
 
     if (showTotemManager) {
-        TotemManagerDialog(
+        TotemManagementDialog(
             viewModel = viewModel,
             onDismiss = { showTotemManager = false }
         )
@@ -1194,8 +1149,7 @@ fun SideQuestsList(
     hasKey: Boolean = false
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
+    val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
     val clipboard = LocalClipboardManager.current
 
@@ -1215,43 +1169,36 @@ fun SideQuestsList(
                 }
             }
         }
+        isLoading = false
     }
 
     // "Commencer" : la demande de quete part a l'IA (le lancer "?" en attente est ajoute
-    // automatiquement par do_send_ai_message), puis la quete est retiree de la liste -- il
+    // automatiquement par sendAiMessage()), puis la quete est retiree de la liste -- il
     // n'y a donc plus de bouton "Terminer". Si l'IA renvoie une erreur, la quete est
     // conservee pour pouvoir reessayer.
     fun startQuest(quest: JSONObject) {
         val request = questRequestText(quest.optString("kind"))
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-                info = null
-            }
+        scope.launch {
+            isLoading = true
+            error = null
+            info = null
             try {
                 if (hasKey) {
-                    val sent = python.getModule("game_api")
-                        .callAttr("call_json", "do_send_ai_message", request)
-                        .toString()
-                    val aiError = JSONObject(sent).str("ai_error")
-                    viewModel.loadSessionState(sent)
+                    val sent = viewModel.sendAiMessageAwait(request)
+                    val aiError = sent.str("ai_error")
                     if (aiError.isNotEmpty()) {
                         error = aiError
                         return@launch
                     }
                 } else {
-                    withContext(Dispatchers.Main) { clipboard.setText(AnnotatedString(request)) }
+                    clipboard.setText(AnnotatedString(request))
                     info = "Demande copiée dans le presse-papiers."
                 }
-                val done = python.getModule("game_api")
-                    .callAttr("call_json", "do_complete_side_quest", quest.optInt("id"))
-                    .toString()
-                viewModel.loadSessionState(done)
+                viewModel.completeSideQuestAwait(quest.optInt("id"))
             } catch (e: Exception) {
                 error = "Erreur : ${e.message}"
             } finally {
-                mutex.withLock { isLoading = false }
+                isLoading = false
             }
         }
     }
@@ -1350,9 +1297,8 @@ fun HistoryList(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val fateFaces by viewModel.fateFaces.collectAsState()
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
+    // Simple liste Kotlin statique, pas un etat Python -- voir DiceResultCard.
+    val fateFaces = viewModel.fateFaces
     val fonts = rememberAppFonts()
 
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -1362,24 +1308,6 @@ fun HistoryList(
         sessionState?.optJSONArray("history")?.let { history ->
             for (i in history.length() - 1 downTo 0) {
                 add(history.getJSONObject(i))
-            }
-        }
-    }
-
-    fun callSimple(func: String) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            // Un seul mutex.withLock : le Mutex de kotlinx.coroutines n'est pas
-            // reentrant, l'ancien code imbrique (withLock dans withLock) bloquait
-            // definitivement sur "Annuler".
-            mutex.withLock {
-                try {
-                    val result = python.getModule("game_api")
-                        .callAttr("call_json", func)
-                        .toString()
-                    viewModel.loadSessionState(result)
-                } catch (e: Exception) {
-                    // Ignore, comme avant.
-                }
             }
         }
     }
@@ -1428,7 +1356,7 @@ fun HistoryList(
         ) {
             ComicButton(
                 text = "↩ Annuler",
-                onClick = { callSimple("do_undo") },
+                onClick = { viewModel.undo() },
                 fonts = fonts,
                 kind = ButtonKind.Secondary,
                 modifier = Modifier.weight(1f)
@@ -1463,7 +1391,7 @@ fun HistoryList(
             confirmButton = {
                 TextButton(onClick = {
                     showClearConfirm = false
-                    callSimple("do_clear")
+                    viewModel.clearHistory()
                 }) {
                     Text(
                         "Effacer",
@@ -1488,7 +1416,7 @@ fun HistoryList(
 private fun HistoryItem(
     record: JSONObject,
     sessionState: JSONObject?,
-    fateFaces: List<JSONObject>,
+    fateFaces: List<com.aventure.desdice.FateFace>,
     fonts: AppFonts
 ) {
     val success = record.optInt("success", -1)
@@ -1498,7 +1426,7 @@ private fun HistoryItem(
         ?.let { if (it.length() > 0) it.optString(0) else null }
         ?: sessionState?.optString("pip_symbol").orEmpty()
     val fateFace = if (fate.isNotEmpty()) {
-        fateFaces.firstOrNull { it.optString("key") == fate }
+        fateFaces.firstOrNull { it.key == fate }
     } else {
         null
     }
@@ -1520,7 +1448,7 @@ private fun HistoryItem(
         }
         if (fateFace != null) {
             Text(
-                text = "Destin=${fateFace.optString("emoji")} ${fateFace.optString("label")}",
+                text = "Destin=${fateFace.emoji} ${fateFace.label}",
                 style = bodyStyle(fonts, 15.sp)
             )
         }
@@ -1539,12 +1467,7 @@ fun AllowedValuesDialog(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    val python = remember { Python.getInstance() }
-    val mutex = remember { Mutex() }
     val fonts = rememberAppFonts()
-
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
 
     var allowedValues by remember { mutableStateOf<List<Int>>(emptyList()) }
     var allowedFates by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -1560,25 +1483,7 @@ fun AllowedValuesDialog(
     }
 
     // La liste affichee est rafraichie par le LaunchedEffect ci-dessus des que
-    // loadSessionState() publie le nouvel etat.
-    fun callApi(func: String, vararg args: Any) {
-        viewModel.viewModelScope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                isLoading = true
-                error = null
-            }
-            try {
-                val result = python.getModule("game_api")
-                    .callAttr("call_json", func, *args)
-                    .toString()
-                viewModel.loadSessionState(result)
-            } catch (e: Exception) {
-                error = "Erreur : ${e.message}"
-            } finally {
-                mutex.withLock { isLoading = false }
-            }
-        }
-    }
+    // le moteur publie le nouvel etat (ces reglages ne peuvent pas echouer).
 
     Dialog(onDismissRequest = onDismiss) {
         val shape = RoundedCornerShape(16.dp)
@@ -1616,14 +1521,14 @@ fun AllowedValuesDialog(
                             checked = value in allowedValues,
                             label = value.toString(),
                             fonts = fonts,
-                            onToggle = { callApi("do_toggle_allowed_value", value) }
+                            onToggle = { viewModel.toggleAllowedValue(value) }
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 ComicButton(
                     text = "Réinitialiser",
-                    onClick = { callApi("do_reset_allowed_values") },
+                    onClick = { viewModel.resetAllowedValues() },
                     fonts = fonts,
                     kind = ButtonKind.Paper,
                     compact = true,
@@ -1647,34 +1552,19 @@ fun AllowedValuesDialog(
                             checked = key in allowedFates,
                             label = label,
                             fonts = fonts,
-                            onToggle = { callApi("do_toggle_allowed_fate", key) }
+                            onToggle = { viewModel.toggleAllowedFate(key) }
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 ComicButton(
                     text = "Réinitialiser",
-                    onClick = { callApi("do_reset_allowed_fate") },
+                    onClick = { viewModel.resetAllowedFate() },
                     fonts = fonts,
                     kind = ButtonKind.Paper,
                     compact = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-
-                if (isLoading) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Ink)
-                    }
-                }
-
-                error?.let {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = it,
-                        style = TextStyle(fontFamily = fonts.body, fontSize = 14.sp, color = DangerText)
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 

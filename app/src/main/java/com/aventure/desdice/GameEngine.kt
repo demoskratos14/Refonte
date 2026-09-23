@@ -600,6 +600,17 @@ class GameEngine(private val baseDir: File) {
         }
     }
 
+    /**
+     * Miroir de build_full_prompt() : texte du prompt complet (mécaniques +
+     * histoire déjà vécue), pour le bouton "copier le prompt complet" du
+     * mode manuel (sans clé Mistral). Chaîne vide si aucune histoire n'est
+     * sélectionnée.
+     */
+    fun buildFullPromptText(): String {
+        val sess = session ?: return ""
+        return buildFullPrompt(sess, currentStory)
+    }
+
     /** Miroir de do_send_full_prompt(). */
     fun sendFullPrompt(): JSONObject {
         val sess = session ?: return currentSessionJson()
@@ -661,7 +672,15 @@ class GameEngine(private val baseDir: File) {
     // ------------------------------------------------------------------
 
     private val appConfigFile = File(baseDir, "app_config.json")
-    private val defaultMistralModel = "mistral-small-latest"
+    // Aligné sur MistralClient.DEFAULT_MODEL plutôt que dupliqué en dur :
+    // avant ce correctif, cette constante valait "mistral-small-latest",
+    // un identifiant absent de MistralClient.MODEL_CHOICES (qui liste
+    // "mistral-small-2603" comme modèle recommandé/par défaut) — une
+    // première installation sans app_config.json récupérait donc un modèle
+    // qui ne correspondait à aucune entrée de la liste déroulante de
+    // ConfigureKeyScreen. En pointant vers la même constante que le client,
+    // les deux fichiers ne peuvent plus diverger.
+    private val defaultMistralModel = MistralClient.DEFAULT_MODEL
 
     private fun loadAppConfig(): JSONObject {
         if (!appConfigFile.exists()) {
