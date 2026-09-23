@@ -70,12 +70,12 @@ import org.json.JSONObject
 // =====================================================================
 
 /** Meme logique que narrator_note_for_record() (game_api.py). */
-internal fun narratorNoteFor(record: JSONObject?, fateFaces: List<JSONObject>): String {
+internal fun narratorNoteFor(record: JSONObject?, fateFaces: List<FateFace>): String {
     if (record == null) return ""
     val fate = record.str("fate")
     if (fate != "question" && fate != "exclamation") return ""
-    val face = fateFaces.firstOrNull { it.optString("key") == fate } ?: return ""
-    var text = "${face.optString("emoji")} ${face.optString("label")} : ${face.optString("desc")}"
+    val face = fateFaces.firstOrNull { it.key == fate } ?: return ""
+    var text = "${face.emoji} ${face.label} : ${face.desc}"
     val sideQuest = record.optJSONObject("side_quest")
     if (sideQuest != null) {
         val kindText = if (sideQuest.optString("kind") == "ami") {
