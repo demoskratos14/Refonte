@@ -1,7 +1,10 @@
 package com.aventure.desdice.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aventure.desdice.FATE_FACES
+import com.aventure.desdice.GameEngine
 import com.aventure.desdice.model.Story
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,10 +12,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.json.JSONArray
 import org.json.JSONObject
 
-class GameViewModel : ViewModel() {
+// NB : passe de ViewModel à AndroidViewModel — il faut le répertoire de
+// l'appli (getApplication().filesDir) pour construire GameEngine, comme
+// init_app_dir() le faisait côté Python avec context.getFilesDir(). Si le
+// ViewModel est obtenu via viewModel() (Compose) sans factory explicite,
+// la factory par défaut sait déjà instancier un AndroidViewModel ; sinon,
+// utilise ViewModelProvider.AndroidViewModelFactory.getInstance(application).
+class GameViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val engine = GameEngine(getApplication<Application>().filesDir)
+
     private val _stories = MutableStateFlow<List<Story>>(emptyList())
     val stories = _stories.asStateFlow()
 
@@ -29,53 +40,34 @@ class GameViewModel : ViewModel() {
     private val _currentStorySlug = MutableStateFlow<String?>(null)
     val currentStorySlug = _currentStorySlug.asStateFlow()
 
-    // Etat de la session de jeu en cours (dict Python session_to_dict(),
-    // recu via call_json sous forme de JSON). Un StateFlow plutot qu'un
-    // mutableStateOf de Compose : ce dernier doit etre ecrit dans un
-    // "snapshot" Compose valide, ce qui plante (IllegalStateException:
-    // "Reading a state that was created after the snapshot was taken")
-    // quand on l'ecrit depuis une coroutine Dispatchers.IO comme ici.
-    // MutableStateFlow, lui, est thread-safe sans cette contrainte -- le
-    // meme choix que pour _stories/_currentStorySlug ci-dessus.
+    // Etat de la session de jeu en cours (JSONObject construit nativement
+    // par GameEngine.sessionToJson(), miroir exact de l'ancien
+    // session_to_dict() Python).
     private val _sessionState = MutableStateFlow<JSONObject?>(null)
     val sessionState = _sessionState.asStateFlow()
 
-    // Les 6 faces du de du destin (cle/emoji/label/desc), chargees une
-    // seule fois au demarrage via get_fate_faces() (donnees statiques,
-    // independantes de la session en cours).
-    private val _fateFaces = MutableStateFlow<List<JSONObject>>(emptyList())
-    val fateFaces = _fateFaces.asStateFlow()
+    // Les 6 faces du de du destin (cle/emoji/label/desc). Contrairement a
+    // l'ancienne version (get_fate_faces() via Chaquopy), FATE_FACES est
+    // directement accessible cote Kotlin (DiceSession.kt) -- plus besoin
+    // d'appel asynchrone ni de StateFlow separe pour cette donnee statique.
+    val fateFaces: List<com.aventure.desdice.FateFace> = FATE_FACES
 
     private val mutex = Mutex()
 
     init {
         loadStories()
-        loadFateFaces()
     }
 
-    /** Remplace l'etat de session courant par le JSON recu d'un appel
-     * game_api (do_roll, do_send_ai_message, select_story, etc.). */
-    fun loadSessionState(result: String) {
-        _sessionState.value = JSONObject(result)
-    }
-
-    private fun loadFateFaces() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = callGameApi("get_fate_faces")
-            val array = JSONArray(result)
-            val faces = mutableListOf<JSONObject>()
-            for (i in 0 until array.length()) {
-                faces.add(array.getJSONObject(i))
-            }
-            _fateFaces.value = faces
-        }
+    /** Remplace l'etat de session courant par le JSON produit par GameEngine
+     * (do_roll, do_send_ai_message, select_story, etc. -- cote Kotlin). */
+    private fun loadSessionState(result: JSONObject) {
+        _sessionState.value = result
     }
 
     fun loadStories() {
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                val result = callGameApi("list_stories")
-                val storiesJson = JSONObject(result)
+                val storiesJson = engine.listStories()
                 val storiesArray = storiesJson.getJSONArray("stories")
                 val storiesList = mutableListOf<Story>()
 
@@ -102,7 +94,7 @@ class GameViewModel : ViewModel() {
     fun selectStory(slug: String) {
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                val result = callGameApi("select_story", slug)
+                val result = engine.selectStory(slug)
                 loadSessionState(result)
                 _currentStorySlug.value = slug
             }
@@ -112,7 +104,7 @@ class GameViewModel : ViewModel() {
     fun deleteStory(slug: String) {
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                callGameApi("do_delete_story", slug)
+                engine.deleteStory(slug)
             }
             loadStories()
         }
@@ -130,30 +122,107 @@ class GameViewModel : ViewModel() {
         totemImageBytes: ByteArray,
         totemImageFilename: String
     ) {
+        // bgImageExt n'est plus utilise : l'image de fond est de toute
+        // facon toujours reencodee en JPEG par StoryRegistry.createCustomStory()
+        // (comme en Python, voir stories.py) -- conserve uniquement pour ne
+        // pas casser les appelants existants (CreateStoryScreen.kt).
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                callGameApi(
-                    "do_create_story",
-                    title,
-                    subtitle,
-                    loreText,
-                    totemLabel,
-                    totemPowers,
-                    totemSpecial,
-                    bgImageBytes,
-                    bgImageExt,
-                    totemImageBytes,
-                    totemImageFilename
+                engine.createStory(
+                    title = title,
+                    subtitle = subtitle,
+                    loreText = loreText,
+                    totemLabel = totemLabel,
+                    totemPowers = totemPowers,
+                    totemSpecial = totemSpecial,
+                    bgImageBytes = bgImageBytes,
+                    totemImageBytes = totemImageBytes,
+                    totemImageFilename = totemImageFilename
                 )
             }
             loadStories()
         }
     }
 
-    private fun callGameApi(funcName: String, vararg args: Any): String {
-        return com.chaquo.python.Python.getInstance()
-            .getModule("game_api")
-            .callAttr("call_json", funcName, *args)
-            .toString()
+    // ------------------------------------------------------------------
+    // Lancers de des
+    // ------------------------------------------------------------------
+
+    fun roll(action: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                loadSessionState(engine.roll(action))
+            }
+        }
+    }
+
+    fun undo() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                loadSessionState(engine.undo())
+            }
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                loadSessionState(engine.clear())
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Pip / symboles / contraintes de tirage
+    // ------------------------------------------------------------------
+
+    fun setPipSymbol(symbol: String) = runEngine { engine.setPipSymbol(symbol) }
+    fun setPipMode(mode: String) = runEngine { engine.setPipMode(mode) }
+    fun toggleEnabledSymbol(symbol: String) = runEngine { engine.toggleEnabledSymbol(symbol) }
+    fun toggleAllowedValue(value: Int) = runEngine { engine.toggleAllowedValue(value) }
+    fun resetAllowedValues() = runEngine { engine.resetAllowedValues() }
+    fun toggleAllowedFate(key: String) = runEngine { engine.toggleAllowedFate(key) }
+    fun resetAllowedFate() = runEngine { engine.resetAllowedFate() }
+
+    /** Miroir de do_use_totem_energy (narration IA pas encore branchée — voir GameEngine.useTotemEnergy). */
+    fun useTotemEnergy(key: String) = runEngine { engine.useTotemEnergy(key) }
+
+    private fun runEngine(block: () -> JSONObject) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                loadSessionState(block())
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Des classiques
+    // ------------------------------------------------------------------
+
+    private val _classicDiceState = MutableStateFlow<JSONObject?>(null)
+    val classicDiceState = _classicDiceState.asStateFlow()
+
+    fun loadClassicDiceState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                _classicDiceState.value = engine.classicDiceState()
+            }
+        }
+    }
+
+    fun classicDiceRoll(kind: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                _classicDiceState.value = engine.classicDiceRoll(kind)
+            }
+        }
+    }
+
+    fun classicDiceClear() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                _classicDiceState.value = engine.classicDiceClear()
+            }
+        }
     }
 }
