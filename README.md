@@ -9,7 +9,8 @@ propres histoires depuis l'appli, ou on réimporte un fichier d'identité
 précédemment exporté.
 
 L'appli est écrite entièrement en **Kotlin / Jetpack Compose**, y compris le
-moteur de jeu.
+moteur de jeu. Un écran **Réglages** permet de personnaliser les polices, les
+images de fond des pages et l'icône de l'application.
 
 ## Historique : pourquoi cette architecture
 
@@ -31,6 +32,9 @@ moteur de jeu.
    `CreateStoryScreen.kt`, `StorySelectorScreen.kt`) passent désormais
    uniquement par `GameViewModel`/`GameEngine`. Le dossier `python/`, Chaquopy
    et les dépendances `pillow`/`fpdf2` ont été retirés du projet.
+6. **Écran Réglages** : choix des polices (texte et titres), des images de
+   fond des pages et de l'icône de l'application, sans passer par le moteur
+   de jeu (voir la section « Réglages » plus bas).
 
 ## Comment Kotlin et le moteur de jeu communiquent
 
@@ -60,19 +64,28 @@ moteur de jeu.
   directement plutôt que de l'observer dans `sessionState`.
 - Il n'y a plus de répertoire de travail à fixer au démarrage : `GameEngine`
   reçoit directement `context.filesDir` à la construction.
+- **Les réglages d'apparence** (polices, fonds, icône) ne passent pas par
+  `GameEngine` : ils sont gérés par trois petits objets du package `ui`
+  (`FontPrefs`, `BackgroundStore`, `AppIconStore`), voir plus bas.
 
 ## Navigation (MainActivity.kt → `AppNavigation`)
 
 | Ordre | Écran | Rôle |
 |---|---|---|
-| 1 | `ConfigureKeyScreen` | Premier écran : saisie de la clé API Mistral (optionnelle, « Passer » possible) et choix du modèle |
+| 1 | `ConfigureKeyScreen` | Premier écran : saisie de la clé API Mistral (optionnelle, « Passer » possible) et choix du modèle. Un **engrenage** (en haut à droite) ouvre les Réglages |
 | 2 | `StorySelectorScreen` | Carrousel des histoires + page « Nouvelle histoire » ; icône dé (en haut à gauche) → « Des classiques » ; icône 🔑 → configuration de la clé ; corbeille sur les histoires personnalisées |
 | 3 | `MainGameScreen` | La partie en cours (voir ci-dessous) |
+| — | `SettingsScreen` | Réglages, en 3 pages qu'on fait glisser : Polices, Photos, Icône |
 | — | `CreateStoryScreen` | Création d'une histoire personnalisée |
 | — | `ClassicDiceScreen` | Page « Des classiques » : dé de réussite + dé du destin, indépendants de toute histoire |
 
 Le bouton retour du téléphone ferme les écrans secondaires ; depuis la
 partie, il rouvre le carrousel sans changer l'histoire active.
+
+`SettingsScreen` est testé en premier dans le `when` d'`AppNavigation` : on
+peut donc l'ouvrir depuis la page de la clé API dès le tout premier écran,
+ou après l'avoir rouverte depuis le carrousel. Retour = on revient à la page
+de la clé.
 
 ### L'écran de jeu, de haut en bas
 
@@ -87,6 +100,108 @@ partie, il rouvre le carrousel sans changer l'histoire active.
 9. `ContinueSection` : démarrer ou relancer un chapitre, ou copier le prompt complet (mode manuel).
 10. `HistoryList` : historique des lancers (annuler le dernier, tout effacer).
 
+Le fond de l'écran de jeu est l'image de l'histoire en cours (elle se choisit
+à la création de l'histoire) ; il n'est pas modifiable depuis les Réglages.
+
+## Réglages (`screens/SettingsScreen.kt`)
+
+Accessible par l'engrenage de `ConfigureKeyScreen` (composable
+`SettingsGearButton`). L'écran se compose d'un en-tête fixe (flèche de retour
++ titre) et de **3 pages** qu'on change en glissant, ou en touchant l'onglet
+vertical collé au bord de l'écran (« Photos › », « ‹ Polices », « Icône › »…).
+Le fond de la page Réglages est lui-même personnalisable.
+
+### Page 1 — Polices
+
+Deux choix **indépendants**, parmi les fichiers `.ttf` / `.otf` présents dans
+`app/src/main/assets/fonts/` (chaque police est affichée dans son propre
+style, avec un aperçu) :
+
+| Choix | Effet dans `AppFonts` | Où on le voit |
+|---|---|---|
+| Police du texte de l'application | `body` (et `bodyBold`, voir ci-dessous) | descriptions, narration, notes, intitulés en gras |
+| Police des titres | `display` | titres des histoires, en-têtes, titres de sections, boutons, légendes des dés |
+
+- Par défaut : `Nunito-Regular.ttf` pour le texte et `Bangers-Regular.ttf` pour
+  les titres. « Rétablir la police par défaut » efface le choix.
+- Les variantes de style (fichiers se terminant par Bold, Italic, Light, Thin,
+  Medium, Black) ne sont pas proposées comme police à part entière. La
+  variante grasse du texte est retrouvée automatiquement : si on choisit
+  `Foo-Regular.ttf`, `bodyBold` cherche `Foo-Bold.ttf` dans le même dossier,
+  sinon il retombe sur la police normale.
+- Le choix est mémorisé dans les `SharedPreferences` (`app_font_prefs`) par
+  `ui/FontPrefs.kt`. Comme `FontPrefs` expose des états Compose et que
+  `rememberAppFonts()` les lit, **tous les écrans changent de police
+  immédiatement**, sans redémarrage.
+- Si le fichier choisi est illisible ou a disparu, `rememberAppFonts()`
+  retombe sur l'ordre de recherche d'origine (`assets/fonts`, puis `res/font`,
+  puis police du système).
+
+Pour **ajouter une police** : déposer le fichier dans `assets/fonts/`, elle
+apparaît d'elle-même dans les listes.
+
+### Page 2 — Photos (images de fond)
+
+Cinq pages de l'appli ont un fond personnalisable (`ui/BackgroundStore.kt`,
+énumération `BackgroundSlot`) :
+
+| Emplacement | Image par défaut | Écran concerné |
+|---|---|---|
+| Page de la clé API | `raw/bg_key_page.jpg` | `ConfigureKeyScreen` |
+| Page Réglages | `raw/bg_settings.jpg` | `SettingsScreen` |
+| Nouvelle histoire (carrousel) | `drawable/new_story_bg` | `StorySelectorScreen` (dernière page) |
+| Création d'histoire | `drawable/bg_create_story.jpg` | `CreateStoryScreen` |
+| Dés classiques | `drawable/bg_classic_dice.jpg` | `ClassicDiceScreen` |
+
+- Chaque ligne montre une miniature, un bouton « Choisir une image »
+  (sélecteur de la galerie, sans permission) et, si une image personnalisée
+  est en place, « Image par défaut ».
+- L'image choisie passe par `ImageUtils.resizeBgBytes()` (réduite à 1600 px,
+  complétée par un fond flouté si elle est en paysage), puis est copiée dans
+  `filesDir/backgrounds/<emplacement>.jpg`.
+- Les écrans obtiennent leur fond par
+  `rememberBackgroundPainter(BackgroundSlot.XXX)` : le décodage se fait hors
+  du thread principal, et un changement dans les Réglages se voit tout de
+  suite sur la page concernée.
+- Les images par défaut doivent **rester** dans `res/` : elles servent de
+  repli.
+- Les mises en page de `ConfigureKeyScreen` (espace laissé en haut pour le
+  livre) et de `CreateStoryScreen` (image calée en haut, décalée pour garder
+  la lune visible) ont été réglées pour les images d'origine ; avec une autre
+  image, le sujet principal peut ne pas tomber au même endroit.
+
+Pour **rendre le fond d'une autre page personnalisable** : ajouter une entrée
+à `BackgroundSlot` (clé, libellé, image par défaut), puis remplacer le
+`painterResource(...)` du fond de cette page par
+`rememberBackgroundPainter(BackgroundSlot.NOUVELLE_ENTREE)`. La page Photos
+affiche automatiquement toutes les entrées.
+
+### Page 3 — Icône de l'application
+
+Grille de 3 × 3 : l'icône d'origine (étiquette « Origine ») + 8 icônes
+alternatives. Un clic sur une icône l'applique ; l'icône en cours est
+entourée de blanc avec une pastille « ✓ ».
+
+**Comment ça marche** : Android ne permet pas de remplacer l'icône d'une
+appli par une image arbitraire une fois installée. On déclare donc dans le
+manifeste **un `<activity-alias>` par icône** (tous pointant sur
+`MainActivity`, chacun avec son propre `android:icon`) ; un seul est activé à
+la fois et c'est lui que le lanceur affiche. `ui/AppIconStore.kt`
+(`AppIcon`, `AppIconStore.current()` / `apply()`) active l'alias choisi puis
+désactive les autres avec `PackageManager.setComponentEnabledSetting(…,
+DONT_KILL_APP)` : l'appli ne redémarre pas.
+
+- L'état des alias est conservé par Android (pas de fichier à nous).
+- Selon le lanceur du téléphone, la nouvelle icône peut mettre quelques
+  secondes à apparaître sur l'écran d'accueil.
+- Si un alias manque dans le manifeste, le clic affiche un message d'erreur
+  au lieu de planter.
+
+Pour **ajouter une icône** : ajouter les ressources `ic_altN` et
+`icon_preview_N` (voir plus bas), un `<activity-alias android:name=".IconN"
+android:enabled="false" …>` dans le manifeste, et une entrée
+`ICON_N("IconN", R.drawable.icon_preview_N)` dans l'énumération `AppIcon`.
+
 ## Fichiers stockés sur l'appareil
 
 | Fichier / dossier | Contenu |
@@ -96,8 +211,11 @@ partie, il rouvre le carrousel sans changer l'histoire active.
 | `custom_stories.json`, `custom_story_bg/` | histoires personnalisées et leurs images de fond |
 | `totem_images/` | images des totems ajoutés |
 | `classic_dice_state.json` | historique de la page « Des classiques » |
+| `backgrounds/<emplacement>.jpg` | fonds de pages personnalisés (Réglages > Photos) |
+| `SharedPreferences` `app_font_prefs` | polices choisies (texte et titres) |
 
-Désinstaller l'appli efface tout cela.
+Désinstaller l'appli efface tout cela. L'icône active est mémorisée par
+Android lui-même (état des alias).
 
 ## Structure du projet
 
@@ -114,8 +232,9 @@ DesDeAventure/
     ├── build.gradle                  # config Android, Compose
     ├── proguard-rules.pro            # vide (minification désactivée)
     └── src/main/
-        ├── AndroidManifest.xml       # permission INTERNET (API Mistral)
-        ├── res/                      # icônes, polices, images de fond
+        ├── AndroidManifest.xml       # permission INTERNET + alias d'icônes (voir plus bas)
+        ├── assets/fonts/             # polices proposées dans Réglages (Bangers, Nunito, …)
+        ├── res/                      # icônes, images de fond (voir « Ressources »)
         ├── java/com/aventure/desdice/
         │   ├── MainActivity.kt       # navigation (AppNavigation)
         │   ├── MainGameScreen.kt     # écran de jeu + briques d'UI communes (ComicButton, Section…)
@@ -134,18 +253,41 @@ DesDeAventure/
         │   ├── screens/
         │   │   ├── TotemManagementDialog.kt  # gestion des totems ajoutés en cours de partie
         │   │   ├── ClassicDiceScreen.kt      # page "Des classiques"
-        │   │   ├── ConfigureKeyScreen.kt     # saisie de la clé API Mistral
+        │   │   ├── ConfigureKeyScreen.kt     # saisie de la clé API Mistral (+ engrenage vers Réglages)
         │   │   ├── CreateStoryScreen.kt      # création d'une histoire personnalisée
+        │   │   ├── SettingsScreen.kt         # Réglages : polices, fonds, icône (+ SettingsGearButton)
         │   │   └── StorySelectorScreen.kt    # carrousel des histoires
-        │   └── ui/AppFonts.kt        # chargement des polices (rememberAppFonts)
+        │   └── ui/
+        │       ├── AppFonts.kt        # chargement des polices (rememberAppFonts)
+        │       ├── FontPrefs.kt       # polices choisies + liste des polices de assets/fonts
+        │       ├── BackgroundStore.kt # fonds personnalisés (BackgroundSlot, rememberBackgroundPainter)
+        │       └── AppIconStore.kt    # icône de l'appli (AppIcon, activation des alias)
 ```
 
 ### Ressources attendues dans `res/`
 
-- `drawable/bg_classic_dice.jpg` (fond de « Des classiques »), `drawable/bg_create_story.jpg` (création d'histoire), `drawable/classic_dice_icon` (icône du carrousel) ;
-- `raw/bg_key_page.jpg` (fond de l'écran de clé API) ;
-- les polices Bangers et Nunito ;
-- `mipmap-*` (icône de l'appli, y compris la version adaptative) et `values/strings.xml` (`app_name`).
+- **Fonds par défaut** : `drawable/bg_classic_dice.jpg` (« Des classiques »), `drawable/bg_create_story.jpg` (création d'histoire), `drawable/new_story_bg` (dernière page du carrousel), `raw/bg_key_page.jpg` (clé API), `raw/bg_settings.jpg` (Réglages).
+- **Icônes d'interface** : `drawable/classic_dice_icon` (icône du carrousel), `drawable/ic_settings.png` (engrenage).
+- **Polices** : Bangers et Nunito (dont `Nunito-Bold.ttf`) dans `assets/fonts/`, plus toute police à proposer dans Réglages.
+- **Icône d'origine** :
+  - `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png` et `ic_launcher_round.png` (Android avant la version 8) ;
+  - `mipmap-anydpi-v26/ic_launcher.xml` et `ic_launcher_round.xml` (icône adaptative, Android 8 et plus), qui utilisent `drawable-nodpi/ic_original_bg.jpg` et `ic_original_fg.png`.
+- **Icônes alternatives 1 à 8** :
+  - `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_altN.png` (Android avant la version 8) ;
+  - `mipmap-anydpi-v26/ic_altN.xml` (icône adaptative) qui utilise `drawable-nodpi/ic_altN_bg.jpg` et `ic_altN_fg.png` ;
+  - `drawable-nodpi/icon_preview_N.png` : miniature affichée dans Réglages.
+- `values/strings.xml` (`app_name`).
+
+### Le manifeste (`AndroidManifest.xml`)
+
+- `MainActivity` **n'a plus** de filtre `MAIN` / `LAUNCHER` (sinon l'appli
+  apparaîtrait en double dans le lanceur) ; elle reste `exported="true"`.
+- Neuf `<activity-alias>` portent ce filtre : `.IconOriginal` (activé par
+  défaut, `@mipmap/ic_launcher` + `@mipmap/ic_launcher_round`) et `.Icon1` à
+  `.Icon8` (désactivés par défaut, `@mipmap/ic_alt1` à `ic_alt8`).
+- Les noms d'alias doivent rester alignés avec l'énumération `AppIcon`
+  (`"IconOriginal"`, `"Icon1"`… dans `AppIconStore.kt`) : le code retrouve les
+  alias par `com.aventure.desdice.<nom>`.
 
 ## Construire l'APK
 
@@ -187,7 +329,7 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 
 ### Identifiants
 
-- `namespace` : `com.aventure.desdice` (nom des packages).
+- `namespace` : `com.aventure.desdice` (nom des packages, et des alias d'icônes du manifeste).
 - `applicationId` : `com.aventure.desdice.histoiresmultiples`. C'est cet identifiant qu'Android utilise pour décider si une appli est « la même » (mise à jour) ou une autre (installée à côté). Il diffère de celui de l'ancienne version WebView (`com.aventure.desdice.auto`) : les deux peuvent cohabiter, mais leurs sauvegardes ne se transmettent pas.
 
 ## En cas d'échec du build
@@ -195,6 +337,9 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 1. Ouvrir l'étape en erreur dans l'onglet Actions et lire le message exact.
 2. Si Kotlin passe un jour à **2.0 ou plus**, le compilateur Compose se configure autrement : ajouter le plugin `org.jetbrains.kotlin.plugin.compose` et **supprimer** le bloc `composeOptions` de `app/build.gradle`.
 3. Ne pas retirer `androidx.appcompat` : le thème du manifeste (`Theme.AppCompat.Light.NoActionBar`) en dépend.
+4. `Unresolved reference: toBitmap` dans `SettingsScreen.kt` : ajouter la dépendance `androidx.core:core-ktx` (elle sert à dessiner la miniature de l'icône d'origine).
+5. `Unresolved reference: R.drawable.icon_preview_N`, `R.mipmap.ic_altN` ou `R.raw.bg_settings` : une ressource d'icône ou de fond manque ou est mal nommée (noms en minuscules, sans espace ni tiret).
+6. Un clic sur une icône affiche « les alias du manifeste ne sont pas en place » : le `AndroidManifest.xml` n'est pas celui qui contient les `<activity-alias>`.
 
 ## Ouvrir le projet dans Android Studio (optionnel)
 
