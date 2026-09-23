@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -71,14 +70,18 @@ private val STextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2
  */
 @Composable
 fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(id = R.drawable.ic_settings),
-        contentDescription = "Réglages",
+    Box(
         modifier = modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick)
-    )
+            .size(44.dp) // zone tactile confortable
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_settings),
+            contentDescription = "Réglages",
+            modifier = Modifier.size(30.dp)
+        )
+    }
 }
 
 /**
@@ -137,12 +140,14 @@ fun SettingsScreen(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(2.dp, SCardBorder, CircleShape)
                         .clickable(onClick = onBack)
                 ) {
-                    Text(text = "\u2190", color = Color.White, fontSize = 22.sp)
+                    Text(
+                        text = "\u2190",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        style = TextStyle(shadow = STextShadow)
+                    )
                 }
                 Text(
                     text = "Réglages",
