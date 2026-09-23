@@ -1,5 +1,7 @@
 package com.aventure.desdice.screens
 
+import android.media.AudioAttributes
+import android.media.SoundPool
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -38,6 +41,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +63,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -192,6 +197,7 @@ fun ClassicDiceScreen(
         if (onBack != null) onBack() else backDispatcher?.onBackPressed()
     }
     val scope = rememberCoroutineScope()
+    val playDiceRollSound = rememberDiceRollSound()
 
     var loading by remember { mutableStateOf(true) }
     var rolling by remember { mutableStateOf(false) }
@@ -246,6 +252,7 @@ fun ClassicDiceScreen(
 
                 if (successSpec != null || fateSpec != null) {
                     spin = SpinState(successSpec, fateSpec)
+                    playDiceRollSound()
                     progress.snapTo(0f)
                     progress.animateTo(1f, tween(durationMillis = SpinDurationMs, easing = LinearEasing))
                 }
@@ -374,42 +381,12 @@ fun ClassicDiceScreen(
                     fonts = fonts,
                     spin = spin,
                     progress = progress,
-                    cubeFateFaces = fateFaces.take(6)
+                    cubeFateFaces = fateFaces.take(6),
+                    rolling = rolling,
+                    onRollSuccess = { roll("success") },
+                    onRollFate = { roll("fate") },
+                    onRollBoth = { roll("both") }
                 )
-                Spacer(Modifier.height(10.dp))
-                ComicButton(
-                    text = "⚡ Lancer les deux dés",
-                    onClick = { roll("both") },
-                    background = Red,
-                    contentColor = Color.White,
-                    fonts = fonts,
-                    enabled = !rolling,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    ComicButton(
-                        text = "Dé classique",
-                        onClick = { roll("success") },
-                        background = Color.White,
-                        contentColor = Ink,
-                        fonts = fonts,
-                        enabled = !rolling,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ComicButton(
-                        text = "Dé du destin",
-                        onClick = { roll("fate") },
-                        background = Color.White,
-                        contentColor = Ink,
-                        fonts = fonts,
-                        enabled = !rolling,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
             }
             Spacer(Modifier.height(12.dp))
 
@@ -530,6 +507,45 @@ fun ClassicDiceScreen(
 }
 
 // ----------------------------------------------------------------------
+// Bruitage de lancer
+// ----------------------------------------------------------------------
+
+/**
+ * Charge une fois par composition le bruitage de lancer de des, via
+ * SoundPool (latence minimale, adapte a un son court et repete -- contrairement
+ * a MediaPlayer, plus lent a demarrer). Le fichier attendu est
+ * res/raw/dice_roll.<extension> (mp3, wav ou ogg) : A AJOUTER TOI-MEME au
+ * projet (app/src/main/res/raw/, a creer si besoin) -- ce fichier ne peut
+ * pas etre genere ici. L'animation de lancer dure SpinDurationMs = 1800 ms,
+ * un son de cette longueur ou un peu moins colle le mieux au mouvement des
+ * des ; un son plus court peut etre repete via le parametre loop de play()
+ * ci-dessous si besoin (laisse a 0 = pas de repetition pour l'instant).
+ */
+@Composable
+private fun rememberDiceRollSound(): () -> Unit {
+    val context = LocalContext.current
+    val soundPool = remember {
+        SoundPool.Builder()
+            .setMaxStreams(2)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+    }
+    var soundId by remember { mutableStateOf(0) }
+    DisposableEffect(Unit) {
+        soundId = soundPool.load(context, R.raw.dice_roll, 1)
+        onDispose { soundPool.release() }
+    }
+    return {
+        if (soundId != 0) soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
+    }
+}
+
+// ----------------------------------------------------------------------
 // Briques visuelles "BD" : ombre decalee, sections, boutons, des a plat
 // ----------------------------------------------------------------------
 
@@ -603,6 +619,11 @@ private fun ComicButton(
  * Les deux des cote a cote s'il y a la place, sinon l'un sous l'autre.
  * Un de "en train de rouler" est remplace par le cube 3D (TumblingDie),
  * l'autre reste a plat avec sa derniere valeur.
+ *
+ * Plus de boutons texte sous les des : chaque de est desormais cliquable
+ * directement (roll("success")/roll("fate")), et un bouton rond "⚡" pose
+ * entre les deux declenche roll("both"), a la place de l'ancien gros
+ * bouton "Lancer les deux dés" sous la section.
  */
 @Composable
 private fun DiceSection(
@@ -611,51 +632,119 @@ private fun DiceSection(
     fonts: AppFonts,
     spin: SpinState?,
     progress: Animatable<Float, AnimationVector1D>,
-    cubeFateFaces: List<FateFace>
+    cubeFateFaces: List<FateFace>,
+    rolling: Boolean,
+    onRollSuccess: () -> Unit,
+    onRollFate: () -> Unit,
+    onRollBoth: () -> Unit
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val successDie: @Composable () -> Unit = {
+        val fullDieSize = 150.dp
+        val centerButtonSize = 56.dp
+        val gap = 12.dp
+
+        // Cote a cote, le bouton rond central a besoin de sa propre place
+        // en plus des deux des : si la largeur ne suffit pas a les
+        // ecarter suffisamment a taille pleine, on retrecit legerement les
+        // deux des (jamais en dessous de 100dp) plutot que de les faire
+        // se chevaucher ou deborder.
+        val rowDieSize = remember(maxWidth) {
+            val required = fullDieSize * 2 + centerButtonSize + gap * 2
+            if (maxWidth >= required) {
+                fullDieSize
+            } else {
+                val available = (maxWidth - centerButtonSize - gap * 2).coerceAtLeast(0.dp)
+                (available / 2).coerceIn(100.dp, fullDieSize)
+            }
+        }
+
+        val successDie: @Composable (Dp) -> Unit = { dieSize ->
             DieWithCaption("Dé classique", fonts) {
                 val spec = spin?.success
                 if (spec != null) {
-                    Box(Modifier.size(150.dp).graphicsLayer { rotationZ = -1f }) {
+                    Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
                         TumblingDie(spec, progress, null, fonts, Color.White)
                     }
                 } else {
-                    DieBox(rotation = -1f, background = Color.White) { SuccessDieFace(success) }
+                    DieBox(
+                        rotation = -1f,
+                        background = Color.White,
+                        size = dieSize,
+                        onClick = onRollSuccess,
+                        enabled = !rolling
+                    ) { SuccessDieFace(success) }
                 }
             }
         }
-        val fateDie: @Composable () -> Unit = {
+        val fateDie: @Composable (Dp) -> Unit = { dieSize ->
             DieWithCaption("Dé du destin", fonts) {
                 val spec = spin?.fate
                 if (spec != null) {
-                    Box(Modifier.size(150.dp).graphicsLayer { rotationZ = 1f }) {
+                    Box(Modifier.size(dieSize).graphicsLayer { rotationZ = 1f }) {
                         TumblingDie(spec, progress, cubeFateFaces, fonts, FateDieBackground)
                     }
                 } else {
-                    DieBox(rotation = 1f, background = FateDieBackground) { FateDieFace(fate, fonts) }
+                    DieBox(
+                        rotation = 1f,
+                        background = FateDieBackground,
+                        size = dieSize,
+                        onClick = onRollFate,
+                        enabled = !rolling
+                    ) { FateDieFace(fate, fonts) }
                 }
             }
         }
         if (maxWidth >= 316.dp) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
             ) {
-                successDie()
-                fateDie()
+                successDie(rowDieSize)
+                RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = onRollBoth)
+                fateDie(rowDieSize)
             }
         } else {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(gap)
             ) {
-                successDie()
-                fateDie()
+                successDie(fullDieSize)
+                RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = onRollBoth)
+                fateDie(fullDieSize)
             }
         }
+    }
+}
+
+/** Bouton rond "⚡" (lancer les deux dés a la fois), pose entre les deux des -- meme habillage "BD" (ombre/bordure) que ComicButton, en cercle. */
+@Composable
+private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .size(size)
+            .alpha(if (enabled) 1f else 0.6f)
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .hardShadow(if (pressed) 1.dp else 3.dp, size / 2, Ink)
+            .background(Red, CircleShape)
+            .border(3.dp, Ink, CircleShape)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .semantics { contentDescription = "Lancer les deux dés" },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "⚡",
+            textAlign = TextAlign.Center,
+            style = TextStyle(fontSize = (size.value * 0.42f).sp, color = Color.White)
+        )
     }
 }
 
@@ -677,15 +766,33 @@ private fun DieWithCaption(caption: String, fonts: AppFonts, die: @Composable ()
 }
 
 @Composable
-internal fun DieBox(rotation: Float, background: Color, content: @Composable BoxScope.() -> Unit) {
+internal fun DieBox(
+    rotation: Float,
+    background: Color,
+    size: Dp = 150.dp,
+    onClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    content: @Composable BoxScope.() -> Unit
+) {
     val shape = RoundedCornerShape(14.dp)
+    val interaction = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
-            .size(150.dp)
+            .size(size)
             .graphicsLayer { rotationZ = rotation }
             .hardShadow(5.dp, 14.dp, Ink)
             .background(background, shape)
             .border(4.dp, Ink, shape)
+            .let {
+                if (onClick != null) {
+                    it.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        enabled = enabled,
+                        onClick = onClick
+                    )
+                } else it
+            }
             .padding(10.dp),
         contentAlignment = Alignment.Center,
         content = content
