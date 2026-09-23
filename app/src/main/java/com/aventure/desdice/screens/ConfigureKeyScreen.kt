@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -88,6 +89,7 @@ private val ErrorOnPhoto = Color(0xFFFFC9C9)
 @Composable
 fun ConfigureKeyScreen(
     onDone: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: GameViewModel = viewModel()
 ) {
@@ -305,6 +307,15 @@ fun ConfigureKeyScreen(
                 }
             }
         }
+
+        // --- Bouton Réglages (engrenage), par-dessus le contenu défilant ---
+        SettingsGearButton(
+            onClick = onOpenSettings,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(12.dp)
+        )
     }
 }
 
