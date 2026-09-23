@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +46,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -55,8 +57,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.AppIcon
+import com.aventure.desdice.ui.AppIconStore
 import com.aventure.desdice.ui.BackgroundSlot
 import com.aventure.desdice.ui.BackgroundStore
 import com.aventure.desdice.ui.rememberBackgroundPainter
@@ -97,11 +103,12 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Écran Réglages en 2 pages qu'on fait glisser (ou qu'on change en touchant
+ * Écran Réglages en 3 pages qu'on fait glisser (ou qu'on change en touchant
  * l'onglet latéral) :
  *   - Polices : police du texte de l'appli et police des titres, parmi les
  *     fichiers de app/src/main/assets/fonts ;
- *   - Photos : images de fond des pages de l'appli.
+ *   - Photos : images de fond des pages de l'appli ;
+ *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -117,7 +124,7 @@ fun SettingsScreen(
     val fontOptions = remember(context) { listAssetFonts(context) }
     val bgStore = remember(context) { BackgroundStore.get(context) }
 
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
 
     Box(
@@ -198,8 +205,8 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState())
                             // On garde une marge plus large du côté de l'onglet latéral.
                             .padding(
-                                start = if (page == 1) 38.dp else 16.dp,
-                                end = if (page == 0) 38.dp else 16.dp,
+                                start = if (page >= 1) 38.dp else 16.dp,
+                                end = if (page <= 1) 38.dp else 16.dp,
                                 top = 12.dp,
                                 bottom = 12.dp
                             ),
@@ -249,7 +256,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        } else {
+                        } else if (page == 1) {
                         // --- Images de fond ---
                         SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
                             Text(
@@ -274,34 +281,37 @@ fun SettingsScreen(
                                 BackgroundRow(slot = slot, store = bgStore, fonts = fonts)
                             }
                         }
+                        } else {
+                            AppIconCard(fonts = fonts)
                         }
 
                         SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
                         Spacer(Modifier.height(8.dp))
                     }
 
-                    // Onglet sur le côté : indique l'autre page (toucher = y aller).
-                    if (page == 0) {
+                    // Onglets sur les côtés : indiquent les pages voisines (toucher = y aller).
+                    if (page >= 1) {
                         SideTab(
-                            text = "Photos",
-                            arrow = "\u203A",
-                            rotation = 90f,
-                            fonts = fonts,
-                            onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 4.dp)
-                        )
-                    } else {
-                        SideTab(
-                            text = "Polices",
+                            text = if (page == 1) "Polices" else "Photos",
                             arrow = "\u2039",
                             rotation = 270f,
                             fonts = fonts,
-                            onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                            onClick = { scope.launch { pagerState.animateScrollToPage(page - 1) } },
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .padding(start = 4.dp)
+                        )
+                    }
+                    if (page <= 1) {
+                        SideTab(
+                            text = if (page == 0) "Photos" else "Icône",
+                            arrow = "\u203A",
+                            rotation = 90f,
+                            fonts = fonts,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(page + 1) } },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 4.dp)
                         )
                     }
                 }
@@ -397,6 +407,134 @@ private fun BackgroundRow(slot: BackgroundSlot, store: BackgroundStore, fonts: A
                     style = TextStyle(shadow = STextShadow),
                     modifier = Modifier.padding(top = 6.dp)
                 )
+            }
+        }
+    }
+}
+
+/** Page « Icône » : grille 3 x 3 des icônes proposées, un clic applique l'icône. */
+@Composable
+private fun AppIconCard(fonts: AppFonts) {
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(AppIconStore.current(context)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // L'icône d'origine est dessinée depuis la ressource du lanceur (icône adaptative comprise).
+    val originalPreview = remember(context) {
+        try {
+            ContextCompat.getDrawable(context, R.mipmap.ic_launcher)?.toBitmap(256, 256)?.asImageBitmap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    SettingsCard(title = "\uD83C\uDFA8 Icône de l'application", fonts = fonts) {
+        Text(
+            text = "Touche une icône pour l'appliquer. Selon ton téléphone, le changement " +
+                "peut mettre quelques secondes à apparaître sur l'écran d'accueil.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+        AppIcon.values().toList().chunked(3).forEachIndexed { rowIndex, row ->
+            if (rowIndex > 0) Spacer(Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                row.forEach { icon ->
+                    IconTile(
+                        icon = icon,
+                        selected = icon == selected,
+                        originalPreview = originalPreview,
+                        fonts = fonts,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            try {
+                                AppIconStore.apply(context, icon)
+                                selected = icon
+                                error = null
+                            } catch (e: Exception) {
+                                error = "Impossible de changer l'icône : les alias du manifeste " +
+                                    "ne sont pas en place."
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        error?.let {
+            Text(
+                text = it,
+                fontSize = 13.sp,
+                color = Color(0xFFFFC9C9),
+                fontFamily = fonts.body,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun IconTile(
+    icon: AppIcon,
+    selected: Boolean,
+    originalPreview: androidx.compose.ui.graphics.ImageBitmap?,
+    fonts: AppFonts,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(18.dp)
+    val res = icon.previewRes
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(shape)
+            .border(if (selected) 3.dp else 1.dp, if (selected) Color.White else SCardBorder, shape)
+            .clickable(onClick = onClick)
+    ) {
+        if (res != null) {
+            Image(
+                painter = painterResource(id = res),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (originalPreview != null) {
+            Image(
+                bitmap = originalPreview,
+                contentDescription = "Icône d'origine",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        if (icon == AppIcon.ORIGINAL) {
+            Text(
+                text = "Origine",
+                fontFamily = fonts.body,
+                fontSize = 11.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        if (selected) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(SRed)
+            ) {
+                Text(text = "\u2713", color = Color.White, fontSize = 14.sp)
             }
         }
     }
