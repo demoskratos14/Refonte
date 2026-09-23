@@ -19,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.screens.ClassicDiceScreen
 import com.aventure.desdice.screens.ConfigureKeyScreen
 import com.aventure.desdice.screens.CreateStoryScreen
+import com.aventure.desdice.screens.SettingsScreen
 import com.aventure.desdice.screens.StorySelectorScreen
 import com.aventure.desdice.viewmodel.GameViewModel
 
@@ -51,7 +52,8 @@ class MainActivity : ComponentActivity() {
 /**
  * Navigation :
  * 1) ConfigureKeyScreen au premier ecran (cle API Mistral, optionnelle --
- *    "Passer" ou "Continuer" appellent tous deux onDone) ;
+ *    "Passer" ou "Continuer" appellent tous deux onDone). Son engrenage
+ *    ouvre SettingsScreen (choix des polices) ;
  * 2) StorySelectorScreen (carrousel) tant qu'aucune histoire n'est
  *    selectionnee (currentStorySlug == null). Depuis ce carrousel :
  *      - l'icone de de ouvre ClassicDiceScreen,
@@ -72,6 +74,7 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
     var keyStepDone by remember { mutableStateOf(false) }
     var showConfigureKey by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var showClassicDice by remember { mutableStateOf(false) }
     var showCreateStory by remember { mutableStateOf(false) }
     var showStorySelector by remember { mutableStateOf(false) }
@@ -82,12 +85,23 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
     LaunchedEffect(currentStorySlug) { showStorySelector = false }
 
     when {
+        // Réglages (polices) : accessible par l'engrenage de ConfigureKeyScreen,
+        // y compris au premier écran ; testé en premier pour passer par-dessus.
+        showSettings -> {
+            SettingsScreen(onBack = { showSettings = false })
+        }
         !keyStepDone -> {
-            ConfigureKeyScreen(onDone = { keyStepDone = true })
+            ConfigureKeyScreen(
+                onDone = { keyStepDone = true },
+                onOpenSettings = { showSettings = true }
+            )
         }
         showConfigureKey -> {
             BackHandler { showConfigureKey = false }
-            ConfigureKeyScreen(onDone = { showConfigureKey = false })
+            ConfigureKeyScreen(
+                onDone = { showConfigureKey = false },
+                onOpenSettings = { showSettings = true }
+            )
         }
         showClassicDice -> {
             BackHandler { showClassicDice = false }
