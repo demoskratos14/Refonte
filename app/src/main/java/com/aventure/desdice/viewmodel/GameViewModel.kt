@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 // NB : passe de ViewModel à AndroidViewModel — il faut le répertoire de
@@ -223,6 +225,109 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             mutex.withLock {
                 _classicDiceState.value = engine.classicDiceClear()
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Totems ajoutés en cours de partie / quêtes / journal
+    // ------------------------------------------------------------------
+
+    fun addCustomTotem(
+        label: String,
+        powers: String = "",
+        special: String = "",
+        emoji: String = "",
+        imageBytes: ByteArray = ByteArray(0),
+        imageFilename: String = ""
+    ) = runEngine { engine.addCustomTotem(label, powers, special, emoji, imageBytes, imageFilename) }
+
+    fun removeCustomTotem(key: String) = runEngine { engine.removeCustomTotem(key) }
+    fun completeSideQuest(questId: Int) = runEngine { engine.completeSideQuest(questId) }
+    fun addStoryEntry(text: String) = runEngine { engine.addStoryEntry(text) }
+
+    // ------------------------------------------------------------------
+    // Narration IA
+    // ------------------------------------------------------------------
+
+    fun sendFullPrompt() = runEngine { engine.sendFullPrompt() }
+    fun sendAiMessage(text: String = "") = runEngine { engine.sendAiMessage(text) }
+    fun resetAiConversation() = runEngine { engine.resetAiConversation() }
+
+    // ------------------------------------------------------------------
+    // Configuration Mistral
+    // ------------------------------------------------------------------
+
+    private val _configScreenState = MutableStateFlow<JSONObject?>(null)
+    val configScreenState = _configScreenState.asStateFlow()
+
+    fun loadConfigScreenState() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    fun setMistralKey(key: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                engine.setMistralKey(key)
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    fun clearMistralKey() {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                engine.clearMistralKey()
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    fun setMistralModel(model: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                engine.setMistralModel(model)
+                _configScreenState.value = engine.getConfigScreenState()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Export / import (fonctions suspend : l'écran a besoin du résultat
+    // directement -- fichier à écrire/partager, ou champs à pré-remplir --
+    // plutôt que d'un état observé de loin comme sessionState).
+    // ------------------------------------------------------------------
+
+    /** @return (octets, nom de fichier, type MIME) du PDF (ou du texte de repli) du journal. */
+    suspend fun exportJournal(): Triple<ByteArray, String, String> =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.exportJournal() } }
+
+    /** @return (octets, nom de fichier, type MIME) du JSON d'identité de l'histoire en cours. */
+    suspend fun exportIdentity(): Triple<ByteArray, String, String> =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.exportIdentity() } }
+
+    /** Analyse (sans rien appliquer) un JSON d'identité collé par le joueur -- à pré-remplir dans CreateStoryScreen. */
+    suspend fun importIdentity(rawText: String): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.importIdentity(rawText) } }
+
+    /**
+     * À appeler juste après createStory (et les éventuels addCustomTotem
+     * pour les totems supplémentaires) quand l'identité importée contenait
+     * des quêtes et/ou un journal.
+     */
+    suspend fun applyImportedProgress(
+        sideQuests: JSONArray,
+        nextQuestId: Int,
+        storyLog: JSONArray,
+        storySummary: String
+    ): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val result = engine.applyImportedProgress(sideQuests, nextQuestId, storyLog, storySummary)
+            loadSessionState(result)
+            result
         }
     }
 }
