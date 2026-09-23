@@ -9,24 +9,23 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.core.content.res.ResourcesCompat
 
 /**
- * Polices de l'ancienne version (dice_web.py) : Bangers pour les titres,
- * Nunito pour le texte courant, Nunito Bold pour les intitules en gras.
+ * Polices de l'application :
  *
- *   - display  : Bangers (titres, boutons)
- *   - body     : Nunito (texte courant)
- *   - bodyBold : Nunito Bold (intitules). Compose ne sait pas mettre en gras
- *                une police chargee depuis un fichier : il faut utiliser cette
- *                famille plutot que fontWeight = Bold avec `body`.
+ *   - display  : police des TITRES (histoires, en-têtes, boutons). Par défaut Bangers.
+ *   - body     : police du TEXTE courant. Par défaut Nunito.
+ *   - bodyBold : variante grasse du texte (intitulés). Compose ne sait pas mettre en gras
+ *                une police chargée depuis un fichier : il faut utiliser cette
+ *                famille plutôt que fontWeight = Bold avec `body`.
  *
- * Ordre de recherche pour chaque police :
+ * Les deux premières peuvent être choisies par l'utilisateur dans l'écran
+ * Réglages (voir FontPrefs) parmi les fichiers de app/src/main/assets/fonts.
+ * Sans choix (ou si le fichier choisi est illisible), on retombe sur l'ordre
+ * de recherche d'origine pour chaque police :
  *   1. app/src/main/assets/fonts/  (Bangers-Regular.ttf, Nunito-Regular.ttf ;
- *      Nunito Bold est retrouvee quelle que soit la casse / le separateur du nom :
- *      Nunito-Bold.ttf, nunito-bold.ttf, NunitoBold.ttf...)
- *   2. app/src/main/res/font/      (noms courants : bangers_regular, bangers,
- *                                   nunito_regular, nunito, nunito_variablefont_wght,
- *                                   nunito_bold)
- *   3. police par defaut du systeme : l'appli compile et fonctionne quand
- *      meme, seule l'apparence des textes change (bodyBold retombe alors sur body).
+ *      Nunito Bold est retrouvée quelle que soit la casse / le séparateur du nom)
+ *   2. app/src/main/res/font/      (bangers_regular, bangers, nunito_regular, nunito,
+ *                                   nunito_variablefont_wght, nunito_bold)
+ *   3. police par défaut du système (bodyBold retombe alors sur body).
  */
 class AppFonts(
     val display: FontFamily,
@@ -69,6 +68,15 @@ private fun findAssetPath(context: Context, dir: String, normalized: String): St
     return match?.let { "$dir/$it" }
 }
 
+/** "Nunito-Regular.ttf" -> chemin de "Nunito-Bold.ttf" s'il existe dans assets/fonts, sinon null. */
+private fun boldSiblingPath(context: Context, regularFile: String): String? {
+    val base = regularFile.substringBeforeLast('.')
+        .lowercase()
+        .filter { it.isLetterOrDigit() }
+        .removeSuffix("regular")
+    return findAssetPath(context, FontPrefs.FONTS_DIR, base + "bold")
+}
+
 private fun loadFamily(
     context: Context,
     assetPath: String,
@@ -81,24 +89,40 @@ private fun loadFamily(
 @Composable
 fun rememberAppFonts(): AppFonts {
     val context = LocalContext.current
-    return remember(context) {
-        val body = loadFamily(
+    val prefs = remember(context) { FontPrefs.get(context) }
+    // Lus ici, dans la composition : un changement dans Réglages recompose
+    // tous les écrans qui utilisent rememberAppFonts().
+    val bodyFile = prefs.bodyFontFile
+    val titleFile = prefs.titleFontFile
+
+    return remember(context, bodyFile, titleFile) {
+        // --- Texte courant ---
+        val defaultBody = loadFamily(
             context,
             "fonts/Nunito-Regular.ttf",
             listOf("nunito_regular", "nunito", "nunito_variablefont_wght")
         )
-        val bold = findAssetPath(context, "fonts", "nunitobold")
+        val defaultBold = findAssetPath(context, "fonts", "nunitobold")
             ?.let { typefaceFamilyOrNull(context, it) }
             ?: resFamilyOrNull(context, listOf("nunito_bold", "nunitobold"))
-            ?: body
-        AppFonts(
-            display = loadFamily(
-                context,
-                "fonts/Bangers-Regular.ttf",
-                listOf("bangers_regular", "bangers")
-            ),
-            body = body,
-            bodyBold = bold
+            ?: defaultBody
+
+        val customBody = bodyFile?.let { typefaceFamilyOrNull(context, "fonts/$it") }
+        val body = customBody ?: defaultBody
+        val bold = if (bodyFile != null && customBody != null) {
+            boldSiblingPath(context, bodyFile)?.let { typefaceFamilyOrNull(context, it) } ?: customBody
+        } else {
+            defaultBold
+        }
+
+        // --- Titres ---
+        val defaultDisplay = loadFamily(
+            context,
+            "fonts/Bangers-Regular.ttf",
+            listOf("bangers_regular", "bangers")
         )
+        val display = titleFile?.let { typefaceFamilyOrNull(context, "fonts/$it") } ?: defaultDisplay
+
+        AppFonts(display = display, body = body, bodyBold = bold)
     }
 }
