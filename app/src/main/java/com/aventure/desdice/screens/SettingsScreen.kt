@@ -3,6 +3,7 @@ package com.aventure.desdice.screens
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,11 +40,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -92,9 +97,13 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Écran Réglages : choix indépendant de la police du texte de l'appli et de
- * celle des titres, parmi les fichiers de app/src/main/assets/fonts.
+ * Écran Réglages en 2 pages qu'on fait glisser (ou qu'on change en touchant
+ * l'onglet latéral) :
+ *   - Polices : police du texte de l'appli et police des titres, parmi les
+ *     fichiers de app/src/main/assets/fonts ;
+ *   - Photos : images de fond des pages de l'appli.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -107,6 +116,9 @@ fun SettingsScreen(
     val fontPrefs = remember(context) { FontPrefs.get(context) }
     val fontOptions = remember(context) { listAssetFonts(context) }
     val bgStore = remember(context) { BackgroundStore.get(context) }
+
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
@@ -138,12 +150,14 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // --- En-tête ---
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // --- En-tête (fixe) ---
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+            ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -170,77 +184,128 @@ fun SettingsScreen(
                 Spacer(Modifier.size(44.dp)) // équilibre visuel avec le bouton retour
             }
 
-            // --- Polices ---
-            SettingsCard(title = "\uD83D\uDD24 Polices", fonts = fonts) {
-                if (fontOptions.isEmpty()) {
-                    Text(
-                        text = "Aucune police (.ttf / .otf) trouvée dans app/src/main/assets/fonts.",
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        fontFamily = fonts.body,
-                        style = TextStyle(shadow = STextShadow)
-                    )
-                } else {
-                    FontPicker(
-                        label = "Police du texte de l'application",
-                        options = fontOptions,
-                        fontPrefs = fontPrefs,
-                        selectedFile = fontPrefs.bodyFontFile,
-                        defaultFile = FontPrefs.DEFAULT_BODY_FILE,
-                        previewText = "Le dé roule sur la table… Tu avances dans la forêt sombre, " +
-                            "et quelque chose bouge entre les arbres.",
-                        previewSize = 15.sp,
-                        fonts = fonts,
-                        onSelect = { fontPrefs.setBodyFont(it) }
-                    )
-                    Box(
+            // --- 2 pages, à faire glisser : 0 = polices, 1 = images de fond ---
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { page ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                            .height(2.dp)
-                            .background(SLineColor)
-                    )
-                    FontPicker(
-                        label = "Police des titres (histoires, boutons)",
-                        options = fontOptions,
-                        fontPrefs = fontPrefs,
-                        selectedFile = fontPrefs.titleFontFile,
-                        defaultFile = FontPrefs.DEFAULT_TITLE_FILE,
-                        previewText = "Le Livre des Mille Histoires",
-                        previewSize = 26.sp,
-                        fonts = fonts,
-                        onSelect = { fontPrefs.setTitleFont(it) }
-                    )
-                }
-            }
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            // On garde une marge plus large du côté de l'onglet latéral.
+                            .padding(
+                                start = if (page == 1) 38.dp else 16.dp,
+                                end = if (page == 0) 38.dp else 16.dp,
+                                top = 12.dp,
+                                bottom = 12.dp
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (page == 0) {
+                        // --- Polices ---
+                        SettingsCard(title = "\uD83D\uDD24 Polices", fonts = fonts) {
+                            if (fontOptions.isEmpty()) {
+                                Text(
+                                    text = "Aucune police (.ttf / .otf) trouvée dans app/src/main/assets/fonts.",
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                    fontFamily = fonts.body,
+                                    style = TextStyle(shadow = STextShadow)
+                                )
+                            } else {
+                                FontPicker(
+                                    label = "Police du texte de l'application",
+                                    options = fontOptions,
+                                    fontPrefs = fontPrefs,
+                                    selectedFile = fontPrefs.bodyFontFile,
+                                    defaultFile = FontPrefs.DEFAULT_BODY_FILE,
+                                    previewText = "Le dé roule sur la table… Tu avances dans la forêt sombre, " +
+                                        "et quelque chose bouge entre les arbres.",
+                                    previewSize = 15.sp,
+                                    fonts = fonts,
+                                    onSelect = { fontPrefs.setBodyFont(it) }
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp)
+                                        .height(2.dp)
+                                        .background(SLineColor)
+                                )
+                                FontPicker(
+                                    label = "Police des titres (histoires, boutons)",
+                                    options = fontOptions,
+                                    fontPrefs = fontPrefs,
+                                    selectedFile = fontPrefs.titleFontFile,
+                                    defaultFile = FontPrefs.DEFAULT_TITLE_FILE,
+                                    previewText = "Le Livre des Mille Histoires",
+                                    previewSize = 26.sp,
+                                    fonts = fonts,
+                                    onSelect = { fontPrefs.setTitleFont(it) }
+                                )
+                            }
+                        }
+                        } else {
+                        // --- Images de fond ---
+                        SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
+                            Text(
+                                text = "Choisis une image de ta galerie pour chaque page. Une image en paysage " +
+                                    "est complétée par un fond flouté pour remplir l'écran en portrait.",
+                                fontSize = 14.sp,
+                                color = Color.White.copy(alpha = 0.95f),
+                                fontFamily = fonts.body,
+                                style = TextStyle(shadow = STextShadow),
+                                modifier = Modifier.padding(bottom = 14.dp)
+                            )
+                            BackgroundSlot.values().forEachIndexed { index, slot ->
+                                if (index > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 14.dp)
+                                            .height(2.dp)
+                                            .background(SLineColor)
+                                    )
+                                }
+                                BackgroundRow(slot = slot, store = bgStore, fonts = fonts)
+                            }
+                        }
+                        }
 
-            // --- Images de fond ---
-            SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
-                Text(
-                    text = "Choisis une image de ta galerie pour chaque page. Une image en paysage " +
-                        "est complétée par un fond flouté pour remplir l'écran en portrait.",
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.95f),
-                    fontFamily = fonts.body,
-                    style = TextStyle(shadow = STextShadow),
-                    modifier = Modifier.padding(bottom = 14.dp)
-                )
-                BackgroundSlot.values().forEachIndexed { index, slot ->
-                    if (index > 0) {
-                        Box(
+                        SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    // Onglet sur le côté : indique l'autre page (toucher = y aller).
+                    if (page == 0) {
+                        SideTab(
+                            text = "Photos",
+                            arrow = "\u203A",
+                            rotation = 90f,
+                            fonts = fonts,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 14.dp)
-                                .height(2.dp)
-                                .background(SLineColor)
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 4.dp)
+                        )
+                    } else {
+                        SideTab(
+                            text = "Polices",
+                            arrow = "\u2039",
+                            rotation = 270f,
+                            fonts = fonts,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 4.dp)
                         )
                     }
-                    BackgroundRow(slot = slot, store = bgStore, fonts = fonts)
                 }
             }
-
-            SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
-            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -334,6 +399,57 @@ private fun BackgroundRow(slot: BackgroundSlot, store: BackgroundStore, fonts: A
                 )
             }
         }
+    }
+}
+
+/** Texte tourné de `degrees` (90 = lit de haut en bas, 270 = de bas en haut), avec la mise en page adaptée. */
+private fun Modifier.verticalText(degrees: Float): Modifier =
+    this
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            layout(placeable.height, placeable.width) {
+                placeable.place(
+                    x = -(placeable.width / 2 - placeable.height / 2),
+                    y = -(placeable.height / 2 - placeable.width / 2)
+                )
+            }
+        }
+        .rotate(degrees)
+
+/** Petit onglet collé au bord de l'écran : flèche + nom de l'autre page écrit à la verticale. */
+@Composable
+private fun SideTab(
+    text: String,
+    arrow: String,
+    rotation: Float,
+    fonts: AppFonts,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.35f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = arrow,
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 22.sp,
+            style = TextStyle(shadow = STextShadow)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = text,
+            fontFamily = fonts.display,
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 15.sp,
+            letterSpacing = 1.sp,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.verticalText(rotation)
+        )
     }
 }
 
