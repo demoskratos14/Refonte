@@ -21,6 +21,7 @@ import com.aventure.desdice.screens.ConfigureKeyScreen
 import com.aventure.desdice.screens.CreateStoryScreen
 import com.aventure.desdice.screens.SettingsScreen
 import com.aventure.desdice.screens.StorySelectorScreen
+import com.aventure.desdice.ui.MusicHost
 import com.aventure.desdice.viewmodel.GameViewModel
 
 class MainActivity : ComponentActivity() {
@@ -72,6 +73,10 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
+    // Musique de fond des menus : démarre à l'ouverture de l'appli, se met en pause en
+    // arrière-plan. MainGameScreen la coupe à l'entrée dans une histoire (voir MusicPlayer.kt).
+    MusicHost()
+
     var keyStepDone by remember { mutableStateOf(false) }
     var showConfigureKey by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }

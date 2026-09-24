@@ -1,5 +1,6 @@
 package com.aventure.desdice
 
+import android.app.Activity
 import android.graphics.BitmapFactory
 import android.content.Context
 import android.media.AudioAttributes
@@ -101,6 +102,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.MusicPlayer
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.viewmodel.GameViewModel
@@ -182,6 +184,17 @@ fun MainGameScreen(
     val stories by viewModel.stories.collectAsState()
     val currentSlug by viewModel.currentStorySlug.collectAsState()
     val fonts = rememberAppFonts()
+
+    // Entrer dans une histoire coupe la musique des menus (elle ne gêne pas la lecture) ;
+    // le lien « Lancer une musique » de l'en-tête permet de la relancer. Pas de reprise
+    // automatique à la sortie, et rien ne change lors d'une rotation de l'écran.
+    val hostActivity = LocalContext.current as? Activity
+    DisposableEffect(Unit) {
+        MusicPlayer.enterStory()
+        onDispose {
+            if (hostActivity?.isChangingConfigurations != true) MusicPlayer.leaveStory()
+        }
+    }
 
     var showAllowedValues by remember { mutableStateOf(false) }
     // Totem dont la fiche (pouvoirs / capacite speciale) est affichee.
@@ -390,6 +403,33 @@ private fun GameHeader(
                 .clickable(onClick = onChangeStory)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
+
+        // Musique : coupée à l'entrée dans l'histoire, relançable ici (morceau au hasard).
+        if (MusicPlayer.hasTracks()) {
+            val musicContext = LocalContext.current
+            val underlined = bodyStyle(fonts, 14.sp).copy(textDecoration = TextDecoration.Underline)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = if (MusicPlayer.isPlaying) "\u23F9 Couper la musique" else "\uD83C\uDFB5 Lancer une musique",
+                    style = underlined,
+                    modifier = Modifier
+                        .clickable {
+                            if (MusicPlayer.isPlaying) MusicPlayer.stop()
+                            else MusicPlayer.startFromGameButton(musicContext)
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+                if (MusicPlayer.isPlaying) {
+                    Text(
+                        text = "\u23ED Autre morceau",
+                        style = underlined,
+                        modifier = Modifier
+                            .clickable { MusicPlayer.startRandom(musicContext) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
 
         if (showStartStory) {
             ComicButton(
