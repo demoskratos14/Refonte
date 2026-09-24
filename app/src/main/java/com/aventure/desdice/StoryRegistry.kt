@@ -86,7 +86,13 @@ data class StoryMeta(
     val totemPowers: String,
     val totemSpecial: String,
     val protagonistName: String,
-    val saveFile: String
+    val saveFile: String,
+    // "short" (~10 échanges), "medium" (20-30) ou "long" (illimité, en
+    // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "long"
+    // par défaut (y compris pour toute histoire créée avant l'ajout de ce
+    // champ, absent de son JSON) : c'est la valeur la plus proche du
+    // comportement d'origine (aucune limite), chapitres en plus.
+    val storyLength: String = "long"
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("slug", slug)
@@ -100,6 +106,7 @@ data class StoryMeta(
         put("totem_special", totemSpecial)
         put("protagonist_name", protagonistName)
         put("save_file", saveFile)
+        put("story_length", storyLength)
     }
     companion object {
         /** null si "slug" est absent/vide — miroir du filtre de _load_custom_meta(). */
@@ -117,7 +124,8 @@ data class StoryMeta(
                 totemPowers = o.optString("totem_powers", ""),
                 totemSpecial = o.optString("totem_special", ""),
                 protagonistName = o.optString("protagonist_name", ""),
-                saveFile = o.optString("save_file", "dice_state_$slug.json")
+                saveFile = o.optString("save_file", "dice_state_$slug.json"),
+                storyLength = o.optString("story_length", "long")
             )
         }
     }
@@ -153,7 +161,8 @@ data class StoryEntry(
     val isCustom: Boolean,
     val loreParagraphs: List<String>,
     val seedStateFile: String? = null,
-    val defaultTotem: DefaultTotem?
+    val defaultTotem: DefaultTotem?,
+    val storyLength: String = "long"
 )
 
 /** Un totem acquis en cours de partie, tel qu'embarqué dans un export d'identité. */
@@ -184,7 +193,8 @@ data class StoryIdentityImport(
     val sideQuests: JSONArray,
     val nextQuestId: Int,
     val storyLog: JSONArray,
-    val storySummary: String
+    val storySummary: String,
+    val storyLength: String
 )
 
 // ------------------------------------------------------------------------
@@ -259,7 +269,8 @@ class StoryRegistry(private val baseDir: File) {
         totemImageFilename: String?,
         totemPowers: String = "",
         totemSpecial: String = "",
-        protagonistName: String = ""
+        protagonistName: String = "",
+        storyLength: String = "long"
     ): String {
         val finalTitle = title.trim().ifEmpty { "Nouvelle histoire" }
         val slug = slugifyStoryTitle(finalTitle)
@@ -280,7 +291,8 @@ class StoryRegistry(private val baseDir: File) {
             totemPowers = totemPowers.trim(),
             totemSpecial = totemSpecial.trim(),
             protagonistName = protagonistName.trim(),
-            saveFile = "dice_state_$slug.json"
+            saveFile = "dice_state_$slug.json",
+            storyLength = storyLength
         )
         val metaList = loadCustomMeta().toMutableList()
         metaList.add(meta)
@@ -354,7 +366,8 @@ class StoryRegistry(private val baseDir: File) {
                 imageFilename = meta.totemImageFilename,
                 powersText = meta.totemPowers,
                 special = meta.totemSpecial
-            )
+            ),
+            storyLength = meta.storyLength
         )
     }
 
@@ -413,6 +426,7 @@ class StoryRegistry(private val baseDir: File) {
             put("next_quest_id", nextQuestId ?: 1)
             put("story_log", storyLog ?: JSONArray())
             put("story_summary", storySummary ?: "")
+            put("story_length", meta.storyLength)
         }
     }
 
@@ -495,7 +509,8 @@ class StoryRegistry(private val baseDir: File) {
             sideQuests = sideQuests,
             nextQuestId = nextQuestId,
             storyLog = storyLog,
-            storySummary = data.optString("story_summary", "").trim()
+            storySummary = data.optString("story_summary", "").trim(),
+            storyLength = data.optString("story_length", "long")
         )
     }
 }

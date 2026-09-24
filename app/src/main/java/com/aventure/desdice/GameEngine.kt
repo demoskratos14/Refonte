@@ -262,7 +262,8 @@ class GameEngine(private val baseDir: File) {
         bgImageBytes: ByteArray,
         totemImageBytes: ByteArray,
         totemImageFilename: String,
-        protagonistName: String = ""
+        protagonistName: String = "",
+        storyLength: String = "long"
     ): JSONObject {
         val savedTotemFilename = if (totemImageBytes.isNotEmpty()) {
             saveTotemImageBytes(totemImageBytes, totemImageFilename)
@@ -278,7 +279,8 @@ class GameEngine(private val baseDir: File) {
             totemImageFilename = savedTotemFilename,
             totemPowers = totemPowers,
             totemSpecial = totemSpecial,
-            protagonistName = protagonistName
+            protagonistName = protagonistName,
+            storyLength = storyLength
         )
         switchStory(slug)
         return currentSessionJson()
@@ -448,6 +450,22 @@ class GameEngine(private val baseDir: File) {
         lines += ""
         lines += "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. À $THREAT_THRESHOLD points, " +
             "complication secondaire inattendue puis retombe à 0."
+        lines += ""
+        lines += buildStoryLengthInstructions(story)
+        if (!autoMode) {
+            // Mode manuel : buildFullPrompt()/buildFullPromptText() recalcule
+            // tout ce texte à chaque clic sur "copier le prompt", donc un
+            // compte à jour ici reste toujours exact. En mode auto, ce même
+            // calcul existe (buildStoryProgressNote), mais est ajouté à part
+            // dans runAiNarrator à CHAQUE appel API, jamais ici : ce texte-ci
+            // n'est écrit qu'UNE SEULE fois dans le message "system" figé de
+            // la conversation (voir plus bas), un compte à rebours y serait
+            // juste devenu faux dès l'échange suivant.
+            buildStoryProgressNote(sess, story)?.let {
+                lines += ""
+                lines += it
+            }
+        }
         for (paragraph in story?.loreParagraphs ?: emptyList()) {
             lines += ""
             lines += paragraph
@@ -474,6 +492,64 @@ class GameEngine(private val baseDir: File) {
                 "permanente ; tu t'adresses toujours à $protagonistRef en 'tu'."
         }
         return lines.joinToString("\n")
+    }
+
+    /**
+     * Explication du format choisi (StoryEntry.storyLength) -- texte fixe,
+     * ne dépend PAS du nombre d'échanges déjà écoulés (voir
+     * buildStoryProgressNote() pour le compte à jour, séparé). Intégrée une
+     * seule fois dans le message "system" en mode auto (figé pour le reste
+     * de la conversation), recalculée à chaque clic "copier le prompt" en
+     * mode manuel -- dans les deux cas ce texte reste identique du début à
+     * la fin de l'histoire, donc aucun souci de fraîcheur ici.
+     */
+    private fun buildStoryLengthInstructions(story: StoryEntry?): String {
+        return when (story?.storyLength ?: "long") {
+            "short" -> "FORMAT DE L'HISTOIRE : COURT -- une dizaine d'échanges au total. " +
+                "Construis une histoire complète qui se conclut naturellement aux alentours du " +
+                "dixième échange : ni bâclée avant, ni étirée artificiellement après. Amorce le " +
+                "dénouement dès que tu sens qu'on approche de la fin prévue (voir le rappel de " +
+                "progression ci-dessous, mis à jour à chaque échange)."
+            "medium" -> "FORMAT DE L'HISTOIRE : MOYEN -- entre 20 et 30 échanges au total. " +
+                "Construis une histoire complète qui se conclut naturellement dans cette " +
+                "fourchette : ni bâclée avant, ni étirée artificiellement après. Amorce le " +
+                "dénouement dès que tu sens qu'on approche de la fin prévue (voir le rappel de " +
+                "progression ci-dessous, mis à jour à chaque échange)."
+            else -> "FORMAT DE L'HISTOIRE : LONG, en CHAPITRES, sans limite totale d'échanges. " +
+                "Chaque chapitre doit poser une vraie problématique puis la résoudre avant sa " +
+                "fin -- jamais une coupure arbitraire en plein milieu de l'action. Dès qu'un " +
+                "chapitre se termine (problématique résolue), tu t'arrêtes : propose une vraie " +
+                "conclusion de chapitre, puis demande explicitement au joueur s'il souhaite " +
+                "commencer le chapitre suivant. Tu n'enchaînes JAMAIS automatiquement sur un " +
+                "nouveau chapitre tant qu'il n'a pas répondu positivement à cette question."
+        }
+    }
+
+    /**
+     * Rappel de progression COURT et A JOUR, distinct du texte fixe
+     * ci-dessus : compte les échanges déjà narrés dans sess.aiConversation
+     * (même principe de comptage que maybeUpdateStoryDigest(), qui sait
+     * déjà repérer des paquets de 6 messages pour le digest journal --
+     * ici, pas de seuil déclencheur, juste une information transmise à
+     * chaque appel). Renvoie null pour le format "long" : les chapitres
+     * n'ont pas de compte à rebours numérique à suivre, la consigne fixe
+     * ci-dessus suffit.
+     *
+     * IMPORTANT (voir buildMechanicsContext) : ce texte ne doit JAMAIS être
+     * écrit une fois pour toutes dans sess.aiConversation (donc jamais via
+     * sess.addAiMessage) -- en mode auto il est recalculé et rajouté à part
+     * à CHAQUE appel API par runAiNarrator(), sans être sauvegardé, pour
+     * rester exact d'un échange à l'autre.
+     */
+    private fun buildStoryProgressNote(sess: DiceSession, story: StoryEntry?): String? {
+        val exchangeCount = sess.aiConversation.count { it.role == "assistant" }
+        return when (story?.storyLength ?: "long") {
+            "short" -> "RAPPEL DE PROGRESSION (ne mentionne jamais ce rappel technique au joueur) : " +
+                "$exchangeCount échange(s) narré(s) jusqu'ici, sur une dizaine visée au total."
+            "medium" -> "RAPPEL DE PROGRESSION (ne mentionne jamais ce rappel technique au joueur) : " +
+                "$exchangeCount échange(s) narré(s) jusqu'ici, sur 20 à 30 visés au total."
+            else -> null
+        }
     }
 
     private fun buildFullPrompt(sess: DiceSession, story: StoryEntry?): String {
@@ -529,6 +605,17 @@ class GameEngine(private val baseDir: File) {
      * Envoie eventText à l'IA (en amorçant la conversation avec le message
      * système si elle est vide), ajoute la réponse à la conversation, et
      * tente une mise à jour du digest journal/résumé. Miroir de run_ai_narrator().
+     *
+     * Le message "system" initial (mécaniques + FORMAT DE L'HISTOIRE) n'est
+     * écrit qu'une fois, puis reste figé tel quel dans sess.aiConversation
+     * pour le reste de la partie (voir plus haut) -- un compte à rebours
+     * qui y serait inclus deviendrait donc faux dès l'échange suivant. Le
+     * rappel de progression (buildStoryProgressNote) est pour cette raison
+     * recalculé et ajouté à part ICI, à CHAQUE appel, sur la copie de
+     * messages effectivement envoyée à l'API -- jamais sur sess.aiConversation
+     * elle-même, donc jamais sauvegardé ni affiché au joueur (AiPanel.kt
+     * n'affiche que ce qui est dans aiConversation).
+     *
      * @return (texte de la réponse, erreur) — comme MistralClient.chat().
      */
     private fun runAiNarrator(eventText: String): Pair<String?, String?> {
@@ -538,9 +625,16 @@ class GameEngine(private val baseDir: File) {
             sess.addAiMessage("system", buildMechanicsContext(sess, currentStory, autoMode = true))
         }
         sess.addAiMessage("user", eventText)
+        val messagesToSend = sess.aiMessagesToSend().toMutableList()
+        buildStoryProgressNote(sess, currentStory)?.let { note ->
+            // Juste avant le dernier message (le "user" qu'on vient
+            // d'ajouter), pour rester proche de la convention "la
+            // conversation envoyée se termine par un message user".
+            messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
+        }
         val (text, error) = MistralClient.chat(
             getMistralKey(),
-            sess.aiMessagesToSend(),
+            messagesToSend,
             model = getMistralModel(),
             promptCacheKey = currentStorySlug
         )
@@ -841,6 +935,7 @@ class GameEngine(private val baseDir: File) {
             put("next_quest_id", parsed.nextQuestId)
             put("story_log", parsed.storyLog)
             put("story_summary", parsed.storySummary)
+            put("story_length", parsed.storyLength)
         }
     }
 
