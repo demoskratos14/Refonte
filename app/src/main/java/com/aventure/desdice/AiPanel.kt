@@ -45,11 +45,15 @@ import org.json.JSONArray
 /**
  * Panneau de narration IA (equivalent Compose de render_ai_panel_html dans
  * dice_web.py). Affiche la conversation (session.ai_conversation, sans le
- * premier message "system"), un champ de texte libre, un bouton pour
- * amorcer/relancer un chapitre sans lancer de de, un bouton pour ecouter
+ * premier message "system"), un champ de texte libre, un bouton pour ecouter
  * le dernier message de l'IA (SpeechManager), et un bouton de
  * reinitialisation (qui, cote moteur, remet TOUTE l'histoire a zero --
  * d'ou la confirmation avant de l'executer).
+ *
+ * Le bouton "Demarrer l'histoire" (envoi du prompt complet quand la
+ * conversation est encore vide) ne vit plus ici : il est affiche par
+ * MainGameScreen.kt, juste sous "Changer d'histoire", et disparait des
+ * qu'un message existe deja.
  *
  * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
  * n'appelle plus Python/Chaquopy. GameViewModel.sendFullPrompt(),
@@ -155,21 +159,14 @@ fun AiPanel(
         }
 
         if (messages.isEmpty() && !isLoading) {
+            // Le bouton pour demarrer/relancer un chapitre (envoi du prompt
+            // complet) vit desormais dans MainGameScreen.kt, juste sous
+            // "Changer d'histoire" -- il n'est donc plus duplique ici.
             Text(
                 text = "Aucun échange pour l'instant.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
-            Button(
-                onClick = {
-                    isLoading = true
-                    error = null
-                    viewModel.sendFullPrompt()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Envoyer le prompt à l'IA")
-            }
         } else {
             LazyColumn(
                 state = listState,

@@ -85,6 +85,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -103,7 +105,9 @@ import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------
 // Palette (celle de l'ancienne version web et des autres ecrans restyles)
@@ -186,6 +190,66 @@ fun MainGameScreen(
     LaunchedEffect(Unit) { refreshKeyState() }
     val hasKey = configScreenState?.optBoolean("has_key", false) ?: false
 
+    // Conversation IA deja entamee ou non (hors message "system") : determine
+    // si le bouton "Demarrer l'histoire" doit etre propose sous "Changer
+    // d'histoire". Des qu'un message existe deja (assistant ou user), il
+    // suffit de repondre a ce message pour relancer la conversation, donc
+    // le bouton disparait.
+    val hasAiConversation = remember(sessionState) {
+        val conv: JSONArray? = sessionState?.optJSONArray("ai_conversation")
+        var found = false
+        if (conv != null) {
+            for (i in 0 until conv.length()) {
+                val role = conv.optJSONObject(i)?.optString("role")
+                if (role != null && role != "system") {
+                    found = true
+                    break
+                }
+            }
+        }
+        found
+    }
+    var isStartingStory by remember { mutableStateOf(false) }
+    // Retombe a false des que le moteur a mis a jour la session (conversation
+    // remplie, ou ai_error renseigne en cas d'echec) -- meme logique que dans
+    // AiPanel.
+    LaunchedEffect(sessionState) { isStartingStory = false }
+
+    // Dernier message "assistant" de la conversation IA (identifie par son
+    // index + son contenu, pour distinguer deux reponses au meme texte).
+    // Sert a remonter automatiquement sur le panneau de narration des qu'une
+    // nouvelle reponse de l'IA arrive (voir le LaunchedEffect plus bas, une
+    // fois aiPanelOffset connu).
+    val lastAssistantMessage = remember(sessionState) {
+        val conv: JSONArray? = sessionState?.optJSONArray("ai_conversation")
+        var last: String? = null
+        if (conv != null) {
+            for (i in 0 until conv.length()) {
+                val entry = conv.optJSONObject(i)
+                if (entry?.optString("role") == "assistant") {
+                    last = "$i:${entry.optString("content")}"
+                }
+            }
+        }
+        last
+    }
+    // Initialise a la valeur courante : une conversation deja existante a
+    // l'ouverture de l'ecran ne doit pas declencher de scroll automatique,
+    // seule une VRAIE nouvelle reponse doit le faire.
+    var previousAssistantMessage by remember { mutableStateOf(lastAssistantMessage) }
+    // Position (dans le contenu defilant) du haut du panneau de narration IA,
+    // mise a jour a chaque changement de mise en page via onGloballyPositioned
+    // sur le Box qui l'entoure plus bas.
+    var aiPanelOffset by remember { mutableStateOf(0) }
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(lastAssistantMessage) {
+        if (lastAssistantMessage != previousAssistantMessage) {
+            previousAssistantMessage = lastAssistantMessage
+            scrollState.animateScrollTo(aiPanelOffset.coerceIn(0, scrollState.maxValue))
+        }
+    }
+
     val bgB64 = stories.firstOrNull { it.slug == currentSlug }?.bgImageB64.orEmpty()
     val isCustomStory = stories.firstOrNull { it.slug == currentSlug }?.isCustom == true
     val headerTitle = sessionState?.optString("header_title").orEmpty()
@@ -201,12 +265,40 @@ fun MainGameScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(bottom = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            GameHeader(headerTitle = headerTitle, fonts = fonts, onChangeStory = onChangeStory)
+            GameHeader(
+                headerTitle = headerTitle,
+                fonts = fonts,
+                onChangeStory = onChangeStory,
+                showStartStory = hasKey && !hasAiConversation,
+                isStartingStory = isStartingStory,
+                onStartStory = {
+                    isStartingStory = true
+                    viewModel.sendFullPrompt()
+                }
+            )
             TotemBadgesRow(state = sessionState, onTotemClick = { infoTotemKey = it })
+
+            Box(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    // positionInParent() tient deja compte du defilement en cours
+                    // (le contenu est place a -scrollState.value) : on rajoute
+                    // scrollState.value pour retrouver la position absolue, stable
+                    // quel que soit le defilement au moment de la mesure.
+                    aiPanelOffset = (coordinates.positionInParent().y + scrollState.value).roundToInt()
+                }
+            ) {
+                AiPanel(
+                    viewModel = viewModel,
+                    hasKey = hasKey,
+                    onKeyChanged = { refreshKeyState() },
+                    onConfigureKey = onConfigureKey,
+                    speechManager = speechManager
+                )
+            }
 
             DiceResultCard(viewModel = viewModel, hasKey = hasKey)
             ThreatGauge(viewModel = viewModel)
@@ -221,14 +313,6 @@ fun MainGameScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-
-            AiPanel(
-                viewModel = viewModel,
-                hasKey = hasKey,
-                onKeyChanged = { refreshKeyState() },
-                onConfigureKey = onConfigureKey,
-                speechManager = speechManager
-            )
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
             SideQuestsList(viewModel = viewModel, hasKey = hasKey)
@@ -255,7 +339,19 @@ fun MainGameScreen(
 }
 
 @Composable
-private fun GameHeader(headerTitle: String, fonts: AppFonts, onChangeStory: () -> Unit) {
+private fun GameHeader(
+    headerTitle: String,
+    fonts: AppFonts,
+    onChangeStory: () -> Unit,
+    // Bouton "Demarrer l'histoire" : envoie les mecaniques du jeu et l'histoire
+    // deja vecue directement a l'IA avec l'instruction de demarrer le prochain
+    // chapitre. Utile avant le tout premier lancer, ou pour relancer le fil de
+    // l'histoire apres une reinitialisation de la conversation IA. Masque des
+    // qu'un message existe deja (il suffit alors de repondre a ce message).
+    showStartStory: Boolean = false,
+    isStartingStory: Boolean = false,
+    onStartStory: () -> Unit = {}
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -286,6 +382,22 @@ private fun GameHeader(headerTitle: String, fonts: AppFonts, onChangeStory: () -
                 .clickable(onClick = onChangeStory)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
+
+        if (showStartStory) {
+            ComicButton(
+                text = "🚀 Démarrer l'histoire",
+                onClick = onStartStory,
+                fonts = fonts,
+                kind = ButtonKind.Primary,
+                enabled = !isStartingStory,
+                compact = true,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (isStartingStory) {
+                Spacer(modifier = Modifier.height(8.dp))
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            }
+        }
     }
 }
 
