@@ -31,6 +31,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,6 +69,8 @@ import com.aventure.desdice.ui.AppIcon
 import com.aventure.desdice.ui.AppIconStore
 import com.aventure.desdice.ui.BackgroundSlot
 import com.aventure.desdice.ui.BackgroundStore
+import com.aventure.desdice.ui.DiceSoundPlayer
+import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.FontOption
 import com.aventure.desdice.ui.FontPrefs
@@ -81,6 +87,9 @@ private val SCardBg = Color(0xBF14100C)          // carte sombre translucide (le
 private val SCardBorder = Color(0x4DFFFFFF)
 private val SLineColor = Color(0x4DFFFFFF)
 private val STextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
+
+/** Polices, Photos, Icône, Sons. */
+private const val PAGE_COUNT = 4
 
 /**
  * Bouton d'accès aux Réglages : icône engrenage (res/drawable/ic_settings.png).
@@ -103,12 +112,13 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Écran Réglages en 3 pages qu'on fait glisser (ou qu'on change en touchant
+ * Écran Réglages en 4 pages qu'on fait glisser (ou qu'on change en touchant
  * l'onglet latéral) :
  *   - Polices : police du texte de l'appli et police des titres, parmi les
  *     fichiers de app/src/main/assets/fonts ;
  *   - Photos : images de fond des pages de l'appli ;
- *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit.
+ *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit ;
+ *   - Sons : couper ou baisser le bruit des dés (res/raw/dice_roll.mp3).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -124,7 +134,7 @@ fun SettingsScreen(
     val fontOptions = remember(context) { listAssetFonts(context) }
     val bgStore = remember(context) { BackgroundStore.get(context) }
 
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(pageCount = { PAGE_COUNT })
     val scope = rememberCoroutineScope()
 
     Box(
@@ -191,7 +201,7 @@ fun SettingsScreen(
                 Spacer(Modifier.size(44.dp)) // équilibre visuel avec le bouton retour
             }
 
-            // --- 2 pages, à faire glisser : 0 = polices, 1 = images de fond ---
+            // --- 4 pages, à faire glisser : 0 = polices, 1 = images de fond, 2 = icône, 3 = sons ---
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -206,7 +216,7 @@ fun SettingsScreen(
                             // On garde une marge plus large du côté de l'onglet latéral.
                             .padding(
                                 start = if (page >= 1) 38.dp else 16.dp,
-                                end = if (page <= 1) 38.dp else 16.dp,
+                                end = if (page < PAGE_COUNT - 1) 38.dp else 16.dp,
                                 top = 12.dp,
                                 bottom = 12.dp
                             ),
@@ -281,8 +291,10 @@ fun SettingsScreen(
                                 BackgroundRow(slot = slot, store = bgStore, fonts = fonts)
                             }
                         }
-                        } else {
+                        } else if (page == 2) {
                             AppIconCard(fonts = fonts)
+                        } else {
+                            SoundCard(fonts = fonts)
                         }
 
                         SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
@@ -292,7 +304,7 @@ fun SettingsScreen(
                     // Onglets sur les côtés : indiquent les pages voisines (toucher = y aller).
                     if (page >= 1) {
                         SideTab(
-                            text = if (page == 1) "Polices" else "Photos",
+                            text = when (page) { 1 -> "Polices"; 2 -> "Photos"; else -> "Icône" },
                             arrow = "\u2039",
                             rotation = 270f,
                             fonts = fonts,
@@ -302,9 +314,9 @@ fun SettingsScreen(
                                 .padding(start = 4.dp)
                         )
                     }
-                    if (page <= 1) {
+                    if (page < PAGE_COUNT - 1) {
                         SideTab(
-                            text = if (page == 0) "Photos" else "Icône",
+                            text = when (page) { 0 -> "Photos"; 1 -> "Icône"; else -> "Sons" },
                             arrow = "\u203A",
                             rotation = 90f,
                             fonts = fonts,
@@ -472,6 +484,97 @@ private fun AppIconCard(fonts: AppFonts) {
                 fontFamily = fonts.body,
                 style = TextStyle(shadow = STextShadow),
                 modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+}
+
+/** Page « Sons » : couper ou baisser le bruit des dés. */
+@Composable
+private fun SoundCard(fonts: AppFonts) {
+    val context = LocalContext.current
+    val soundPrefs = remember(context) { SoundPrefs.get(context) }
+    val muted = soundPrefs.diceMuted
+    val volume = soundPrefs.diceVolume
+
+    SettingsCard(title = "\uD83D\uDD0A Bruit des dés", fonts = fonts) {
+        Text(
+            text = "Coupe le bruit des dés, ou baisse-le pour jouer plus discrètement. " +
+                "Le volume choisi est conservé quand tu coupes le son.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (muted) "Son coupé" else "Son activé",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = !muted,
+                onCheckedChange = { soundPrefs.setMuted(!it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = SRed,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
+                )
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp)
+                .height(2.dp)
+                .background(SLineColor)
+        )
+
+        Text(
+            text = "Volume : ${(volume * 100).toInt()} %",
+            fontFamily = fonts.bodyBold,
+            color = Color.White.copy(alpha = if (muted) 0.5f else 1f),
+            style = TextStyle(shadow = STextShadow)
+        )
+        Slider(
+            value = volume,
+            onValueChange = { soundPrefs.setVolume(it) },
+            valueRange = 0f..1f,
+            enabled = !muted,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = SRed,
+                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                disabledThumbColor = Color.White.copy(alpha = 0.5f),
+                disabledActiveTrackColor = Color.White.copy(alpha = 0.4f),
+                disabledInactiveTrackColor = Color.White.copy(alpha = 0.2f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(6.dp))
+        SettingsButton(
+            text = "Écouter",
+            onClick = { DiceSoundPlayer.play(context) },
+            fonts = fonts,
+            secondary = true
+        )
+        if (muted) {
+            Text(
+                text = "Le son est coupé : rien ne sera joué tant que tu ne le réactives pas.",
+                fontSize = 13.sp,
+                color = Color(0xFFFFC9C9),
+                fontFamily = fonts.body,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
     }
