@@ -76,7 +76,7 @@ images de fond des pages et l'icône de l'application.
 | 2 | `StorySelectorScreen` | Carrousel des histoires + page « Nouvelle histoire » ; icône dé (en haut à gauche) → « Des classiques » ; icône 🔑 → configuration de la clé ; corbeille sur les histoires personnalisées |
 | 3 | `MainGameScreen` | La partie en cours (voir ci-dessous) |
 | — | `SettingsScreen` | Réglages, en 3 pages qu'on fait glisser : Polices, Photos, Icône |
-| — | `CreateStoryScreen` | Création d'une histoire personnalisée |
+| — | `CreateStoryScreen` | Création d'une histoire personnalisée (voir ci-dessous) |
 | — | `ClassicDiceScreen` | Page « Des classiques » : dé de réussite + dé du destin, indépendants de toute histoire |
 
 Le bouton retour du téléphone ferme les écrans secondaires ; depuis la
@@ -90,18 +90,43 @@ de la clé.
 ### L'écran de jeu, de haut en bas
 
 1. En-tête (titre de l'histoire, lien « Changer d'histoire ») et badges des totems (touche = fiche du totem).
-2. `DiceResultCard` : lancers de dés (dés 3D animés), résultat, note pour l'IA.
-3. `ThreatGauge` : jauge de menace.
-4. `SymbolPicker` : symbole affiché sur le dé de réussite (mode unique / aléatoire / mixte).
-5. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent.
-6. `AiPanel` : conversation avec l'IA (fil complet, message libre, lecture vocale du dernier message, réinitialisation avec confirmation) ; masqué (message + bouton vers la configuration) tant qu'aucune clé Mistral n'est enregistrée.
+2. `AiPanel` : conversation avec l'IA (fil complet, message libre, lecture vocale du dernier message, réinitialisation avec confirmation) ; masqué (message + bouton vers la configuration) tant qu'aucune clé Mistral n'est enregistrée. Remonté juste sous l'en-tête (au-dessus des dés) pour rester bien visible ; dès qu'une nouvelle réponse de l'IA arrive, l'écran défile automatiquement pour l'amener en haut (position mesurée via `onGloballyPositioned`, dans `MainGameScreen.kt`).
+3. `DiceResultCard` : lancers de dés (dés 3D animés), résultat, note pour l'IA.
+4. `ThreatGauge` : jauge de menace.
+5. `SymbolPicker` : symbole affiché sur le dé de réussite (mode unique / aléatoire / mixte).
+6. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent.
 7. `TotemGaugesRow` : une jauge par totem, utilisable quand elle est pleine ; gestion des totems ajoutés en cours de partie (`TotemManagementDialog`).
 8. `SideQuestsList` : quêtes secondaires.
 9. `ContinueSection` : démarrer ou relancer un chapitre, ou copier le prompt complet (mode manuel).
 10. `HistoryList` : historique des lancers (annuler le dernier, tout effacer).
+11. `JournalSection` : journal de l'histoire (masqué quand la narration automatique est active).
 
 Le fond de l'écran de jeu est l'image de l'histoire en cours (elle se choisit
 à la création de l'histoire) ; il n'est pas modifiable depuis les Réglages.
+
+### Création d'une histoire (`CreateStoryScreen`)
+
+Champs : titre, sous-titre, texte de lore, prénom du héros (optionnel — si
+vide, l'IA s'adresse à « le personnage principal »), totem de départ
+(libellé/pouvoirs/spécial + image), image de fond.
+
+**Longueur de l'histoire** (`storyLength`, propagé jusqu'à
+`StoryEntry.storyLength` et transmis à l'IA via
+`GameEngine.buildStoryLengthInstructions()`) :
+
+| Valeur | Libellé | Effet |
+|---|---|---|
+| `short` | Courte (~10 échanges) | Histoire complète qui se conclut naturellement autour du 10ᵉ échange ; un rappel de progression à jour (`buildStoryProgressNote`) est renvoyé à l'IA à chaque appel |
+| `medium` | Moyenne (20 à 30) | Idem, mais viser 20 à 30 échanges. **Valeur par défaut à la création** d'une nouvelle histoire |
+| `long` | Longue (chapitres) | Pas de limite totale ; l'IA découpe en chapitres (chacun avec une vraie fin) et demande confirmation avant d'enchaîner sur le suivant. Valeur de repli côté moteur pour les histoires déjà existantes (avant l'ajout de ce réglage) |
+
+Une identité importée restaure sa propre longueur d'histoire
+(`story_length` dans le JSON exporté) ; si absente, elle retombe sur `long`.
+
+Le bloc « importer une identité exportée (JSON) » (collage manuel ou choix
+d'un fichier) pré-remplit tous les champs ci-dessus, y compris les totems
+supplémentaires, quêtes secondaires et journal, appliqués à part juste après
+la création (`addCustomTotemAwait` puis `applyImportedProgress`).
 
 ## Réglages (`screens/SettingsScreen.kt`)
 
