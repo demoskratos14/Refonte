@@ -70,6 +70,7 @@ import com.aventure.desdice.ui.AppIconStore
 import com.aventure.desdice.ui.BackgroundSlot
 import com.aventure.desdice.ui.BackgroundStore
 import com.aventure.desdice.ui.DiceSoundPlayer
+import com.aventure.desdice.ui.MusicPlayer
 import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.FontOption
@@ -118,7 +119,8 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
  *     fichiers de app/src/main/assets/fonts ;
  *   - Photos : images de fond des pages de l'appli ;
  *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit ;
- *   - Sons : couper ou baisser le bruit des dés (res/raw/dice_roll.mp3).
+ *   - Sons : couper ou baisser le bruit des dés (res/raw/dice_roll.mp3) et la
+ *     musique de fond (fichiers res/raw/music_*).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -295,6 +297,7 @@ fun SettingsScreen(
                             AppIconCard(fonts = fonts)
                         } else {
                             SoundCard(fonts = fonts)
+                            MusicCard(fonts = fonts)
                         }
 
                         SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
@@ -484,6 +487,107 @@ private fun AppIconCard(fonts: AppFonts) {
                 fontFamily = fonts.body,
                 style = TextStyle(shadow = STextShadow),
                 modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+}
+
+/** Page « Sons », 2e carte : couper ou baisser la musique de fond des menus. */
+@Composable
+private fun MusicCard(fonts: AppFonts) {
+    val context = LocalContext.current
+    val soundPrefs = remember(context) { SoundPrefs.get(context) }
+    val hasTracks = remember { MusicPlayer.hasTracks() }
+    val muted = soundPrefs.musicMuted
+    val volume = soundPrefs.musicVolume
+
+    SettingsCard(title = "\uD83C\uDFB5 Musique", fonts = fonts) {
+        Text(
+            text = "Un morceau au hasard se lance à l'ouverture de l'appli et s'arrête quand tu entres " +
+                "dans une histoire. Dans la page de jeu, tu peux la relancer si tu en as envie.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+        if (!hasTracks) {
+            Text(
+                text = "Aucun morceau trouvé. Ajoute des fichiers nommés music_quelquechose.mp3 (ou .ogg) " +
+                    "dans app/src/main/res/raw.",
+                fontSize = 13.sp,
+                color = Color(0xFFFFC9C9),
+                fontFamily = fonts.body,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (muted) "Musique coupée" else "Musique activée",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = !muted,
+                onCheckedChange = {
+                    soundPrefs.setMusicMuted(!it)
+                    MusicPlayer.onMusicMutedChanged(context)
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = SRed,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
+                )
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp)
+                .height(2.dp)
+                .background(SLineColor)
+        )
+
+        Text(
+            text = "Volume : ${(volume * 100).toInt()} %",
+            fontFamily = fonts.bodyBold,
+            color = Color.White.copy(alpha = if (muted) 0.5f else 1f),
+            style = TextStyle(shadow = STextShadow)
+        )
+        Slider(
+            value = volume,
+            onValueChange = {
+                soundPrefs.setMusicVolume(it)
+                MusicPlayer.updateVolume(context)
+            },
+            valueRange = 0f..1f,
+            enabled = !muted,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = SRed,
+                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                disabledThumbColor = Color.White.copy(alpha = 0.5f),
+                disabledActiveTrackColor = Color.White.copy(alpha = 0.4f),
+                disabledInactiveTrackColor = Color.White.copy(alpha = 0.2f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (hasTracks && !muted) {
+            Spacer(Modifier.height(6.dp))
+            SettingsButton(
+                text = if (MusicPlayer.isPlaying) "Autre morceau" else "Lancer la musique",
+                onClick = { MusicPlayer.startRandom(context) },
+                fonts = fonts,
+                secondary = true
             )
         }
     }
