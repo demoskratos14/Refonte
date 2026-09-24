@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -119,6 +120,12 @@ internal val Gold = Color(0xFFFFCD3C)
 internal val DangerText = Color(0xFF8A1020)
 internal val ErrorOnPhoto = Color(0xFFFFC9C9)
 private val PageBg = Color(0xFF14161A)
+// Degrade de la jauge de menace : vert (1re case, danger faible) -> rouge
+// fonce (derniere case, seuil atteint). DangerText sert deja d'ombre/texte
+// d'erreur ailleurs dans l'appli, on le reutilise comme extremite rouge
+// pour rester dans la meme famille de rouges que "Red" plus haut.
+private val ThreatGaugeStart = Color(0xFF3FA34D)
+private val ThreatGaugeEnd = DangerText
 
 // ---------------------------------------------------------------------
 // Reglages de lisibilite (a ajuster si besoin)
@@ -871,17 +878,50 @@ fun ThreatGauge(
             text = "Niveau actuel : $threatLevel/$THREAT_THRESHOLD",
             style = bodyStyle(fonts, 15.sp)
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        GaugeBar(
-            fraction = threatLevel.toFloat() / THREAT_THRESHOLD,
-            color = if (reached) Red else Gold,
-            height = 12.dp
-        )
+        Spacer(modifier = Modifier.height(8.dp))
+        ThreatGaugeCells(level = threatLevel, max = THREAT_THRESHOLD)
         if (reached) {
             Text(
                 text = "⚠️ Seuil atteint : complication secondaire !",
                 style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
                 modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Jauge de menace en cases : une case par point de menace (au lieu d'une
+ * barre continue), qui se colore au fur et a mesure -- degrade du vert
+ * (1re case) au rouge fonce (derniere, celle du seuil). Chaque case prend
+ * une part egale de la largeur disponible (Modifier.weight(1f)) : la jauge
+ * reste donc pleine largeur quel que soit THREAT_THRESHOLD, plus large et
+ * plus lisible que l'ancienne barre fine de 12dp.
+ */
+@Composable
+private fun ThreatGaugeCells(
+    level: Int,
+    max: Int,
+    modifier: Modifier = Modifier,
+    cellHeight: Dp = 26.dp
+) {
+    if (max <= 0) return
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        for (i in 0 until max) {
+            val filled = i < level
+            val fraction = if (max == 1) 1f else i / (max - 1).toFloat()
+            val cellColor = lerp(ThreatGaugeStart, ThreatGaugeEnd, fraction)
+            val shape = RoundedCornerShape(5.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(cellHeight)
+                    .clip(shape)
+                    .background(if (filled) cellColor else Color.White.copy(alpha = 0.12f))
+                    .border(1.5.dp, Ink.copy(alpha = if (filled) 0.85f else 0.35f), shape)
             )
         }
     }
