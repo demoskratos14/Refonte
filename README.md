@@ -123,6 +123,19 @@ vide, l'IA s'adresse à « le personnage principal »), totem de départ
 Une identité importée restaure sa propre longueur d'histoire
 (`story_length` dans le JSON exporté) ; si absente, elle retombe sur `long`.
 
+**Objectif moral** (`moralGoal`, optionnel — propagé jusqu'à
+`StoryEntry.moralGoal`) : une valeur ou une notion que l'aventure doit
+mettre en avant à travers ses situations (patience, fair-play, partage,
+courage face à la peur, entraide...), en plus de l'univers décrit dans le
+texte de lore — jamais à sa place. Transmis à l'IA dans
+`GameEngine.buildMechanicsContext()` par une instruction dédiée
+(« OBJECTIF MORAL DU RÉCIT »), juste après les paragraphes de lore, avec la
+consigne explicite de le faire vivre par le récit (situations, personnages,
+choix) et de ne jamais le tourner en discours moralisateur direct. Laissé
+vide, aucune instruction n'est envoyée : comportement inchangé pour toute
+histoire qui n'en définit pas. Restauré lui aussi par un import d'identité
+(`moral_goal` dans le JSON exporté).
+
 Le bloc « importer une identité exportée (JSON) » (collage manuel ou choix
 d'un fichier) pré-remplit tous les champs ci-dessus, y compris les totems
 supplémentaires, quêtes secondaires et journal, appliqués à part juste après
