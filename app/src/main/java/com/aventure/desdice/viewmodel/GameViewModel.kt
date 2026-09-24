@@ -166,7 +166,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         totemImageBytes: ByteArray,
         totemImageFilename: String,
         protagonistName: String = "",
-        storyLength: String = "long"
+        storyLength: String = "long",
+        moralGoal: String = ""
     ): JSONObject = withContext(Dispatchers.IO) {
         mutex.withLock {
             engine.createStory(
@@ -180,7 +181,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 totemImageBytes = totemImageBytes,
                 totemImageFilename = totemImageFilename,
                 protagonistName = protagonistName,
-                storyLength = storyLength
+                storyLength = storyLength,
+                moralGoal = moralGoal
             ).also { loadSessionState(it) }
         }
     }
