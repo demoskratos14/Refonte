@@ -40,12 +40,12 @@ class SoundPrefs private constructor(context: Context) {
     val effectiveMusicVolume: Float
         get() = if (musicMuted) 0f else musicVolume
 
-    fun setMusicVolume(value: Float) {
+    fun changeMusicVolume(value: Float) {
         musicVolume = value.coerceIn(0f, 1f)
         prefs.edit().putFloat(KEY_MUSIC_VOLUME, musicVolume).apply()
     }
 
-    fun setMusicMuted(muted: Boolean) {
+    fun changeMusicMuted(muted: Boolean) {
         musicMuted = muted
         prefs.edit().putBoolean(KEY_MUSIC_MUTED, muted).apply()
     }

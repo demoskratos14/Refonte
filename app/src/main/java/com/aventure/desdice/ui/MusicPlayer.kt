@@ -112,8 +112,8 @@ object MusicPlayer {
      */
     fun startFromGameButton(context: Context) {
         val prefs = SoundPrefs.get(context)
-        if (prefs.musicMuted) prefs.setMusicMuted(false)
-        if (prefs.musicVolume < 0.05f) prefs.setMusicVolume(0.5f)
+        if (prefs.musicMuted) prefs.changeMusicMuted(false)
+        if (prefs.musicVolume < 0.05f) prefs.changeMusicVolume(0.5f)
         startRandom(context)
     }
 
