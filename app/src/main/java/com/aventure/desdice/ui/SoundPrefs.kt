@@ -29,6 +29,27 @@ class SoundPrefs private constructor(context: Context) {
     var diceMuted by mutableStateOf(prefs.getBoolean(KEY_MUTED, false))
         private set
 
+    /** Volume de la musique de fond, de 0.0 à 1.0 (plus discret par défaut que les dés). */
+    var musicVolume by mutableFloatStateOf(prefs.getFloat(KEY_MUSIC_VOLUME, 0.5f).coerceIn(0f, 1f))
+        private set
+
+    /** true = musique de fond coupée. */
+    var musicMuted by mutableStateOf(prefs.getBoolean(KEY_MUSIC_MUTED, false))
+        private set
+
+    val effectiveMusicVolume: Float
+        get() = if (musicMuted) 0f else musicVolume
+
+    fun setMusicVolume(value: Float) {
+        musicVolume = value.coerceIn(0f, 1f)
+        prefs.edit().putFloat(KEY_MUSIC_VOLUME, musicVolume).apply()
+    }
+
+    fun setMusicMuted(muted: Boolean) {
+        musicMuted = muted
+        prefs.edit().putBoolean(KEY_MUSIC_MUTED, muted).apply()
+    }
+
     /** Volume à appliquer au lecteur : 0 si le son est coupé, sinon le volume choisi. */
     val effectiveVolume: Float
         get() = if (diceMuted) 0f else diceVolume
@@ -47,6 +68,8 @@ class SoundPrefs private constructor(context: Context) {
         private const val PREFS_NAME = "app_sound_prefs"
         private const val KEY_VOLUME = "dice_volume"
         private const val KEY_MUTED = "dice_muted"
+        private const val KEY_MUSIC_VOLUME = "music_volume"
+        private const val KEY_MUSIC_MUTED = "music_muted"
 
         @Volatile
         private var instance: SoundPrefs? = null
