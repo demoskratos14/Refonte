@@ -92,7 +92,13 @@ data class StoryMeta(
     // par défaut (y compris pour toute histoire créée avant l'ajout de ce
     // champ, absent de son JSON) : c'est la valeur la plus proche du
     // comportement d'origine (aucune limite), chapitres en plus.
-    val storyLength: String = "long"
+    val storyLength: String = "long",
+    // Thème/valeur optionnel autour duquel construire le récit (patience,
+    // fair-play, partage...) -- voir GameEngine.buildMechanicsContext().
+    // Chaîne vide par défaut (y compris pour toute histoire créée avant
+    // l'ajout de ce champ) : aucun objectif moral n'est alors transmis à
+    // l'IA, comportement identique à avant l'ajout de ce champ.
+    val moralGoal: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("slug", slug)
@@ -107,6 +113,7 @@ data class StoryMeta(
         put("protagonist_name", protagonistName)
         put("save_file", saveFile)
         put("story_length", storyLength)
+        put("moral_goal", moralGoal)
     }
     companion object {
         /** null si "slug" est absent/vide — miroir du filtre de _load_custom_meta(). */
@@ -125,7 +132,8 @@ data class StoryMeta(
                 totemSpecial = o.optString("totem_special", ""),
                 protagonistName = o.optString("protagonist_name", ""),
                 saveFile = o.optString("save_file", "dice_state_$slug.json"),
-                storyLength = o.optString("story_length", "long")
+                storyLength = o.optString("story_length", "long"),
+                moralGoal = o.optString("moral_goal", "")
             )
         }
     }
@@ -162,7 +170,8 @@ data class StoryEntry(
     val loreParagraphs: List<String>,
     val seedStateFile: String? = null,
     val defaultTotem: DefaultTotem?,
-    val storyLength: String = "long"
+    val storyLength: String = "long",
+    val moralGoal: String = ""
 )
 
 /** Un totem acquis en cours de partie, tel qu'embarqué dans un export d'identité. */
@@ -194,7 +203,8 @@ data class StoryIdentityImport(
     val nextQuestId: Int,
     val storyLog: JSONArray,
     val storySummary: String,
-    val storyLength: String
+    val storyLength: String,
+    val moralGoal: String
 )
 
 // ------------------------------------------------------------------------
@@ -270,7 +280,8 @@ class StoryRegistry(private val baseDir: File) {
         totemPowers: String = "",
         totemSpecial: String = "",
         protagonistName: String = "",
-        storyLength: String = "long"
+        storyLength: String = "long",
+        moralGoal: String = ""
     ): String {
         val finalTitle = title.trim().ifEmpty { "Nouvelle histoire" }
         val slug = slugifyStoryTitle(finalTitle)
@@ -292,7 +303,8 @@ class StoryRegistry(private val baseDir: File) {
             totemSpecial = totemSpecial.trim(),
             protagonistName = protagonistName.trim(),
             saveFile = "dice_state_$slug.json",
-            storyLength = storyLength
+            storyLength = storyLength,
+            moralGoal = moralGoal.trim()
         )
         val metaList = loadCustomMeta().toMutableList()
         metaList.add(meta)
@@ -367,7 +379,8 @@ class StoryRegistry(private val baseDir: File) {
                 powersText = meta.totemPowers,
                 special = meta.totemSpecial
             ),
-            storyLength = meta.storyLength
+            storyLength = meta.storyLength,
+            moralGoal = meta.moralGoal
         )
     }
 
@@ -427,6 +440,7 @@ class StoryRegistry(private val baseDir: File) {
             put("story_log", storyLog ?: JSONArray())
             put("story_summary", storySummary ?: "")
             put("story_length", meta.storyLength)
+            put("moral_goal", meta.moralGoal)
         }
     }
 
@@ -510,7 +524,8 @@ class StoryRegistry(private val baseDir: File) {
             nextQuestId = nextQuestId,
             storyLog = storyLog,
             storySummary = data.optString("story_summary", "").trim(),
-            storyLength = data.optString("story_length", "long")
+            storyLength = data.optString("story_length", "long"),
+            moralGoal = data.optString("moral_goal", "").trim()
         )
     }
 }

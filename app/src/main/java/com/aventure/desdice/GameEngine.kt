@@ -263,7 +263,8 @@ class GameEngine(private val baseDir: File) {
         totemImageBytes: ByteArray,
         totemImageFilename: String,
         protagonistName: String = "",
-        storyLength: String = "long"
+        storyLength: String = "long",
+        moralGoal: String = ""
     ): JSONObject {
         val savedTotemFilename = if (totemImageBytes.isNotEmpty()) {
             saveTotemImageBytes(totemImageBytes, totemImageFilename)
@@ -280,7 +281,8 @@ class GameEngine(private val baseDir: File) {
             totemPowers = totemPowers,
             totemSpecial = totemSpecial,
             protagonistName = protagonistName,
-            storyLength = storyLength
+            storyLength = storyLength,
+            moralGoal = moralGoal
         )
         switchStory(slug)
         return currentSessionJson()
@@ -469,6 +471,16 @@ class GameEngine(private val baseDir: File) {
         for (paragraph in story?.loreParagraphs ?: emptyList()) {
             lines += ""
             lines += paragraph
+        }
+        val moralGoal = story?.moralGoal?.trim().orEmpty()
+        if (moralGoal.isNotEmpty()) {
+            lines += ""
+            lines += "OBJECTIF MORAL DU RÉCIT (en plus de l'univers ci-dessus, qui reste la trame " +
+                "de l'histoire -- ne le remplace jamais) : fais vivre, à travers les situations, " +
+                "les personnages et les choix proposés au joueur, la notion suivante : " +
+                "\"$moralGoal\". Ne transforme jamais ça en leçon de morale explicite ni en discours " +
+                "moralisateur adressé au joueur -- l'objectif se ressent dans le déroulement de " +
+                "l'histoire, jamais énoncé tel quel."
         }
         lines += ""
         lines += "TON DU RÉCIT : l'histoire s'adresse à un enfant -- écris de manière vivante et " +
@@ -936,6 +948,7 @@ class GameEngine(private val baseDir: File) {
             put("story_log", parsed.storyLog)
             put("story_summary", parsed.storySummary)
             put("story_length", parsed.storyLength)
+            put("moral_goal", parsed.moralGoal)
         }
     }
 
