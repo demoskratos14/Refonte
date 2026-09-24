@@ -129,6 +129,13 @@ fun CreateStoryScreen(
     var subtitle by remember { mutableStateOf("") }
     var loreText by remember { mutableStateOf("") }
     var protagonistName by remember { mutableStateOf("") }
+    // "short" (~10 echanges), "medium" (20-30) ou "long" (illimite, en
+    // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "medium"
+    // choisi par defaut pour une NOUVELLE histoire (contrairement au "long"
+    // utilise en repli cote moteur pour les histoires deja existantes) :
+    // c'est un choix delibere a faire a la creation, pas une simple valeur
+    // de secours.
+    var storyLength by remember { mutableStateOf("medium") }
     var totemLabel by remember { mutableStateOf("") }
     var totemPowers by remember { mutableStateOf("") }
     var totemSpecial by remember { mutableStateOf("") }
@@ -193,6 +200,7 @@ fun CreateStoryScreen(
                     totemLabel = parsed.optString("totem_label", "")
                     totemPowers = parsed.optString("totem_powers", "")
                     totemSpecial = parsed.optString("totem_special", "")
+                    storyLength = parsed.optString("story_length", "long")
 
                     val bgB64 = parsed.optString("bg_image_b64", "")
                     if (bgB64.isNotEmpty()) {
@@ -301,7 +309,8 @@ fun CreateStoryScreen(
                     bgImageBytes = bgBytes,
                     totemImageBytes = totemBytes,
                     totemImageFilename = totemFilename,
-                    protagonistName = protagonistName
+                    protagonistName = protagonistName,
+                    storyLength = storyLength
                 )
                 // Le totem de depart est deja pose par createStoryAwait (un
                 // seul, comme toujours). Les totems importes en plus (acquis
@@ -486,6 +495,57 @@ fun CreateStoryScreen(
                     enabled = !saving,
                     singleLine = true
                 )
+
+                // --- Longueur de l'histoire ---
+                SectionTitle("Longueur de l'histoire", fonts)
+                Text(
+                    text = "Détermine combien de temps dure l'aventure, et si l'IA doit " +
+                        "la découper en chapitres.",
+                    fontFamily = fonts.body,
+                    fontSize = 13.sp,
+                    color = Color.White,
+                    style = TextStyle(shadow = TextShadow)
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ComicButton(
+                        text = "Courte\n(~10 échanges)",
+                        onClick = { storyLength = "short" },
+                        fonts = fonts,
+                        secondary = storyLength != "short",
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f)
+                    )
+                    ComicButton(
+                        text = "Moyenne\n(20 à 30)",
+                        onClick = { storyLength = "medium" },
+                        fonts = fonts,
+                        secondary = storyLength != "medium",
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f)
+                    )
+                    ComicButton(
+                        text = "Longue\n(chapitres)",
+                        onClick = { storyLength = "long" },
+                        fonts = fonts,
+                        secondary = storyLength != "long",
+                        enabled = !saving,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (storyLength == "long") {
+                    Text(
+                        text = "Format long : pas de limite totale, mais l'IA racontera " +
+                            "l'histoire en chapitres (chacun avec une vraie fin) et te " +
+                            "demandera avant de commencer le suivant.",
+                        fontFamily = fonts.body,
+                        fontSize = 12.sp,
+                        color = Color.White,
+                        style = TextStyle(shadow = TextShadow)
+                    )
+                }
 
                 // --- Image de fond ---
                 SectionTitle("Image de fond", fonts)
