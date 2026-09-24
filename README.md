@@ -96,7 +96,7 @@ de la clé.
 5. `SymbolPicker` : symbole affiché sur le dé de réussite (mode unique / aléatoire / mixte).
 6. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent.
 7. `TotemGaugesRow` : une jauge par totem, utilisable quand elle est pleine ; gestion des totems ajoutés en cours de partie (`TotemManagementDialog`).
-8. `SideQuestsList` : quêtes secondaires.
+8. `SideQuestsList` : quêtes secondaires (voir « Le symbole ❓ du dé du destin selon la longueur »).
 9. `ContinueSection` : démarrer ou relancer un chapitre, ou copier le prompt complet (mode manuel).
 10. `HistoryList` : historique des lancers (annuler le dernier, tout effacer).
 11. `JournalSection` : journal de l'histoire (masqué quand la narration automatique est active).
@@ -122,6 +122,58 @@ vide, l'IA s'adresse à « le personnage principal »), totem de départ
 
 Une identité importée restaure sa propre longueur d'histoire
 (`story_length` dans le JSON exporté) ; si absente, elle retombe sur `long`.
+
+La longueur change aussi la mécanique du symbole ❓ du dé du destin (voir la
+section suivante).
+
+### Le symbole ❓ du dé du destin selon la longueur
+
+Le ❓ n'ouvre plus toujours « une quête à faire quand on veut » : son effet
+dépend de la longueur de l'histoire.
+
+| Longueur | Effet du ❓ | Détail technique |
+|---|---|---|
+| `short` | **Événement soudain et inattendu**, qui surgit tout de suite dans la scène en cours. Aucune quête annexe n'est ouverte | pas de `SideQuest` créée ; le lancer porte `RollRecord.suddenEvent = true` ; le ❓ n'est jamais retiré du tirage (l'événement est instantané) |
+| `medium` | **Quête secondaire construite en parallèle** de l'histoire principale : l'IA l'entrelace à l'intrigue au fil des scènes | `SideQuest` créée directement `ouverte` (`mode = "parallele"`) ; le ❓ ne retombe plus tant qu'une quête est ouverte |
+| `long` | **Quête relativement courte, lancée automatiquement à la fin du chapitre** (2 ou 3 échanges, puis retour au fil principal) | `SideQuest` créée `en_attente` (`mode = "fin_chapitre"`), puis passée à `ouverte` à la fin du chapitre ; le ❓ ne retombe plus tant qu'une quête est ouverte **ou en attente** |
+
+Statuts d'une quête (`SideQuest.status`) : `en_attente` (histoire longue,
+pas encore lancée), `ouverte`, `terminee`. Les listes de l'interface qui
+s'appuient sur `openSideQuests()` ne voient donc pas les quêtes en attente ;
+`pendingSideQuests()` les donne. Une quête sans champ `mode` (ancienne
+sauvegarde, identité importée) est traitée comme `parallele`.
+
+**Où vit la longueur.** La source de vérité est `StoryEntry.storyLength`.
+`GameEngine` la réapplique à la session avec `DiceSession.setStoryLength()`
+après chaque `load()` (`switchStory`, `resetStoryToOrigin`) ; elle est aussi
+écrite dans la sauvegarde (`story_length`). `DiceSession` accepte
+`short/medium/long` comme `courte/moyenne/longue`
+(`normalizeStoryLength()`).
+
+**Ce que l'IA reçoit.**
+- Le message système (`GameEngine.buildMechanicsContext()`) décrit le rôle du
+  ❓ pour la longueur de l'histoire.
+- À chaque lancer, `DiceSession.describeRecord()` (via `fateDescription()` et
+  `comboNote()` pour les combos 1/6 + ❓) décrit ce qui se passe : événement
+  soudain, quête à tisser en parallèle, ou quête en attente de fin de chapitre.
+  `narratorNoteForRecord()` ne traite plus que le ❗, pour ne pas dupliquer.
+
+**Lancement en fin de chapitre (histoire longue).**
+- *Narration automatique* : tant qu'une quête attend, `buildPendingQuestNote()`
+  ajoute à **chaque appel API** un rappel technique (jamais sauvegardé, jamais
+  affiché) : ne pas développer la quête avant la fin du chapitre, la lancer dès
+  qu'il est conclu, sans attendre le joueur, et terminer ce message par la
+  balise `[[QUETE_LANCEE]]`. `runAiNarrator()` retire la balise du texte et
+  appelle `DiceSession.launchPendingQuest()`, qui passe la quête à `ouverte`.
+  Si l'IA oublie la balise, la quête reste en attente et le rappel continue.
+- *Ajout d'un chapitre à la main* (résumé collé, mode manuel) :
+  `DiceSession.addStoryEntry()` lance la quête et prépare une consigne, ajoutée
+  une seule fois au prochain message envoyé à l'IA
+  (`consumeQuestAnnouncement()`) ou au prompt copié (`buildFullPromptText()`).
+- Les « chapitres » produits automatiquement par le digest du journal
+  (`applyStoryDigest()`, une tranche tous les 6 messages) ne déclenchent
+  **jamais** le lancement : ce sont des tranches de journal, pas des fins de
+  chapitre narratives.
 
 **Objectif moral** (`moralGoal`, optionnel — propagé jusqu'à
 `StoryEntry.moralGoal`) : une valeur ou une notion que l'aventure doit
@@ -245,7 +297,7 @@ android:enabled="false" …>` dans le manifeste, et une entrée
 | Fichier / dossier | Contenu |
 |---|---|
 | `app_config.json` | clé Mistral et modèle choisi (commun à toutes les histoires) |
-| `dice_state_<slug>.json` | la partie de chaque histoire |
+| `dice_state_<slug>.json` | la partie de chaque histoire (dont la longueur `story_length` et l'état des quêtes secondaires) |
 | `custom_stories.json`, `custom_story_bg/` | histoires personnalisées et leurs images de fond |
 | `totem_images/` | images des totems ajoutés |
 | `classic_dice_state.json` | historique de la page « Des classiques » |
@@ -279,7 +331,7 @@ DesDeAventure/
         │   ├── AiPanel.kt            # panneau de narration IA (conversation, message libre, réinitialisation)
         │   ├── GameDice.kt           # face du dé de réussite, badges et fiches de totems
         │   ├── GameExtras.kt         # NarratorNoteBox, ContinueSection, JournalSection
-        │   ├── DiceSession.kt        # moteur de jeu (dés, jauges, menace, quêtes, session)
+        │   ├── DiceSession.kt        # moteur de jeu (dés, jauges, menace, quêtes, session, mécanique du ❓ selon la longueur)
         │   ├── StoryRegistry.kt      # registre des histoires personnalisées
         │   ├── GameEngine.kt         # porte d'entrée unique du moteur Kotlin
         │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
