@@ -136,6 +136,11 @@ fun CreateStoryScreen(
     // c'est un choix delibere a faire a la creation, pas une simple valeur
     // de secours.
     var storyLength by remember { mutableStateOf("medium") }
+    // Objectif moral optionnel (patience, fair-play, partage...) : vient se
+    // superposer a l'univers/lore ci-dessus sans le remplacer -- voir
+    // GameEngine.buildMechanicsContext(). Vide par defaut : aucune histoire
+    // n'est obligee d'en avoir un.
+    var moralGoal by remember { mutableStateOf("") }
     var totemLabel by remember { mutableStateOf("") }
     var totemPowers by remember { mutableStateOf("") }
     var totemSpecial by remember { mutableStateOf("") }
@@ -201,6 +206,7 @@ fun CreateStoryScreen(
                     totemPowers = parsed.optString("totem_powers", "")
                     totemSpecial = parsed.optString("totem_special", "")
                     storyLength = parsed.optString("story_length", "long")
+                    moralGoal = parsed.optString("moral_goal", "")
 
                     val bgB64 = parsed.optString("bg_image_b64", "")
                     if (bgB64.isNotEmpty()) {
@@ -310,7 +316,8 @@ fun CreateStoryScreen(
                     totemImageBytes = totemBytes,
                     totemImageFilename = totemFilename,
                     protagonistName = protagonistName,
-                    storyLength = storyLength
+                    storyLength = storyLength,
+                    moralGoal = moralGoal
                 )
                 // Le totem de depart est deja pose par createStoryAwait (un
                 // seul, comme toujours). Les totems importes en plus (acquis
@@ -546,6 +553,28 @@ fun CreateStoryScreen(
                         style = TextStyle(shadow = TextShadow)
                     )
                 }
+
+                // --- Objectif moral (optionnel) ---
+                SectionTitle("Objectif moral (optionnel)", fonts)
+                Text(
+                    text = "En plus de l'univers décrit plus haut (qui reste la trame de " +
+                        "l'histoire), une valeur ou une notion que l'aventure doit mettre en " +
+                        "avant à travers ses situations -- patience, fair-play, partage, " +
+                        "courage face à la peur, entraide... L'IA la fait vivre par le récit, " +
+                        "jamais par un discours moralisateur direct.",
+                    fontFamily = fonts.body,
+                    fontSize = 13.sp,
+                    color = Color.White,
+                    style = TextStyle(shadow = TextShadow)
+                )
+                ComicTextField(
+                    label = "Ex. : apprendre la patience, la valeur du partage… (laisser vide si aucun)",
+                    value = moralGoal,
+                    onValueChange = { moralGoal = it },
+                    fonts = fonts,
+                    enabled = !saving,
+                    minHeight = 70.dp
+                )
 
                 // --- Image de fond ---
                 SectionTitle("Image de fond", fonts)
