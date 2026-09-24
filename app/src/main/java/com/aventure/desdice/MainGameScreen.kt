@@ -102,6 +102,7 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -802,7 +803,9 @@ private fun rememberDiceRollSound(): () -> Unit {
         onDispose { soundPool.release() }
     }
     return {
-        if (soundId != 0) soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
+        // Volume lu à chaque lancer : Réglages > Sons (son coupé ou baissé) s'applique tout de suite.
+        val volume = SoundPrefs.get(context).effectiveVolume
+        if (soundId != 0 && volume > 0f) soundPool.play(soundId, volume, volume, 1, 0, 1f)
     }
 }
 
