@@ -16,6 +16,10 @@
 //   - contraintes de tirage : toggleAllowedValue/resetAllowedValues,
 //     toggleAllowedFate/resetAllowedFate
 //   - quêtes secondaires : completeSideQuest (openSideQuests() existait déjà)
+//   - symbole ❓ du dé du destin : mécanique selon la longueur de l'histoire
+//       courte  -> événement soudain et inattendu (aucune quête annexe)
+//       moyenne -> quête secondaire construite en parallèle de l'intrigue principale
+//       longue  -> quête courte lancée automatiquement à la fin du chapitre
 //   - journal de l'histoire : addStoryEntry/storyLogText
 //   - narration IA : addAiMessage, resetAiConversation, pendingDigestMessages,
 //     applyStoryDigest, markLastRollAsSent, pendingRoll, aiMessagesToSend
@@ -68,8 +72,8 @@ val FATE_FACES: List<FateFace> = listOf(
     ),
     FateFace(
         "question", "\u2753", "Point d'interrogation",
-        "Une quête secondaire se débloque, à faire quand on veut : l'occasion de se faire " +
-            "un nouvel ami, ou de trouver un nouvel objet (voire un nouveau totem)."
+        "Le destin s'en mêle : événement soudain (histoire courte), quête secondaire menée en " +
+            "parallèle (histoire moyenne) ou quête courte à la fin du chapitre (histoire longue)."
     ),
     FateFace(
         "soleil", "\u2600\uFE0F", "Soleil",
@@ -111,6 +115,25 @@ val COMBO_NOTES: Map<Pair<Int, String>, String> = mapOf(
     (6 to "spirale") to "Cette réussite héroïque s'accompagne d'une transformation inattendue : quelque chose change durablement dans l'histoire."
 )
 
+// Longueurs d'histoire : conditionnent la mécanique du symbole "question".
+const val LENGTH_SHORT = "courte"
+const val LENGTH_MEDIUM = "moyenne"
+const val LENGTH_LONG = "longue"
+
+// Mode d'une quête secondaire : "parallele" (histoire moyenne) ou "fin_chapitre" (histoire longue).
+const val QUEST_MODE_PARALLEL = "parallele"
+const val QUEST_MODE_END_OF_CHAPTER = "fin_chapitre"
+
+/** Accepte "courte"/"court"/"short", "longue"/"long", tout le reste -> "moyenne". */
+fun normalizeStoryLength(raw: String?): String {
+    val s = raw?.trim()?.lowercase().orEmpty()
+    return when {
+        s.startsWith("court") || s.startsWith("short") -> LENGTH_SHORT
+        s.startsWith("long") -> LENGTH_LONG
+        else -> LENGTH_MEDIUM
+    }
+}
+
 /**
  * Symboles de pips de base pour l'histoire ACTIVE. Volontairement une
  * MutableMap au niveau module (jamais réassignée, seulement vidée + remplie
@@ -136,17 +159,25 @@ data class SymbolInfo(
 // Structures de données
 // ------------------------------------------------------------------------
 
-data class SideQuest(val id: Int, val kind: String, var status: String) {
-    // kind: "ami" | "objet" — status: "ouverte" | "terminee"
+data class SideQuest(
+    val id: Int,
+    val kind: String,
+    var status: String,
+    val mode: String = QUEST_MODE_PARALLEL
+) {
+    // kind: "ami" | "objet"
+    // status: "en_attente" (histoire longue : se lancera à la fin du chapitre) | "ouverte" | "terminee"
+    // mode: QUEST_MODE_PARALLEL | QUEST_MODE_END_OF_CHAPTER
     fun toJson(): JSONObject = JSONObject().apply {
-        put("id", id); put("kind", kind); put("status", status)
+        put("id", id); put("kind", kind); put("status", status); put("mode", mode)
     }
     companion object {
         fun fromJson(o: JSONObject): SideQuest? {
             if (!o.has("id")) return null
             val kind = o.optString("kind", null) ?: return null
             val status = o.optString("status", null) ?: return null
-            return SideQuest(o.optInt("id"), kind, status)
+            val mode = o.optString("mode", QUEST_MODE_PARALLEL)
+            return SideQuest(o.optInt("id"), kind, status, mode)
         }
     }
 }
@@ -213,7 +244,8 @@ data class RollRecord(
     val pipChoice: List<String>? = null,
     val pipMode: String? = null,
     val threatTriggered: Boolean? = null,
-    val sideQuest: SideQuest? = null
+    val sideQuest: SideQuest? = null,
+    val suddenEvent: Boolean? = null   // histoire courte : ❓ = événement soudain (pas de quête)
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -225,6 +257,7 @@ data class RollRecord(
         if (pipMode != null) put("pip_mode", pipMode)
         if (threatTriggered != null) put("threat_triggered", threatTriggered)
         if (sideQuest != null) put("side_quest", sideQuest.toJson())
+        if (suddenEvent != null) put("sudden_event", suddenEvent)
     }
     companion object {
         fun fromJson(o: JSONObject): RollRecord {
@@ -242,7 +275,8 @@ data class RollRecord(
                 pipChoice = pipChoice,
                 pipMode = if (o.has("pip_mode")) o.optString("pip_mode") else null,
                 threatTriggered = if (o.has("threat_triggered")) o.optBoolean("threat_triggered") else null,
-                sideQuest = sideQuestObj?.let { SideQuest.fromJson(it) }
+                sideQuest = sideQuestObj?.let { SideQuest.fromJson(it) },
+                suddenEvent = if (o.has("sudden_event")) o.optBoolean("sudden_event") else null
             )
         }
     }
@@ -284,6 +318,13 @@ class DiceSession(private var saveFile: File) {
     var nextQuestId: Int = 1
         private set
 
+    /** "courte" | "moyenne" | "longue" : réglage de l'histoire, conservé par resetAll(). */
+    var storyLength: String = LENGTH_MEDIUM
+        private set
+
+    /** Id d'une quête tout juste lancée en fin de chapitre (histoire longue), à annoncer à l'IA. 0 = rien. */
+    private var questToAnnounceId: Int = 0
+
     var storyLog: MutableList<String> = mutableListOf()
     var aiConversation: MutableList<AiMessage> = mutableListOf()
     var storySummary: String = ""
@@ -308,6 +349,7 @@ class DiceSession(private var saveFile: File) {
         threatLevel = 0
         sideQuests = mutableListOf()
         nextQuestId = 1
+        questToAnnounceId = 0
         storyLog = mutableListOf()
         aiConversation = mutableListOf()
         storySummary = ""
@@ -330,6 +372,8 @@ class DiceSession(private var saveFile: File) {
             put("threat_level", threatLevel)
             put("side_quests", JSONArray(sideQuests.map { it.toJson() }))
             put("next_quest_id", nextQuestId)
+            put("story_length", storyLength)
+            put("quest_to_announce_id", questToAnnounceId)
             put("story_log", JSONArray(storyLog))
             put("ai_conversation", JSONArray(aiConversation.map { it.toJson() }))
             put("story_summary", storySummary)
@@ -392,6 +436,8 @@ class DiceSession(private var saveFile: File) {
             .mapNotNull { SideQuest.fromJson(questsArr.getJSONObject(it)) }
             .toMutableList()
         nextQuestId = data.optInt("next_quest_id", sideQuests.size + 1)
+        storyLength = normalizeStoryLength(data.optString("story_length", LENGTH_MEDIUM))
+        questToAnnounceId = data.optInt("quest_to_announce_id", 0)
 
         val storyLogArr = data.optJSONArray("story_log") ?: JSONArray()
         storyLog = (0 until storyLogArr.length())
@@ -473,17 +519,39 @@ class DiceSession(private var saveFile: File) {
         return false
     }
 
-    // ---------- quêtes secondaires (?) : création automatique uniquement ----------
+    // ---------- symbole ❓ : mécanique selon la longueur de l'histoire ----------
 
+    /**
+     * Règle la longueur de l'histoire. Accepte "short"/"medium"/"long" (StoryEntry.storyLength)
+     * comme "courte"/"moyenne"/"longue". Pas de save() : la source de vérité reste StoryEntry,
+     * réappliquée par GameEngine après chaque load(), et la valeur est écrite au prochain save().
+     */
+    fun setStoryLength(raw: String) {
+        storyLength = normalizeStoryLength(raw)
+    }
+
+    /**
+     * Crée la quête secondaire (histoires moyenne et longue uniquement) :
+     *  - moyenne : ouverte tout de suite, à construire en parallèle de l'intrigue principale ;
+     *  - longue  : mise "en_attente", elle se lance toute seule à la fin du chapitre (addStoryEntry).
+     */
     private fun spawnSideQuest(): SideQuest {
         val kind = listOf("ami", "objet").random()
-        val quest = SideQuest(nextQuestId, kind, "ouverte")
+        val (mode, status) = if (storyLength == LENGTH_LONG) {
+            QUEST_MODE_END_OF_CHAPTER to "en_attente"
+        } else {
+            QUEST_MODE_PARALLEL to "ouverte"
+        }
+        val quest = SideQuest(nextQuestId, kind, status, mode)
         nextQuestId += 1
         sideQuests.add(quest)
         return quest
     }
 
     fun openSideQuests(): List<SideQuest> = sideQuests.filter { it.status == "ouverte" }
+
+    /** Quêtes d'histoire longue qui attendent la fin du chapitre pour se lancer. */
+    fun pendingSideQuests(): List<SideQuest> = sideQuests.filter { it.status == "en_attente" }
 
     fun completeSideQuest(questId: Int): Boolean {
         val quest = sideQuests.find { it.id == questId } ?: return false
@@ -493,14 +561,81 @@ class DiceSession(private var saveFile: File) {
     }
 
     /**
+     * Fin de chapitre (histoire longue) : la quête en attente devient ouverte.
+     * @param announce true -> une consigne de lancement sera à transmettre à l'IA
+     *   (consumeQuestAnnouncement) ; false -> l'IA vient déjà de lancer la quête elle-même.
+     * Sans effet (false) s'il n'y a aucune quête en attente. Ne sauvegarde pas : l'appelant s'en charge.
+     */
+    fun launchPendingQuest(announce: Boolean = false): Boolean {
+        val next = sideQuests.firstOrNull { it.status == "en_attente" } ?: return false
+        next.status = "ouverte"
+        if (announce) questToAnnounceId = next.id
+        return true
+    }
+
+    /**
+     * À appeler par GameEngine au moment de construire le prochain message envoyé à l'IA :
+     * renvoie (une seule fois) la consigne de lancement de la quête courte déclenchée
+     * par la fin de chapitre, ou null s'il n'y en a pas.
+     */
+    fun consumeQuestAnnouncement(): String? {
+        if (questToAnnounceId == 0) return null
+        val quest = sideQuests.find { it.id == questToAnnounceId }
+        questToAnnounceId = 0
+        save()
+        if (quest == null || quest.status != "ouverte") return null
+        val kindTxt = if (quest.kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou totem)"
+        return "\uD83D\uDCDC Fin de chapitre : une quête secondaire COURTE se lance maintenant ($kindTxt). " +
+            "Ouvre le nouveau chapitre en la lançant naturellement, avec un objectif simple et clair, " +
+            "à résoudre en quelques échanges seulement, puis reprends le fil de l'histoire principale."
+    }
+
+    /** Description de la face du destin, adaptée à la longueur de l'histoire pour le symbole ❓. */
+    fun fateDescription(face: FateFace): String {
+        if (face.key != "question") return face.desc
+        return when (storyLength) {
+            LENGTH_SHORT ->
+                "Événement soudain et inattendu : quelque chose surgit brusquement dans la scène en cours " +
+                    "(rencontre, découverte, imprévu...) et doit être géré tout de suite. " +
+                    "Aucune quête annexe n'est ouverte."
+            LENGTH_LONG ->
+                "Une quête secondaire courte est mise de côté : elle se lancera automatiquement à la fin " +
+                    "du chapitre en cours. Ne la développe pas dans la scène actuelle."
+            else ->
+                "Une quête secondaire naît et se construit en parallèle de l'histoire principale : " +
+                    "entrelace-la à l'intrigue, en distillant indices et étapes au fil des scènes " +
+                    "(l'occasion de se faire un nouvel ami ou de trouver un nouvel objet, voire un totem)."
+        }
+    }
+
+    /** Note de combo (réussite + destin) ; pour ❓ elle dépend de la longueur de l'histoire. */
+    fun comboNote(success: Int, fateKey: String): String? {
+        if (fateKey != "question") return COMBO_NOTES[success to fateKey]
+        val failure = success == 1
+        return when (storyLength) {
+            LENGTH_SHORT ->
+                if (failure) "L'échec provoque un événement soudain et inattendu qui bouscule la scène en cours."
+                else "Ce moment héroïque déclenche un événement soudain et inattendu dans la scène en cours."
+            LENGTH_LONG ->
+                if (failure) "L'échec cache une piste inattendue : elle sera explorée à la fin du chapitre."
+                else "Ce moment héroïque ouvre une piste qui sera explorée à la fin du chapitre."
+            else ->
+                if (failure) "L'échec ouvre malgré tout une piste inattendue, à tisser avec l'intrigue principale."
+                else "Ce moment héroïque ouvre une nouvelle piste, à tisser avec l'intrigue principale."
+        }
+    }
+
+    /**
      * Pool de tirage du dé du destin : symboles cochés (allowedFateKeys), moins
-     * "question" si une quête secondaire est déjà ouverte — sauf si ça viderait
-     * complètement le pool, auquel cas "question" reste exceptionnellement permis.
+     * "question" si une quête secondaire est déjà ouverte ou en attente (histoires
+     * moyenne et longue) — sauf si ça viderait complètement le pool, auquel cas
+     * "question" reste exceptionnellement permis. En histoire courte, ❓ est un
+     * événement instantané : il n'est jamais retiré du pool.
      */
     private fun fatePool(): List<FateFace> {
         val allowed = allowedFateKeys.ifEmpty { FATE_FACES.map { it.key } }
         val pool = FATE_FACES.filter { it.key in allowed }
-        if (openSideQuests().isNotEmpty()) {
+        if (storyLength != LENGTH_SHORT && (openSideQuests().isNotEmpty() || pendingSideQuests().isNotEmpty())) {
             val poolWoQuestion = pool.filter { it.key != "question" }
             if (poolWoQuestion.isNotEmpty()) return poolWoQuestion
         }
@@ -526,10 +661,12 @@ class DiceSession(private var saveFile: File) {
 
     fun rollFate(note: String = ""): RollRecord {
         val face = fatePool().random()
-        val sideQuest = if (face.key == "question") spawnSideQuest() else null
+        val isQuestion = face.key == "question"
+        val sideQuest = if (isQuestion && storyLength != LENGTH_SHORT) spawnSideQuest() else null
+        val suddenEvent = if (isQuestion && storyLength == LENGTH_SHORT) true else null
         val record = RollRecord(
             id = nextId, type = "fate", success = null, fate = face.key, note = note,
-            sideQuest = sideQuest
+            sideQuest = sideQuest, suddenEvent = suddenEvent
         )
         nextId += 1
         history.add(record)
@@ -543,11 +680,13 @@ class DiceSession(private var saveFile: File) {
         val pipChoice = resolvePipChoice(value)
         applyTotemEnergy(value, pipChoice, pipMode)
         val threatTriggered = applyThreat(value)
-        val sideQuest = if (face.key == "question") spawnSideQuest() else null
+        val isQuestion = face.key == "question"
+        val sideQuest = if (isQuestion && storyLength != LENGTH_SHORT) spawnSideQuest() else null
+        val suddenEvent = if (isQuestion && storyLength == LENGTH_SHORT) true else null
         val record = RollRecord(
             id = nextId, type = "both", success = value, fate = face.key, note = note,
             pipChoice = pipChoice, pipMode = pipMode,
-            threatTriggered = threatTriggered, sideQuest = sideQuest
+            threatTriggered = threatTriggered, sideQuest = sideQuest, suddenEvent = suddenEvent
         )
         nextId += 1
         history.add(record)
@@ -604,17 +743,28 @@ class DiceSession(private var saveFile: File) {
         }
         if (record.fate != null) {
             val face = FATE_BY_KEY.getValue(record.fate)
-            parts.add("Dé du destin : ${face.emoji} ${face.label} - ${face.desc}")
+            parts.add("Dé du destin : ${face.emoji} ${face.label} - ${fateDescription(face)}")
         }
         if (record.threatTriggered == true) {
             parts.add("\u26A0\uFE0F La jauge de menace explose : une complication secondaire inattendue survient !")
         }
+        if (record.suddenEvent == true) {
+            parts.add("\u26A1 Événement soudain et inattendu : il surgit MAINTENANT dans la scène en cours (pas de quête annexe à ouvrir).")
+        }
         record.sideQuest?.let { sq ->
             val kindTxt = if (sq.kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou totem)"
-            parts.add("\uD83D\uDCDC Nouvelle quête secondaire disponible : $kindTxt.")
+            if (sq.mode == QUEST_MODE_END_OF_CHAPTER) {
+                if (sq.status == "en_attente") {
+                    parts.add("\uD83D\uDCDC Quête secondaire courte ($kindTxt) : elle se lancera automatiquement à la fin du chapitre — ne pas la développer maintenant.")
+                } else {
+                    parts.add("\uD83D\uDCDC Quête secondaire courte lancée : $kindTxt.")
+                }
+            } else {
+                parts.add("\uD83D\uDCDC Nouvelle quête secondaire ($kindTxt) : à construire en parallèle de l'histoire principale, en l'entrelaçant à l'intrigue au fil des scènes.")
+            }
         }
         if (record.type == "both" && record.success != null && record.fate != null) {
-            COMBO_NOTES[record.success to record.fate]?.let { combo ->
+            comboNote(record.success, record.fate)?.let { combo ->
                 parts.add("\u2728 Coïncidence marquante : $combo")
             }
         }
@@ -818,7 +968,20 @@ class DiceSession(private var saveFile: File) {
     // ÉTAPE 2 — journal de l'histoire
     // ------------------------------------------------------------------------
 
+    /**
+     * Chapitre ajouté par le joueur (résumé collé à la fin d'un chapitre) : c'est une vraie fin
+     * de chapitre, donc la quête courte en attente (histoire longue) se lance et sera annoncée à l'IA.
+     * Les "chapitres" produits automatiquement par le digest (applyStoryDigest) ne comptent PAS :
+     * ce sont de simples tranches de journal, pas des fins de chapitre narratives.
+     */
     fun addStoryEntry(text: String): Boolean {
+        if (!appendStoryEntry(text)) return false
+        launchPendingQuest(announce = true)
+        save()
+        return true
+    }
+
+    private fun appendStoryEntry(text: String): Boolean {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return false
         storyLog.add(trimmed)
@@ -880,7 +1043,7 @@ class DiceSession(private var saveFile: File) {
      * de messages consommés, pour ne jamais re-traiter la même tranche.
      */
     fun applyStoryDigest(chapterText: String, updatedSummary: String, messagesConsumed: Int): Boolean {
-        val added = addStoryEntry(chapterText)
+        val added = appendStoryEntry(chapterText)
         if (!added) return false
         storySummary = updatedSummary.trim()
         lastJournalIndex += messagesConsumed

@@ -186,6 +186,7 @@ class GameEngine(private val baseDir: File) {
         val saveFile = File(baseDir, story.saveFile)
         val newSession = DiceSession(saveFile)
         val wasLoaded = newSession.load()
+        newSession.setStoryLength(story.storyLength)
 
         val defaultTotem = story.defaultTotem
         if (!wasLoaded && defaultTotem != null && defaultTotem.label.isNotEmpty()) {
@@ -432,9 +433,24 @@ class GameEngine(private val baseDir: File) {
         lines += "DÉ DE RÉUSSITE (1-6, jamais de fin d'histoire même sur un 1, toujours moyen de se rattraper) :"
         lines += (1..6).joinToString(" | ") { v -> "$v=${successCompact[v]}" }
         lines += ""
-        lines += "DÉ DU DESTIN (6 symboles ; le ? ne retombe pas tant qu'une quête secondaire ouverte " +
-            "n'est pas terminée, une seule active à la fois) :"
-        lines += FATE_FACES.joinToString(" | ") { f -> "${f.emoji}${f.label}=${fateCompact[f.key]}" }
+        val storyLen = normalizeStoryLength(story?.storyLength ?: "long")
+        val questionRule = when (storyLen) {
+            LENGTH_SHORT -> "le ? déclenche un ÉVÉNEMENT SOUDAIN inattendu dans la scène en cours, " +
+                "jamais une quête annexe"
+            LENGTH_LONG -> "le ? ne retombe pas tant qu'une quête secondaire n'est pas terminée, une seule " +
+                "à la fois ; cette quête, COURTE, se lance automatiquement à la fin du chapitre"
+            else -> "le ? ne retombe pas tant qu'une quête secondaire ouverte n'est pas terminée, une seule " +
+                "active à la fois ; elle se construit en parallèle de l'histoire principale"
+        }
+        val questionCompact = when (storyLen) {
+            LENGTH_SHORT -> "événement soudain et inattendu dans la scène en cours, à gérer immédiatement (pas de quête annexe)"
+            LENGTH_LONG -> "quête secondaire courte (nouvel ami ou nouvel objet/totem), lancée automatiquement à la fin du chapitre"
+            else -> "quête secondaire (nouvel ami ou nouvel objet/totem) construite en parallèle de l'histoire principale"
+        }
+        lines += "DÉ DU DESTIN (6 symboles ; $questionRule) :"
+        lines += FATE_FACES.joinToString(" | ") { f ->
+            "${f.emoji}${f.label}=${if (f.key == "question") questionCompact else fateCompact[f.key]}"
+        }
         lines += ""
         lines += "TOTEMS/ALLIÉS (symbole choisi sur le dé de réussite) :"
         for (t in sess.customTotems) {
@@ -564,6 +580,26 @@ class GameEngine(private val baseDir: File) {
         }
     }
 
+    private val questLaunchedTag = "[[QUETE_LANCEE]]"
+
+    /**
+     * Histoire LONGUE uniquement : tant qu'une quête secondaire courte attend la fin du chapitre,
+     * rappel recalculé et ajouté à CHAQUE appel API (jamais sauvegardé, comme buildStoryProgressNote).
+     * L'IA lance la quête à la conclusion du chapitre et signale le lancement par une balise, que
+     * runAiNarrator() retire du texte avant de l'afficher et qui fait passer la quête à "ouverte".
+     */
+    private fun buildPendingQuestNote(sess: DiceSession, story: StoryEntry?): String? {
+        if (normalizeStoryLength(story?.storyLength ?: "long") != LENGTH_LONG) return null
+        val quest = sess.pendingSideQuests().firstOrNull() ?: return null
+        val kindTxt = if (quest.kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou un nouveau totem)"
+        return "RAPPEL TECHNIQUE (ne le mentionne jamais au joueur) : une quête secondaire COURTE " +
+            "($kindTxt) attend la fin du chapitre en cours. Ne la développe pas avant. Dès que tu " +
+            "conclus ce chapitre, lance-la tout de suite dans le même message, sans attendre la " +
+            "réponse du joueur : objectif simple et clair, à résoudre en 2 ou 3 échanges, puis " +
+            "reprends le fil principal (ce n'est pas un nouveau chapitre). Termine alors ce message " +
+            "par la balise exacte $questLaunchedTag."
+    }
+
     private fun buildFullPrompt(sess: DiceSession, story: StoryEntry?): String {
         val lines = mutableListOf(buildMechanicsContext(sess, story, autoMode = false), "", "--- HISTOIRE DÉJÀ VÉCUE ---")
         val log = sess.storyLogText()
@@ -594,15 +630,10 @@ class GameEngine(private val baseDir: File) {
     /** Miroir de narrator_note_for_record() : texte à ajouter pour un "?" (quête débloquée) ou "!" (aide). */
     private fun narratorNoteForRecord(record: RollRecord?): String {
         val fateKey = record?.fate ?: return ""
-        if (fateKey != "question" && fateKey != "exclamation") return ""
+        // Le "?" est désormais entièrement décrit par describeRecord() (dépend de la longueur d'histoire).
+        if (fateKey != "exclamation") return ""
         val face = FATE_BY_KEY[fateKey] ?: return ""
-        var text = "${face.emoji} ${face.label} : ${face.desc}"
-        val sideQuest = record.sideQuest
-        if (sideQuest != null) {
-            val kindTxt = if (sideQuest.kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou un nouveau totem)"
-            text += "\n(Quête secondaire débloquée : $kindTxt.)"
-        }
-        return text
+        return "${face.emoji} ${face.label} : ${face.desc}"
     }
 
     /** Miroir de build_ai_event_text(). */
@@ -636,12 +667,17 @@ class GameEngine(private val baseDir: File) {
         if (sess.aiConversation.isEmpty()) {
             sess.addAiMessage("system", buildMechanicsContext(sess, currentStory, autoMode = true))
         }
-        sess.addAiMessage("user", eventText)
+        // Quête lancée par l'ajout manuel d'un chapitre (addStoryEntry) : consigne transmise une seule fois.
+        val announcement = sess.consumeQuestAnnouncement()
+        sess.addAiMessage("user", if (announcement != null) "$eventText\n$announcement" else eventText)
         val messagesToSend = sess.aiMessagesToSend().toMutableList()
         buildStoryProgressNote(sess, currentStory)?.let { note ->
             // Juste avant le dernier message (le "user" qu'on vient
             // d'ajouter), pour rester proche de la convention "la
             // conversation envoyée se termine par un message user".
+            messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
+        }
+        buildPendingQuestNote(sess, currentStory)?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
         val (text, error) = MistralClient.chat(
@@ -651,9 +687,15 @@ class GameEngine(private val baseDir: File) {
             promptCacheKey = currentStorySlug
         )
         if (error != null) return null to error
-        sess.addAiMessage("assistant", text ?: "")
+        var replyText = text ?: ""
+        if (replyText.contains(questLaunchedTag)) {
+            // L'IA a conclu le chapitre et lancé la quête courte : on retire la balise et on ouvre la quête.
+            replyText = replyText.replace(questLaunchedTag, "").trim()
+            if (sess.launchPendingQuest(announce = false)) sess.save()
+        }
+        sess.addAiMessage("assistant", replyText)
         maybeUpdateStoryDigest(sess)
-        return text to null
+        return replyText to null
     }
 
     private val digestChapterTag = "###CHAPITRE###"
@@ -714,7 +756,10 @@ class GameEngine(private val baseDir: File) {
      */
     fun buildFullPromptText(): String {
         val sess = session ?: return ""
-        return buildFullPrompt(sess, currentStory)
+        val prompt = buildFullPrompt(sess, currentStory)
+        // Quête courte lancée par la fin de chapitre (histoire longue) : consigne jointe une seule fois.
+        val announcement = sess.consumeQuestAnnouncement() ?: return prompt
+        return "$prompt\n\n$announcement"
     }
 
     /** Miroir de do_send_full_prompt(). */
@@ -757,6 +802,7 @@ class GameEngine(private val baseDir: File) {
         }
         val newSession = DiceSession(saveFile)
         val wasLoaded = newSession.load()
+        newSession.setStoryLength(story.storyLength)
         val defaultTotem = story.defaultTotem
         if (!wasLoaded && defaultTotem != null && defaultTotem.label.isNotEmpty()) {
             val key = newSession.addCustomTotem(
