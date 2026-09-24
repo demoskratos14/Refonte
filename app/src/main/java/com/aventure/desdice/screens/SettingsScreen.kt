@@ -537,7 +537,7 @@ private fun MusicCard(fonts: AppFonts) {
             Switch(
                 checked = !muted,
                 onCheckedChange = {
-                    soundPrefs.setMusicMuted(!it)
+                    soundPrefs.changeMusicMuted(!it)
                     MusicPlayer.onMusicMutedChanged(context)
                 },
                 colors = SwitchDefaults.colors(
@@ -566,7 +566,7 @@ private fun MusicCard(fonts: AppFonts) {
         Slider(
             value = volume,
             onValueChange = {
-                soundPrefs.setMusicVolume(it)
+                soundPrefs.changeMusicVolume(it)
                 MusicPlayer.updateVolume(context)
             },
             valueRange = 0f..1f,
