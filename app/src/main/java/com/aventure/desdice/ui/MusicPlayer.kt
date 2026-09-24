@@ -2,6 +2,8 @@ package com.aventure.desdice.ui
 
 import android.content.Context
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +30,9 @@ import com.aventure.desdice.R
  *     suite s'il y en a plusieurs) ;
  *   - entrer dans une histoire coupe la musique (enterStory) ; la page de jeu
  *     propose de la relancer si on en a envie ;
- *   - la musique se met en pause quand l'appli passe en arrière-plan.
+ *   - quand l'appli passe en arrière-plan, la musique continue BACKGROUND_GRACE_MS
+ *     (le temps d'aller copier une clé API dans une autre appli, par exemple), puis se
+ *     met en pause ; elle reprend toute seule au retour dans l'appli.
  */
 object MusicPlayer {
 
@@ -36,6 +40,11 @@ object MusicPlayer {
     private var lastTrack = 0
     private var pausedByBackground = false
     private var appContext: Context? = null
+
+    // Délai avant la pause en arrière-plan. À ajuster ici si besoin.
+    private const val BACKGROUND_GRACE_MS = 3 * 60 * 1000L
+    private val handler = Handler(Looper.getMainLooper())
+    private val pauseRunnable = Runnable { pauseNow() }
 
     /** true tant qu'un morceau est chargé (lecture ou pause d'arrière-plan). Lu par l'interface. */
     var isPlaying by mutableStateOf(false)
@@ -118,6 +127,7 @@ object MusicPlayer {
     }
 
     fun stop() {
+        handler.removeCallbacks(pauseRunnable)
         release()
         pausedByBackground = false
         isPlaying = false
@@ -149,7 +159,13 @@ object MusicPlayer {
         }
     }
 
+    /** Appli en arrière-plan : la musique continue, puis se met en pause après BACKGROUND_GRACE_MS. */
     fun pauseForBackground() {
+        handler.removeCallbacks(pauseRunnable)
+        if (player != null) handler.postDelayed(pauseRunnable, BACKGROUND_GRACE_MS)
+    }
+
+    private fun pauseNow() {
         val p = player ?: return
         try {
             if (p.isPlaying) {
@@ -161,6 +177,7 @@ object MusicPlayer {
     }
 
     fun resumeFromBackground() {
+        handler.removeCallbacks(pauseRunnable) // retour dans l'appli avant la fin du délai : rien à faire
         if (!pausedByBackground) return
         pausedByBackground = false
         try {
