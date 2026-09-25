@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +21,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,6 +50,7 @@ import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Panneau de narration IA (equivalent Compose de render_ai_panel_html dans
@@ -70,6 +75,12 @@ import org.json.JSONArray
  * réglages de l'utilisateur (FontPrefs.replyTextColor / replyTextSizeSp, Réglages >
  * Écriture) ; la police suit fonts.body, comme le reste de l'application.
  *
+ * Quand la réponse de l'IA se termine par des lignes "OPTION: ..." (voir la consigne
+ * PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext), ces lignes
+ * sont retirées du texte affiché et proposées sous forme de boutons juste en dessous
+ * du dernier message ; le joueur garde toujours le champ de saisie pour répondre
+ * librement au lieu d'en choisir une.
+ *
  * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
  * n'appelle plus Python/Chaquopy. GameViewModel.sendFullPrompt(),
  * .sendAiMessage() et .resetAiConversation() ecrivent elles-memes le
@@ -90,6 +101,40 @@ import org.json.JSONArray
  * le prompt complet). onKeyChanged est appele apres le retrait de la cle,
  * pour que l'ecran appelant rafraichisse son propre etat (configScreenState).
  */
+/** Un message affiché dans le panneau ; `choices` n'est renseigné que pour le dernier message assistant. */
+private data class ChatEntry(val role: String, val content: String, val choices: List<String> = emptyList())
+
+// Ligne "OPTION: <action>" ajoutée par l'IA en fin de réponse (voir la consigne
+// PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext) : tiret ou
+// puce éventuels tolérés devant, tout le reste de la ligne pris comme intitulé du bouton.
+private val OPTION_LINE = Regex("""^\s*(?:[-•*]\s*)?OPTION\s*:\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
+
+/**
+ * Sépare le texte de narration des choix cliquables qu'il propose en fin de message.
+ * Ne modifie rien (et renvoie une liste de choix vide) si le message ne se termine pas
+ * par ce format ; les lignes vides entre le texte et les options, ou entre deux
+ * options, sont tolérées.
+ */
+private fun extractChoices(content: String): Pair<String, List<String>> {
+    val lines = content.split("\n")
+    val choices = mutableListOf<String>()
+    var cut = lines.size
+    for (i in lines.indices.reversed()) {
+        val line = lines[i]
+        val match = OPTION_LINE.matchEntire(line)
+        if (match != null) {
+            choices.add(0, match.groupValues[1].trim())
+            cut = i
+        } else if (line.isBlank()) {
+            continue
+        } else {
+            break
+        }
+    }
+    if (choices.isEmpty()) return content to emptyList()
+    return lines.subList(0, cut).joinToString("\n").trimEnd() to choices
+}
+
 @Composable
 fun AiPanel(
     viewModel: GameViewModel,
@@ -109,7 +154,7 @@ fun AiPanel(
         color = fontPrefs.replyTextColor ?: androidx.compose.ui.graphics.Color.Unspecified
     )
 
-    var messages by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var messages by remember { mutableStateOf<List<ChatEntry>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -123,7 +168,7 @@ fun AiPanel(
     // isLoading a false une fois l'action terminee cote moteur.
     LaunchedEffect(sessionState) {
         val conv: JSONArray? = sessionState?.optJSONArray("ai_conversation")
-        val list = mutableListOf<Pair<String, String>>()
+        val list = mutableListOf<ChatEntry>()
         if (conv != null) {
             for (i in 0 until conv.length()) {
                 val entry = conv.getJSONObject(i)
@@ -133,11 +178,23 @@ fun AiPanel(
                 // jamais affichés ; display_content, s'il existe, remplace le contenu complet.
                 if (!entry.optBoolean("visible", true)) continue
                 val shown = entry.optString("display_content", "").ifEmpty { entry.optString("content") }
-                list.add(role to shown)
+                if (role == "assistant") {
+                    val (text, choices) = extractChoices(shown)
+                    list.add(ChatEntry(role, text, choices))
+                } else {
+                    list.add(ChatEntry(role, shown))
+                }
             }
         }
         messages = list
-        error = sessionState?.optString("ai_error", "")?.ifEmpty { null }
+        // opt() (et non optString) : une valeur JSONObject.NULL explicite ne doit jamais
+        // s'afficher comme le texte "null" (optString la confondrait avec une vraie erreur).
+        val aiErrorValue = sessionState?.opt("ai_error")
+        error = if (aiErrorValue == null || aiErrorValue == JSONObject.NULL) {
+            null
+        } else {
+            aiErrorValue.toString().ifEmpty { null }
+        }
         isLoading = false
     }
 
@@ -146,6 +203,19 @@ fun AiPanel(
             listState.animateScrollToItem(messages.size - 1)
         }
     }
+
+    // Un texte tapé et un choix cliqué suivent exactement le même chemin d'envoi.
+    fun sendToAi(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || isLoading) return
+        isLoading = true
+        error = null
+        viewModel.sendAiMessage(trimmed)
+    }
+
+    // Choix cliquables du tout dernier message assistant (une histoire déjà relancée
+    // par le joueur, ou plus ancienne, ne propose plus les siens).
+    val pendingChoices = messages.lastOrNull()?.takeIf { it.role == "assistant" }?.choices ?: emptyList()
 
     Column(
         modifier = modifier
@@ -202,7 +272,9 @@ fun AiPanel(
                     .height(320.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { (role, content) ->
+                items(messages) { entry ->
+                    val role = entry.role
+                    val content = entry.content
                     val isAssistant = role == "assistant"
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -237,6 +309,16 @@ fun AiPanel(
             }
         }
 
+        if (pendingChoices.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            ChoiceButtonsRow(
+                choices = pendingChoices,
+                enabled = !isLoading,
+                textStyle = replyStyle,
+                onChoiceSelected = { sendToAi(it) }
+            )
+        }
+
         if (isLoading) {
             Spacer(modifier = Modifier.height(8.dp))
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -268,13 +350,8 @@ fun AiPanel(
             )
             IconButton(
                 onClick = {
-                    val text = inputText.trim()
-                    if (text.isNotEmpty()) {
-                        isLoading = true
-                        error = null
-                        viewModel.sendAiMessage(text)
-                        inputText = ""
-                    }
+                    sendToAi(inputText)
+                    inputText = ""
                 },
                 enabled = !isLoading && inputText.isNotBlank()
             ) {
@@ -322,5 +399,37 @@ fun AiPanel(
                 }
             }
         )
+    }
+}
+
+/**
+ * Rangée de boutons pour les choix proposés par l'IA en fin de message (voir
+ * extractChoices ci-dessus). Cliquer un choix l'envoie tel quel, exactement comme
+ * s'il avait été tapé dans le champ de saisie ; ce champ reste toujours disponible
+ * pour répondre librement à la place.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChoiceButtonsRow(
+    choices: List<String>,
+    enabled: Boolean,
+    textStyle: TextStyle,
+    onChoiceSelected: (String) -> Unit
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        choices.forEach { choice ->
+            AssistChip(
+                onClick = { onChoiceSelected(choice) },
+                enabled = enabled,
+                label = { Text(text = choice, style = MaterialTheme.typography.labelLarge.merge(textStyle)) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            )
+        }
     }
 }

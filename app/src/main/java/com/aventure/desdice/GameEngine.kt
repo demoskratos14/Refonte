@@ -519,6 +519,17 @@ class GameEngine(private val baseDir: File) {
                 "de chaque chapitre tu me donnes un résumé à coller dans l'appli pour garder une trace " +
                 "permanente ; tu t'adresses toujours à $protagonistRef en 'tu'."
         }
+        if (autoMode) {
+            lines += ""
+            lines += "PROPOSITIONS D'ACTIONS CLIQUABLES : quand cela a du sens (pas systématiquement " +
+                "-- seulement quand plusieurs suites raisonnables se présentent), termine ta réponse " +
+                "par 2 à 4 lignes, chacune au format EXACT 'OPTION: <action très courte>' (quelques " +
+                "mots, sans numérotation ni ponctuation finale), une par ligne, rien d'autre après. " +
+                "L'application les transforme en boutons cliquables pour le joueur. Il garde toujours " +
+                "la possibilité de répondre librement au lieu d'en choisir une -- ne l'oblige jamais à " +
+                "s'y limiter -- et n'utilise ce format QUE pour proposer des actions, jamais pour autre " +
+                "chose."
+        }
         return lines.joinToString("\n")
     }
 
