@@ -93,13 +93,14 @@ import org.json.JSONObject
  * si ta classe SpeechManager expose une signature differente. Peut etre
  * null (bouton "Ecouter" alors masque), comme dans MainGameScreen.kt.
  *
- * hasKey / onKeyChanged / onConfigureKey reprennent le role qu'ils avaient
- * dans l'ancienne NarrationSection (GameExtras.kt, desormais remplacee par
- * ce fichier) : sans cle Mistral enregistree, le panneau de conversation
- * est masque au profit d'un message + bouton vers l'ecran de configuration
- * (le mode manuel reste possible via ContinueSection, qui permet de copier
- * le prompt complet). onKeyChanged est appele apres le retrait de la cle,
- * pour que l'ecran appelant rafraichisse son propre etat (configScreenState).
+ * hasKey / onConfigureKey reprennent le role qu'ils avaient dans l'ancienne
+ * NarrationSection (GameExtras.kt, desormais remplacee par ce fichier) :
+ * sans cle Mistral enregistree, le panneau de conversation est masque au
+ * profit d'un message + bouton vers l'ecran de configuration (le mode
+ * manuel reste possible via ContinueSection, qui permet de copier le
+ * prompt complet). Retirer la cle se fait desormais uniquement depuis
+ * cet ecran de configuration (ConfigureKeyScreen) -- plus de bouton pour
+ * ca ici.
  */
 /** Un message affiché dans le panneau ; `choices` n'est renseigné que pour le dernier message assistant. */
 private data class ChatEntry(val role: String, val content: String, val choices: List<String> = emptyList())
@@ -139,7 +140,6 @@ private fun extractChoices(content: String): Pair<String, List<String>> {
 fun AiPanel(
     viewModel: GameViewModel,
     hasKey: Boolean,
-    onKeyChanged: () -> Unit = {},
     onConfigureKey: (() -> Unit)? = null,
     speechManager: SpeechManager? = null,
     modifier: Modifier = Modifier
@@ -357,17 +357,6 @@ fun AiPanel(
             ) {
                 Icon(Icons.Default.Send, contentDescription = "Envoyer")
             }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        TextButton(
-            onClick = {
-                viewModel.clearMistralKey()
-                onKeyChanged()
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("❌ Retirer la clé", color = MaterialTheme.colorScheme.error)
         }
     }
 

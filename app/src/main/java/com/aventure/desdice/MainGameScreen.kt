@@ -315,7 +315,6 @@ fun MainGameScreen(
                 AiPanel(
                     viewModel = viewModel,
                     hasKey = hasKey,
-                    onKeyChanged = { refreshKeyState() },
                     onConfigureKey = onConfigureKey,
                     speechManager = speechManager
                 )
