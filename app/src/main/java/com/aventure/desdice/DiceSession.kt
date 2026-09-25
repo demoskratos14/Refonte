@@ -234,11 +234,24 @@ data class AiMessage(
     val displayContent: String = ""
 ) {
     // role: "system" | "user" | "assistant"
+
+    /** Sauvegarde locale : inclut visible/display_content, propres à l'appli. */
     fun toJson(): JSONObject = JSONObject().apply {
         put("role", role); put("content", content)
         put("visible", visible)
         if (displayContent.isNotEmpty()) put("display_content", displayContent)
     }
+
+    /**
+     * Requête envoyée à l'API Mistral (MistralClient.chat) : rôle + contenu seulement.
+     * L'API rejette (422 "Extra inputs are not permitted") tout champ qu'elle ne connaît
+     * pas -- visible/display_content ne concernent que l'affichage côté appli et ne
+     * doivent jamais partir dans cette requête.
+     */
+    fun toApiJson(): JSONObject = JSONObject().apply {
+        put("role", role); put("content", content)
+    }
+
     companion object {
         fun fromJson(o: JSONObject): AiMessage? {
             val role = o.optString("role", "")

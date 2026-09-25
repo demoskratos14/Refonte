@@ -48,7 +48,7 @@ object MistralClient {
 
         val payload = JSONObject().apply {
             put("model", model)
-            put("messages", JSONArray(messages.map { it.toJson() }))
+            put("messages", JSONArray(messages.map { it.toApiJson() }))
             put("temperature", 0.9)
             put("max_tokens", maxTokens)
             if (!promptCacheKey.isNullOrEmpty()) put("prompt_cache_key", promptCacheKey)
