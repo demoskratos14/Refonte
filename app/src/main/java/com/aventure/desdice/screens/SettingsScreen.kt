@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -89,7 +92,8 @@ private val SCardBorder = Color(0x4DFFFFFF)
 private val SLineColor = Color(0x4DFFFFFF)
 private val STextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 
-/** Polices, Photos, Icône, Sons. */
+/** Titres des pages, dans l'ordre. */
+private val PAGE_TITLES = listOf("Polices", "Photos", "Icône", "Sons")
 private const val PAGE_COUNT = 4
 
 /**
@@ -121,6 +125,9 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
  *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit ;
  *   - Sons : couper ou baisser le bruit des dés (res/raw/dice_roll.mp3) et la
  *     musique de fond (fichiers res/raw/music_*).
+ *   Couleur et taille du texte des échanges avec l'IA (bulles de conversation et
+ *   champ de saisie du joueur, voir AiPanel.kt) se règlent aussi ici, sur la
+ *   page « Polices ».
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -268,6 +275,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                        TextStyleCard(fonts = fonts, fontPrefs = fontPrefs)
                         } else if (page == 1) {
                         // --- Images de fond ---
                         SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
@@ -307,7 +315,7 @@ fun SettingsScreen(
                     // Onglets sur les côtés : indiquent les pages voisines (toucher = y aller).
                     if (page >= 1) {
                         SideTab(
-                            text = when (page) { 1 -> "Polices"; 2 -> "Photos"; else -> "Icône" },
+                            text = PAGE_TITLES[page - 1],
                             arrow = "\u2039",
                             rotation = 270f,
                             fonts = fonts,
@@ -319,7 +327,7 @@ fun SettingsScreen(
                     }
                     if (page < PAGE_COUNT - 1) {
                         SideTab(
-                            text = when (page) { 0 -> "Photos"; 1 -> "Icône"; else -> "Sons" },
+                            text = PAGE_TITLES[page + 1],
                             arrow = "\u203A",
                             rotation = 90f,
                             fonts = fonts,
@@ -681,6 +689,136 @@ private fun SoundCard(fonts: AppFonts) {
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
+    }
+}
+
+/** Page « Écriture » : couleur et taille du texte des échanges avec l'IA (AiPanel.kt). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TextStyleCard(fonts: AppFonts, fontPrefs: FontPrefs) {
+    val color = fontPrefs.replyTextColor
+    val size = fontPrefs.replyTextSizeSp
+
+    SettingsCard(title = "\uD83D\uDD8B\uFE0F Écriture", fonts = fonts) {
+        Text(
+            text = "Couleur et taille du texte des échanges avec l'IA narratrice (bulles de " +
+                "conversation et champ où tu écris tes réponses).",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+
+        Text(
+            text = "Couleur",
+            fontFamily = fonts.bodyBold,
+            color = Color.White,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            ColorSwatch(
+                color = null,
+                label = "Auto",
+                selected = color == null,
+                onClick = { fontPrefs.setReplyTextColor(null) }
+            )
+            FontPrefs.REPLY_TEXT_COLOR_PRESETS.forEach { (label, swatch) ->
+                ColorSwatch(
+                    color = swatch,
+                    label = label,
+                    selected = color == swatch,
+                    onClick = { fontPrefs.setReplyTextColor(swatch) }
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+                .height(2.dp)
+                .background(SLineColor)
+        )
+
+        Text(
+            text = "Taille : ${size.toInt()} sp",
+            fontFamily = fonts.bodyBold,
+            color = Color.White,
+            style = TextStyle(shadow = STextShadow)
+        )
+        Slider(
+            value = size,
+            onValueChange = { fontPrefs.setReplyTextSize(it) },
+            valueRange = FontPrefs.MIN_REPLY_SIZE_SP..FontPrefs.MAX_REPLY_SIZE_SP,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = SRed,
+                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "Aperçu — sur fond clair, comme dans les bulles de conversation :",
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.85f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                // Couleur par défaut des bulles de l'IA (surfaceVariant M3, thème clair) :
+                // sert uniquement à prévisualiser la lisibilité de la couleur choisie.
+                .background(Color(0xFFE7E0EC))
+                .padding(10.dp)
+        ) {
+            Text(
+                text = "Tu avances prudemment dans la forêt sombre, une brindille craque sous ton pied.",
+                fontFamily = fonts.body,
+                fontSize = size.sp,
+                color = color ?: Color(0xFF1D1B20) // couleur de texte par défaut sur ce fond, si "Auto"
+            )
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(color: Color?, label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(color ?: Color.Transparent)
+                .border(
+                    width = if (selected) 3.dp else 1.5.dp,
+                    color = if (selected) SRed else Color.White.copy(alpha = 0.6f),
+                    shape = CircleShape
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (color == null) {
+                Text(text = "?", color = Color.White, fontSize = 16.sp)
+            }
+        }
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.85f),
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(top = 3.dp)
+        )
     }
 }
 
