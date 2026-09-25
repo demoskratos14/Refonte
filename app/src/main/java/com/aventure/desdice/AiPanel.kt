@@ -37,8 +37,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import org.json.JSONArray
 
@@ -54,6 +59,16 @@ import org.json.JSONArray
  * conversation est encore vide) ne vit plus ici : il est affiche par
  * MainGameScreen.kt, juste sous "Changer d'histoire", et disparait des
  * qu'un message existe deja.
+ *
+ * Les messages purement techniques envoyés à l'IA (prompt de mécaniques, description
+ * d'un lancer de dés...) ne sont jamais montrés ici : GameEngine les marque `visible =
+ * false` côté DiceSession.AiMessage. Quand le joueur a en plus tapé un texte libre au
+ * moment du lancer, seul ce texte (`display_content`) est affiché, pas la description
+ * technique qui l'accompagnait dans le message réellement envoyé à l'IA.
+ *
+ * Couleur et taille du texte des échanges (bulles + champ de saisie) suivent les
+ * réglages de l'utilisateur (FontPrefs.replyTextColor / replyTextSizeSp, Réglages >
+ * Écriture) ; la police suit fonts.body, comme le reste de l'application.
  *
  * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
  * n'appelle plus Python/Chaquopy. GameViewModel.sendFullPrompt(),
@@ -85,6 +100,14 @@ fun AiPanel(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val fonts = rememberAppFonts()
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val replyStyle = TextStyle(
+        fontFamily = fonts.body,
+        fontSize = fontPrefs.replyTextSizeSp.sp,
+        color = fontPrefs.replyTextColor ?: androidx.compose.ui.graphics.Color.Unspecified
+    )
 
     var messages by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
@@ -106,7 +129,11 @@ fun AiPanel(
                 val entry = conv.getJSONObject(i)
                 val role = entry.optString("role")
                 if (role == "system") continue
-                list.add(role to entry.optString("content"))
+                // Les messages techniques (lancer de dés, prompt de mécaniques...) ne sont
+                // jamais affichés ; display_content, s'il existe, remplace le contenu complet.
+                if (!entry.optBoolean("visible", true)) continue
+                val shown = entry.optString("display_content", "").ifEmpty { entry.optString("content") }
+                list.add(role to shown)
             }
         }
         messages = list
@@ -147,7 +174,7 @@ fun AiPanel(
                 text = "Aucune clé API Mistral configurée pour l'instant — l'histoire ne " +
                     "s'écrit donc pas ici automatiquement (le prompt complet reste copiable " +
                     "plus bas, en mode manuel).",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium.merge(replyStyle)
             )
             if (onConfigureKey != null) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -164,7 +191,7 @@ fun AiPanel(
             // "Changer d'histoire" -- il n'est donc plus duplique ici.
             Text(
                 text = "Aucun échange pour l'instant.",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.merge(replyStyle),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
@@ -191,7 +218,7 @@ fun AiPanel(
                                 )
                                 .padding(10.dp)
                         ) {
-                            Text(text = content, style = MaterialTheme.typography.bodyMedium)
+                            Text(text = content, style = MaterialTheme.typography.bodyMedium.merge(replyStyle))
                             if (isAssistant && speechManager != null) {
                                 IconButton(
                                     onClick = { speechManager.speak(content) },
@@ -235,7 +262,8 @@ fun AiPanel(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Écrire à l'IA narratrice…") },
+                textStyle = replyStyle,
+                placeholder = { Text("Écrire à l'IA narratrice…", style = replyStyle) },
                 enabled = !isLoading
             )
             IconButton(

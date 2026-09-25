@@ -221,16 +221,35 @@ data class CustomTotem(
     }
 }
 
-data class AiMessage(val role: String, val content: String) {
+data class AiMessage(
+    val role: String,
+    val content: String,
+    // false : message technique (lancer de dés, prompt de mécaniques...), envoyé à l'IA
+    // mais jamais montré au joueur dans AiPanel.kt. true par défaut, y compris pour les
+    // anciennes sauvegardes (champ absent -> considéré visible).
+    val visible: Boolean = true,
+    // Si non vide ET visible : texte à afficher à la place de `content` (ex. le message
+    // vraiment tapé par le joueur, quand `content` contient aussi la description technique
+    // du lancer en attente). Ignoré quand `visible` est faux.
+    val displayContent: String = ""
+) {
     // role: "system" | "user" | "assistant"
-    fun toJson(): JSONObject = JSONObject().apply { put("role", role); put("content", content) }
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("role", role); put("content", content)
+        put("visible", visible)
+        if (displayContent.isNotEmpty()) put("display_content", displayContent)
+    }
     companion object {
         fun fromJson(o: JSONObject): AiMessage? {
             val role = o.optString("role", "")
             if (role !in setOf("system", "user", "assistant")) return null
             val content = o.optString("content", "")
             if (content.isBlank()) return null
-            return AiMessage(role, content)
+            return AiMessage(
+                role, content,
+                visible = o.optBoolean("visible", true),
+                displayContent = o.optString("display_content", "")
+            )
         }
     }
 }
@@ -999,11 +1018,18 @@ class DiceSession(private var saveFile: File) {
     // ÉTAPE 2 — narration automatique (IA)
     // ------------------------------------------------------------------------
 
-    fun addAiMessage(role: String, content: String) {
+    /**
+     * @param visible false pour un message technique (lancer de dés, prompt de mécaniques...) :
+     *   toujours transmis à l'IA et conservé dans la sauvegarde, jamais affiché dans AiPanel.kt.
+     * @param displayContent si non vide et `visible` est vrai : ce qui est montré au joueur à la
+     *   place de `content` (ex. seulement le texte tapé par le joueur, quand `content` contient
+     *   aussi la description technique d'un lancer de dés en attente).
+     */
+    fun addAiMessage(role: String, content: String, visible: Boolean = true, displayContent: String = "") {
         if (role !in setOf("system", "user", "assistant")) return
         val trimmed = content.trim()
         if (trimmed.isEmpty()) return
-        aiConversation.add(AiMessage(role, trimmed))
+        aiConversation.add(AiMessage(role, trimmed, visible, displayContent.trim()))
         save()
     }
 

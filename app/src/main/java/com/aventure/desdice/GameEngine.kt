@@ -659,17 +659,26 @@ class GameEngine(private val baseDir: File) {
      * elle-même, donc jamais sauvegardé ni affiché au joueur (AiPanel.kt
      * n'affiche que ce qui est dans aiConversation).
      *
+     * @param visible false : le message "user" envoyé (lancer de dés, prompt de mécaniques...)
+     *   ne sera jamais montré dans AiPanel.kt (mais reste envoyé à l'IA et sauvegardé).
+     * @param displayText si `visible` est vrai et ce paramètre non vide : c'est lui qui est
+     *   affiché au joueur à la place du texte technique complet (ex. son propre message libre).
      * @return (texte de la réponse, erreur) — comme MistralClient.chat().
      */
-    private fun runAiNarrator(eventText: String): Pair<String?, String?> {
+    private fun runAiNarrator(
+        eventText: String,
+        visible: Boolean = true,
+        displayText: String = ""
+    ): Pair<String?, String?> {
         val sess = session ?: return null to null
         if (!hasMistralKey() || eventText.isEmpty()) return null to null
         if (sess.aiConversation.isEmpty()) {
-            sess.addAiMessage("system", buildMechanicsContext(sess, currentStory, autoMode = true))
+            sess.addAiMessage("system", buildMechanicsContext(sess, currentStory, autoMode = true), visible = false)
         }
         // Quête lancée par l'ajout manuel d'un chapitre (addStoryEntry) : consigne transmise une seule fois.
         val announcement = sess.consumeQuestAnnouncement()
-        sess.addAiMessage("user", if (announcement != null) "$eventText\n$announcement" else eventText)
+        val fullText = if (announcement != null) "$eventText\n$announcement" else eventText
+        sess.addAiMessage("user", fullText, visible = visible, displayContent = displayText)
         val messagesToSend = sess.aiMessagesToSend().toMutableList()
         buildStoryProgressNote(sess, currentStory)?.let { note ->
             // Juste avant le dernier message (le "user" qu'on vient
@@ -765,8 +774,10 @@ class GameEngine(private val baseDir: File) {
     /** Miroir de do_send_full_prompt(). */
     fun sendFullPrompt(): JSONObject {
         val sess = session ?: return currentSessionJson()
-        val (_, aiError) = runAiNarrator(buildAiKickoffMessage(sess, currentStory))
-        return sessionToJson(sess).apply { put("ai_error", aiError ?: JSONObject.NULL) }
+        // Prompt de mécaniques + instructions à l'IA : jamais affiché tel quel dans AiPanel.kt,
+        // seule sa réponse (le début du chapitre) doit apparaître au joueur.
+        val (_, aiError) = runAiNarrator(buildAiKickoffMessage(sess, currentStory), visible = false)
+        return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
     /** Miroir de do_send_ai_message() : envoie le lancer en attente (s'il y en a un) + un texte libre optionnel. */
@@ -775,15 +786,19 @@ class GameEngine(private val baseDir: File) {
         val pending = sess.pendingRoll()
         val parts = mutableListOf<String>()
         if (pending != null) parts += buildAiEventText(sess, pending)
-        if (text.isNotEmpty()) parts += text
+        val trimmedText = text.trim()
+        if (trimmedText.isNotEmpty()) parts += trimmedText
         val combined = parts.joinToString("\n")
         var aiError: String? = null
         if (combined.isNotEmpty()) {
-            val (_, err) = runAiNarrator(combined)
+            // La description technique du lancer (dé, quête, note de combo...) ne doit jamais
+            // s'afficher comme si le joueur l'avait tapée. Si le joueur a AUSSI écrit un texte
+            // libre, seul CE texte est montré ; sans lui, le message reste entièrement masqué.
+            val (_, err) = runAiNarrator(combined, visible = trimmedText.isNotEmpty(), displayText = trimmedText)
             aiError = err
             if (pending != null) sess.markLastRollAsSent()
         }
-        return sessionToJson(sess).apply { put("ai_error", aiError ?: JSONObject.NULL) }
+        return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
     /** Miroir de do_reset_ai_conversation() : réinitialise TOUTE la partie (reset_story_to_origin), pas seulement la conversation IA. */
@@ -1014,7 +1029,6 @@ class GameEngine(private val baseDir: File) {
         val sess = session ?: return currentSessionJson().apply {
             put("spent", false)
             put("effect", "")
-            put("ai_error", JSONObject.NULL)
         }
         var effectText = ""
         val spent = sess.spendTotemEnergy(key)
@@ -1051,7 +1065,7 @@ class GameEngine(private val baseDir: File) {
         return sessionToJson(sess).apply {
             put("spent", spent)
             put("effect", effectText)
-            put("ai_error", aiError ?: JSONObject.NULL)
+            if (aiError != null) put("ai_error", aiError)
         }
     }
 
