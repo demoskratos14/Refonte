@@ -337,7 +337,12 @@ fun MainGameScreen(
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
             SideQuestsList(viewModel = viewModel, hasKey = hasKey)
-            ContinueSection(viewModel = viewModel, hasKey = hasKey)
+            // ContinueSection ne sert plus qu'en mode manuel (sans clé API) : avec une clé, son
+            // bouton "Envoyer le prompt à l'IA" faisait doublon avec "🚀 Démarrer l'histoire" de
+            // GameHeader (même sendFullPrompt()). Sans clé en revanche, ce bouton devient "Copier
+            // le prompt complet pour une IA" -- seul moyen de récupérer ce prompt, puisque le
+            // bouton de GameHeader ne s'affiche jamais sans clé (showStartStory = hasKey && ...).
+            if (!hasKey) ContinueSection(viewModel = viewModel, hasKey = hasKey)
             HistoryList(viewModel = viewModel)
             JournalSection(viewModel = viewModel, isCustomStory = isCustomStory, hasKey = hasKey)
         }

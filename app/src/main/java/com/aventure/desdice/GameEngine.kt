@@ -529,6 +529,12 @@ class GameEngine(private val baseDir: File) {
                 "la possibilité de répondre librement au lieu d'en choisir une -- ne l'oblige jamais à " +
                 "s'y limiter -- et n'utilise ce format QUE pour proposer des actions, jamais pour autre " +
                 "chose."
+            lines += ""
+            lines += "FIN DÉFINITIVE DE L'HISTOIRE : quand tu écris la toute dernière réponse de cette " +
+                "histoire -- celle qui clôt vraiment l'aventure, pas simplement la fin d'un chapitre " +
+                "parmi d'autres -- termine ce message par la balise exacte $storyEndedTag, seule sur " +
+                "sa propre ligne, juste après le texte de conclusion. Ne l'utilise que pour cette toute " +
+                "dernière réponse, jamais avant."
         }
         return lines.joinToString("\n")
     }
@@ -592,6 +598,7 @@ class GameEngine(private val baseDir: File) {
     }
 
     private val questLaunchedTag = "[[QUETE_LANCEE]]"
+    private val storyEndedTag = "[[HISTOIRE_TERMINEE]]"
 
     /**
      * Histoire LONGUE uniquement : tant qu'une quête secondaire courte attend la fin du chapitre,
@@ -713,32 +720,51 @@ class GameEngine(private val baseDir: File) {
             replyText = replyText.replace(questLaunchedTag, "").trim()
             if (sess.launchPendingQuest(announce = false)) sess.save()
         }
+        // Fin définitive de l'histoire (pas juste un chapitre) : le journal ne doit pas rester
+        // en attente d'un 6e échange qui ne viendra jamais -- le reliquat, même court, est
+        // digéré tout de suite pour ne rien perdre du dernier chapitre.
+        var storyEnded = false
+        if (replyText.contains(storyEndedTag)) {
+            replyText = replyText.replace(storyEndedTag, "").trim()
+            storyEnded = true
+        }
         sess.addAiMessage("assistant", replyText)
-        maybeUpdateStoryDigest(sess)
+        maybeUpdateStoryDigest(sess, finalChapter = storyEnded)
         return replyText to null
     }
 
     private val digestChapterTag = "###CHAPITRE###"
     private val digestSummaryTag = "###RESUME###"
 
-    /** Miroir de maybe_update_story_digest() — appel "fantôme" : n'écrit jamais dans aiConversation. */
-    private fun maybeUpdateStoryDigest(sess: DiceSession) {
+    /**
+     * Miroir de maybe_update_story_digest() — appel "fantôme" : n'écrit jamais dans aiConversation.
+     * @param finalChapter true quand l'IA vient de signaler la fin définitive de l'histoire
+     *   ($storyEndedTag) : le reliquat d'échanges pas encore digéré (moins de 6, éventuellement)
+     *   est alors digéré quand même, comme dernier chapitre, au lieu d'attendre un 6e échange
+     *   qui n'arrivera jamais.
+     */
+    private fun maybeUpdateStoryDigest(sess: DiceSession, finalChapter: Boolean = false) {
         val digestTrigger = 6
         val digestMaxTokens = 700
         if (!hasMistralKey()) return
         while (true) {
             val pending = sess.pendingDigestMessages()
-            if (pending.size < digestTrigger) return
-            val chunk = pending.take(digestTrigger)
+            val fullChunk = pending.size >= digestTrigger
+            if (!fullChunk && (!finalChapter || pending.isEmpty())) return
+            val chunk = if (fullChunk) pending.take(digestTrigger) else pending
+            val isLastChunk = finalChapter && !fullChunk
             val block = chunk.joinToString("\n") { m -> "${if (m.role == "user") "Joueur" else "Narrateur"} : ${m.content}" }
             val existingSummary = sess.storySummary
 
-            val digestSystem = "Tu reçois un extrait récent d'une histoire de jeu de rôle pour " +
-                "enfant (en français) et dois produire DEUX textes bien distincts, chacun introduit " +
-                "par sa balise exacte sur sa propre ligne, rien d'autre avant/après/entre :\n" +
+            val digestSystem = "Tu reçois " +
+                (if (isLastChunk) "le tout dernier extrait (celui qui clôt définitivement l'histoire) " else "un extrait récent ") +
+                "d'une histoire de jeu de rôle pour enfant (en français) et dois produire DEUX textes " +
+                "bien distincts, chacun introduit par sa balise exacte sur sa propre ligne, rien " +
+                "d'autre avant/après/entre :\n" +
                 "$digestChapterTag\n" +
                 "Un chapitre de journal racontant cet extrait : à la troisième personne, fluide et " +
-                "narratif (pas une liste de faits, pas de dialogue au style direct), 80 à 120 mots.\n" +
+                "narratif (pas une liste de faits, pas de dialogue au style direct), 80 à 120 mots" +
+                (if (isLastChunk) ", qui se termine sur la conclusion de l'histoire.\n" else ".\n") +
                 "$digestSummaryTag\n" +
                 "Le résumé long terme mis à jour : fusion du résumé existant (s'il y en a un) et des " +
                 "nouveaux faits marquants de cet extrait -- personnages, objets/totems, lieux, " +
@@ -765,6 +791,7 @@ class GameEngine(private val baseDir: File) {
             if (chapter.isEmpty()) return
             val updatedSummary = text.substring(summaryPos + digestSummaryTag.length).trim().ifEmpty { existingSummary }
             sess.applyStoryDigest(chapter, updatedSummary, chunk.size)
+            if (isLastChunk) return
         }
     }
 
