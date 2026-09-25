@@ -3,8 +3,11 @@ package com.aventure.desdice.ui
 import android.content.Context
 import android.graphics.Typeface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 
 /** Une police trouvée dans assets/fonts : nom de fichier + libellé lisible. */
@@ -39,6 +42,37 @@ class FontPrefs private constructor(private val appContext: Context) {
         prefs.edit().putString(KEY_TITLE, file).apply()
     }
 
+    // ------------------------------------------------------------------
+    // Couleur et taille du texte des zones de réponse (échanges avec l'IA,
+    // champ de saisie du joueur). Réglages > page « Écriture ».
+    // ------------------------------------------------------------------
+
+    /** Couleur choisie, ou null = automatique (couleur par défaut de l'écran). */
+    var replyTextColorArgb: Int? by mutableStateOf(
+        prefs.getInt(KEY_REPLY_COLOR, NO_COLOR).takeIf { it != NO_COLOR }
+    )
+        private set
+
+    val replyTextColor: Color? get() = replyTextColorArgb?.let { Color(it) }
+
+    /** Taille du texte des réponses, en sp. */
+    var replyTextSizeSp: Float by mutableFloatStateOf(
+        prefs.getFloat(KEY_REPLY_SIZE, DEFAULT_REPLY_SIZE_SP)
+    )
+        private set
+
+    fun setReplyTextColor(color: Color?) {
+        replyTextColorArgb = color?.let { it.toArgb() and 0x00FFFFFF or (0xFF shl 24) }
+        prefs.edit().apply {
+            if (color == null) remove(KEY_REPLY_COLOR) else putInt(KEY_REPLY_COLOR, replyTextColorArgb!!)
+        }.apply()
+    }
+
+    fun setReplyTextSize(sp: Float) {
+        replyTextSizeSp = sp.coerceIn(MIN_REPLY_SIZE_SP, MAX_REPLY_SIZE_SP)
+        prefs.edit().putFloat(KEY_REPLY_SIZE, replyTextSizeSp).apply()
+    }
+
     private val familyCache = HashMap<String, FontFamily?>()
 
     /** FontFamily d'un fichier de assets/fonts (mise en cache), ou null si illisible. */
@@ -54,10 +88,28 @@ class FontPrefs private constructor(private val appContext: Context) {
         const val FONTS_DIR = "fonts"
         const val DEFAULT_BODY_FILE = "Nunito-Regular.ttf"
         const val DEFAULT_TITLE_FILE = "Bangers-Regular.ttf"
+        const val DEFAULT_REPLY_SIZE_SP = 15f
+        const val MIN_REPLY_SIZE_SP = 12f
+        const val MAX_REPLY_SIZE_SP = 24f
+
+        /** Couleurs proposées dans les Réglages ; "Auto" (null) n'y figure pas, gérée à part. */
+        val REPLY_TEXT_COLOR_PRESETS: List<Pair<String, Color>> = listOf(
+            "Blanc" to Color(0xFFFFFFFF),
+            "Crème" to Color(0xFFFBF3E1),
+            "Ambre" to Color(0xFFFFC94D),
+            "Ciel" to Color(0xFF8FD3FE),
+            "Menthe" to Color(0xFF8FE3B0),
+            "Rose" to Color(0xFFFFA8C5),
+            "Lavande" to Color(0xFFC9A8FF),
+            "Encre" to Color(0xFF14161A)
+        )
 
         private const val PREFS_NAME = "app_font_prefs"
         private const val KEY_BODY = "body_font_file"
         private const val KEY_TITLE = "title_font_file"
+        private const val KEY_REPLY_COLOR = "reply_text_color_argb"
+        private const val KEY_REPLY_SIZE = "reply_text_size_sp"
+        private const val NO_COLOR = 0
 
         @Volatile
         private var instance: FontPrefs? = null
