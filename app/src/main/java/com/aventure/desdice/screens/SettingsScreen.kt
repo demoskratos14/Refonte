@@ -702,9 +702,6 @@ private fun SoundCard(fonts: AppFonts) {
     }
 }
 
-/** Page « Écriture » : couleur et taille du texte des échanges avec l'IA (AiPanel.kt). */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
 /**
  * Section « police + couleur + taille » réglable pour UNE catégorie de texte
  * ([FontPrefs.title], [FontPrefs.body] ou [FontPrefs.reply]). Entièrement autonome : les
@@ -715,6 +712,7 @@ private fun SoundCard(fonts: AppFonts) {
  * courant (comme le reste de la carte de réglages), sur fond clair pour les réponses IA
  * (comme les bulles de conversation où ce style s'applique réellement).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TextStyleSection(
     icon: String,
