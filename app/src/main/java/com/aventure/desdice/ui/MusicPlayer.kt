@@ -57,6 +57,11 @@ object MusicPlayer {
     var isPlaying by mutableStateOf(false)
         private set
 
+    /** Nom de ressource (ex. "music_fantasy_epic") du morceau chargé, ou null si aucun. Permet
+     *  à l'aperçu des Réglages de savoir lequel afficher en "en cours". */
+    var currentTrackName: String? by mutableStateOf(null)
+        private set
+
     /** true quand on est dans une page de jeu : le démarrage automatique est alors désactivé. */
     var inStory = false
         private set
@@ -98,6 +103,7 @@ object MusicPlayer {
         if (volume <= 0f || tracks.isEmpty()) return
         val candidates = if (tracks.size > 1) tracks.filter { it != lastTrack } else tracks
         val id = candidates.random()
+        val trackName = allTracks.firstOrNull { it.resId == id }?.name
         release()
         try {
             val mp = MediaPlayer.create(app, id) ?: return
@@ -124,6 +130,7 @@ object MusicPlayer {
             }
             player = mp
             lastTrack = id
+            currentTrackName = trackName
             pausedByBackground = false
             mp.start()
             isPlaying = true
@@ -131,6 +138,55 @@ object MusicPlayer {
             player = null
             isPlaying = false
         }
+    }
+
+    /**
+     * Aperçu d'UN morceau précis (Réglages > Sons, avant de le cocher ou décocher) : joue au
+     * moins à un volume audible même si "Musique" est coupée ou son volume à 0, puisque c'est
+     * une demande explicite d'écoute. Coupe la lecture en cours s'il y en avait une ; ne relance
+     * jamais le tirage au sort normal à la fin (contrairement à startRandom).
+     */
+    fun preview(context: Context, track: MusicTrack) {
+        val app = context.applicationContext
+        appContext = app
+        val volume = SoundPrefs.get(app).musicVolume.coerceAtLeast(0.3f)
+        release()
+        try {
+            val mp = MediaPlayer.create(app, track.resId) ?: return
+            mp.setVolume(volume, volume)
+            mp.setOnCompletionListener { finished ->
+                finished.release()
+                if (player === finished) {
+                    player = null
+                    isPlaying = false
+                    currentTrackName = null
+                }
+            }
+            mp.setOnErrorListener { errored, _, _ ->
+                errored.release()
+                if (player === errored) {
+                    player = null
+                    isPlaying = false
+                    currentTrackName = null
+                }
+                true
+            }
+            player = mp
+            lastTrack = track.resId
+            currentTrackName = track.name
+            pausedByBackground = false
+            mp.start()
+            isPlaying = true
+        } catch (e: Exception) {
+            player = null
+            isPlaying = false
+            currentTrackName = null
+        }
+    }
+
+    /** Bascule aperçu/arrêt pour un bouton "écouter" par morceau : coupe si c'est déjà lui qui joue. */
+    fun togglePreview(context: Context, track: MusicTrack) {
+        if (isPlaying && currentTrackName == track.name) stop() else preview(context, track)
     }
 
     /** Démarrage automatique des menus : seulement si rien ne joue et qu'on n'est pas dans une histoire. */
@@ -155,6 +211,7 @@ object MusicPlayer {
         release()
         pausedByBackground = false
         isPlaying = false
+        currentTrackName = null
     }
 
     /** Entrée dans une histoire : la musique s'arrête pour ne pas gêner la lecture. */
