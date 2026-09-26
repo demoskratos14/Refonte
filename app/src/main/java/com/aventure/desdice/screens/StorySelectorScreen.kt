@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -54,9 +55,14 @@ import androidx.compose.ui.unit.sp
 import com.aventure.desdice.R
 import com.aventure.desdice.model.Story
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.bodySp
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberAppTextStyles
+import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,6 +74,12 @@ import kotlinx.coroutines.withContext
  * sombre en bas, titre / sous-titre / "Toucher pour commencer", pastilles
  * de pagination, et en haut : de classique (a gauche), titre de la page
  * (au centre) et cle API (a droite).
+ *
+ * Les titres et le texte courant suivent les réglages Réglages > Écriture
+ * (couleur, taille — voir AppTextStyles / rememberAppTextStyles), sans perdre
+ * la hiérarchie de tailles propre à cet écran (gros titre d'histoire vs.
+ * en-tête vs. légende) : chaque taille codée en dur est mise à l'échelle via
+ * titleSp()/bodySp() plutôt que remplacée par une valeur unique.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -82,6 +94,9 @@ fun StorySelectorScreen(
     val stories by viewModel.stories.collectAsState()
     val storiesLoaded by viewModel.storiesLoaded.collectAsState()
     val fonts = rememberAppFonts()
+    val context = LocalContext.current
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val textStyles = rememberAppTextStyles(fonts, fontPrefs)
     var storyToDelete by remember { mutableStateOf<Story?>(null) }
 
     Box(
@@ -107,6 +122,7 @@ fun StorySelectorScreen(
                     StorySlide(
                         story = story,
                         fonts = fonts,
+                        textStyles = textStyles,
                         onClick = {
                             viewModel.selectStory(story.slug)
                             onStorySelected(story.slug)
@@ -114,7 +130,7 @@ fun StorySelectorScreen(
                         onDeleteClick = { storyToDelete = story }
                     )
                 } else {
-                    NewStorySlide(fonts = fonts, onClick = onNewStoryClick)
+                    NewStorySlide(fonts = fonts, textStyles = textStyles, onClick = onNewStoryClick)
                 }
             }
 
@@ -141,6 +157,7 @@ fun StorySelectorScreen(
 
         SelectorHeader(
             fonts = fonts,
+            textStyles = textStyles,
             onClassicDiceClick = onClassicDiceClick,
             onConfigureKeyClick = onConfigureKeyClick,
             modifier = Modifier.align(Alignment.TopCenter)
@@ -189,6 +206,7 @@ private fun textShadow(alpha: Float, blur: Float, dy: Float) =
 @Composable
 private fun SelectorHeader(
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     onClassicDiceClick: () -> Unit,
     onConfigureKeyClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -219,8 +237,8 @@ private fun SelectorHeader(
             text = "\uD83C\uDF1F Choisis ton histoire",
             style = TextStyle(
                 fontFamily = fonts.display,
-                fontSize = 22.sp,
-                color = Color.White,
+                fontSize = textStyles.titleSp(22f),
+                color = textStyles.titleColor ?: Color.White,
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Center,
                 shadow = textShadow(0.7f, 12f, 4f)
@@ -278,6 +296,7 @@ private fun SlideTexts(
     subtitle: String,
     cta: String,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     modifier: Modifier = Modifier,
     topContent: @Composable () -> Unit = {}
 ) {
@@ -292,8 +311,8 @@ private fun SlideTexts(
             text = title,
             style = TextStyle(
                 fontFamily = fonts.display,
-                fontSize = 42.sp,
-                color = Color.White,
+                fontSize = textStyles.titleSp(42f),
+                color = textStyles.titleColor ?: Color.White,
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Center,
                 shadow = textShadow(0.7f, 16f, 6f)
@@ -304,9 +323,9 @@ private fun SlideTexts(
             text = subtitle,
             style = TextStyle(
                 fontFamily = fonts.body,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                color = Color.White.copy(alpha = 0.92f),
+                fontSize = textStyles.bodySp(16f),
+                lineHeight = textStyles.bodySp(24f),
+                color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.92f),
                 textAlign = TextAlign.Center,
                 shadow = textShadow(0.6f, 8f, 2f)
             ),
@@ -317,9 +336,9 @@ private fun SlideTexts(
             text = cta.uppercase(),
             style = TextStyle(
                 fontFamily = fonts.body,
-                fontSize = 13.sp,
+                fontSize = textStyles.bodySp(13f),
                 letterSpacing = 0.5.sp,
-                color = Color.White.copy(alpha = 0.75f),
+                color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.75f),
                 textAlign = TextAlign.Center
             )
         )
@@ -330,6 +349,7 @@ private fun SlideTexts(
 private fun StorySlide(
     story: Story,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
@@ -350,6 +370,7 @@ private fun StorySlide(
                 subtitle = story.subtitle,
                 cta = "Toucher pour commencer \u2192",
                 fonts = fonts,
+                textStyles = textStyles,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -378,6 +399,7 @@ private fun StorySlide(
 @Composable
 private fun NewStorySlide(
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     onClick: () -> Unit
 ) {
     Box(
@@ -401,6 +423,7 @@ private fun NewStorySlide(
             subtitle = "Crée ton propre univers : image de fond, description, premier totem.",
             cta = "Toucher pour créer \u2192",
             fonts = fonts,
+            textStyles = textStyles,
             modifier = Modifier.align(Alignment.BottomCenter),
             topContent = {
                 Box(

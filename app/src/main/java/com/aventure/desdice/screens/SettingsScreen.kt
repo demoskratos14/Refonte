@@ -61,7 +61,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -80,6 +79,7 @@ import com.aventure.desdice.ui.FontOption
 import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.listAssetFonts
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.TextStyleChoice
 import kotlinx.coroutines.launch
 
 // Palette identique aux autres écrans. Noms préfixés "S" et privés pour ne pas
@@ -232,50 +232,60 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         if (page == 0) {
-                        // --- Polices ---
-                        SettingsCard(title = "\uD83D\uDD24 Polices", fonts = fonts) {
-                            if (fontOptions.isEmpty()) {
+                        // --- Écriture : police, couleur et taille, une section par catégorie ---
+                        if (fontOptions.isEmpty()) {
+                            SettingsCard(title = "\uD83D\uDD24 Polices", fonts = fonts) {
                                 Text(
-                                    text = "Aucune police (.ttf / .otf) trouvée dans app/src/main/assets/fonts.",
+                                    text = "Aucune police (.ttf / .otf) trouvée dans app/src/main/assets/fonts. " +
+                                        "Tu peux quand même régler la couleur et la taille ci-dessous.",
                                     fontSize = 14.sp,
                                     color = Color.White,
                                     fontFamily = fonts.body,
                                     style = TextStyle(shadow = STextShadow)
                                 )
-                            } else {
-                                FontPicker(
-                                    label = "Police du texte de l'application",
-                                    options = fontOptions,
-                                    fontPrefs = fontPrefs,
-                                    selectedFile = fontPrefs.bodyFontFile,
-                                    defaultFile = FontPrefs.DEFAULT_BODY_FILE,
-                                    previewText = "Le dé roule sur la table… Tu avances dans la forêt sombre, " +
-                                        "et quelque chose bouge entre les arbres.",
-                                    previewSize = 15.sp,
-                                    fonts = fonts,
-                                    onSelect = { fontPrefs.setBodyFont(it) }
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 16.dp)
-                                        .height(2.dp)
-                                        .background(SLineColor)
-                                )
-                                FontPicker(
-                                    label = "Police des titres (histoires, boutons)",
-                                    options = fontOptions,
-                                    fontPrefs = fontPrefs,
-                                    selectedFile = fontPrefs.titleFontFile,
-                                    defaultFile = FontPrefs.DEFAULT_TITLE_FILE,
-                                    previewText = "Le Livre des Mille Histoires",
-                                    previewSize = 26.sp,
-                                    fonts = fonts,
-                                    onSelect = { fontPrefs.setTitleFont(it) }
-                                )
                             }
                         }
-                        TextStyleCard(fonts = fonts, fontPrefs = fontPrefs)
+                        TextStyleSection(
+                            icon = "\uD83D\uDD24",
+                            title = "Titres",
+                            description = "Police, couleur et taille des titres (histoires, en-têtes, boutons) " +
+                                "dans toute l'application.",
+                            choice = fontPrefs.title,
+                            fontOptions = fontOptions,
+                            fontPrefs = fontPrefs,
+                            defaultFontFile = FontPrefs.DEFAULT_TITLE_FILE,
+                            previewText = "Le Livre des Mille Histoires",
+                            previewOnDark = true,
+                            fonts = fonts
+                        )
+                        TextStyleSection(
+                            icon = "\uD83D\uDCDD",
+                            title = "Texte courant",
+                            description = "Police, couleur et taille du texte de l'interface (descriptions, " +
+                                "boutons, écrans de réglages…) et de la narration.",
+                            choice = fontPrefs.body,
+                            fontOptions = fontOptions,
+                            fontPrefs = fontPrefs,
+                            defaultFontFile = FontPrefs.DEFAULT_BODY_FILE,
+                            previewText = "Le dé roule sur la table… Tu avances dans la forêt sombre, " +
+                                "et quelque chose bouge entre les arbres.",
+                            previewOnDark = true,
+                            fonts = fonts
+                        )
+                        TextStyleSection(
+                            icon = "\uD83D\uDD8B\uFE0F",
+                            title = "Réponses de l'IA",
+                            description = "Police, couleur et taille du texte des échanges avec l'IA " +
+                                "narratrice (bulles de conversation et champ où tu écris tes réponses).",
+                            choice = fontPrefs.reply,
+                            fontOptions = fontOptions,
+                            fontPrefs = fontPrefs,
+                            defaultFontFile = FontPrefs.DEFAULT_BODY_FILE,
+                            previewText = "Tu avances prudemment dans la forêt sombre, une brindille craque " +
+                                "sous ton pied.",
+                            previewOnDark = false,
+                            fonts = fonts
+                        )
                         } else if (page == 1) {
                         // --- Images de fond ---
                         SettingsCard(title = "\uD83D\uDDBC\uFE0F Images de fond", fonts = fonts) {
@@ -695,20 +705,79 @@ private fun SoundCard(fonts: AppFonts) {
 /** Page « Écriture » : couleur et taille du texte des échanges avec l'IA (AiPanel.kt). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TextStyleCard(fonts: AppFonts, fontPrefs: FontPrefs) {
-    val color = fontPrefs.replyTextColor
-    val size = fontPrefs.replyTextSizeSp
+/**
+ * Section « police + couleur + taille » réglable pour UNE catégorie de texte
+ * ([FontPrefs.title], [FontPrefs.body] ou [FontPrefs.reply]). Entièrement autonome : les
+ * trois cartes de Réglages > Écriture sont trois appels à cette même fonction, chacune liée à
+ * une catégorie indépendante — changer l'une ne touche pas aux deux autres.
+ *
+ * [previewOnDark] choisit le fond de l'aperçu : sur fond sombre pour les titres et le texte
+ * courant (comme le reste de la carte de réglages), sur fond clair pour les réponses IA
+ * (comme les bulles de conversation où ce style s'applique réellement).
+ */
+@Composable
+private fun TextStyleSection(
+    icon: String,
+    title: String,
+    description: String,
+    choice: TextStyleChoice,
+    fontOptions: List<FontOption>,
+    fontPrefs: FontPrefs,
+    defaultFontFile: String,
+    previewText: String,
+    previewOnDark: Boolean,
+    fonts: AppFonts
+) {
+    val entries = remember(fontOptions) {
+        fontOptions.map { DropdownEntry(it.file, it.label, fontPrefs.familyFor(it.file) ?: FontFamily.Default) }
+    }
+    // Sans choix enregistré, on affiche la police par défaut de la catégorie si présente.
+    val effectiveFile = choice.fontFile ?: defaultFontFile
+    val current = entries.firstOrNull { it.value == effectiveFile }
+    val previewFamily = current?.family ?: FontFamily.Default
 
-    SettingsCard(title = "\uD83D\uDD8B\uFE0F Écriture", fonts = fonts) {
+    SettingsCard(title = "$icon $title", fonts = fonts) {
         Text(
-            text = "Couleur et taille du texte des échanges avec l'IA narratrice (bulles de " +
-                "conversation et champ où tu écris tes réponses).",
+            text = description,
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.95f),
             fontFamily = fonts.body,
             style = TextStyle(shadow = STextShadow),
             modifier = Modifier.padding(bottom = 14.dp)
         )
+
+        if (fontOptions.isNotEmpty()) {
+            Text(
+                text = "Police",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            SettingsDropdown(
+                entries = entries,
+                selectedLabel = current?.label ?: "Police du système",
+                selectedFamily = previewFamily,
+                onSelect = { file -> choice.setFont(file) }
+            )
+            if (choice.fontFile != null) {
+                Spacer(Modifier.height(10.dp))
+                SettingsButton(
+                    text = "Rétablir la police par défaut",
+                    onClick = { choice.setFont(null) },
+                    fonts = fonts,
+                    secondary = true
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp)
+                    .height(2.dp)
+                    .background(SLineColor)
+            )
+        }
 
         Text(
             text = "Couleur",
@@ -725,15 +794,15 @@ private fun TextStyleCard(fonts: AppFonts, fontPrefs: FontPrefs) {
             ColorSwatch(
                 color = null,
                 label = "Auto",
-                selected = color == null,
-                onClick = { fontPrefs.setReplyTextColor(null) }
+                selected = choice.color == null,
+                onClick = { choice.setColor(null) }
             )
-            FontPrefs.REPLY_TEXT_COLOR_PRESETS.forEach { (label, swatch) ->
+            FontPrefs.TEXT_COLOR_PRESETS.forEach { (label, swatch) ->
                 ColorSwatch(
                     color = swatch,
                     label = label,
-                    selected = color == swatch,
-                    onClick = { fontPrefs.setReplyTextColor(swatch) }
+                    selected = choice.color == swatch,
+                    onClick = { choice.setColor(swatch) }
                 )
             }
         }
@@ -747,15 +816,15 @@ private fun TextStyleCard(fonts: AppFonts, fontPrefs: FontPrefs) {
         )
 
         Text(
-            text = "Taille : ${size.toInt()} sp",
+            text = "Taille : ${choice.sizeSp.toInt()} sp",
             fontFamily = fonts.bodyBold,
             color = Color.White,
             style = TextStyle(shadow = STextShadow)
         )
         Slider(
-            value = size,
-            onValueChange = { fontPrefs.setReplyTextSize(it) },
-            valueRange = FontPrefs.MIN_REPLY_SIZE_SP..FontPrefs.MAX_REPLY_SIZE_SP,
+            value = choice.sizeSp,
+            onValueChange = { choice.setSize(it) },
+            valueRange = choice.minSizeSp..choice.maxSizeSp,
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = SRed,
@@ -765,29 +834,48 @@ private fun TextStyleCard(fonts: AppFonts, fontPrefs: FontPrefs) {
         )
 
         Spacer(Modifier.height(10.dp))
-        Text(
-            text = "Aperçu — sur fond clair, comme dans les bulles de conversation :",
-            fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.85f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                // Couleur par défaut des bulles de l'IA (surfaceVariant M3, thème clair) :
-                // sert uniquement à prévisualiser la lisibilité de la couleur choisie.
-                .background(Color(0xFFE7E0EC))
-                .padding(10.dp)
-        ) {
+        if (previewOnDark) {
             Text(
-                text = "Tu avances prudemment dans la forêt sombre, une brindille craque sous ton pied.",
+                text = "Aperçu :",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.85f),
                 fontFamily = fonts.body,
-                fontSize = size.sp,
-                color = color ?: Color(0xFF1D1B20) // couleur de texte par défaut sur ce fond, si "Auto"
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 6.dp)
             )
+            Text(
+                text = previewText,
+                fontFamily = previewFamily,
+                fontSize = choice.sizeSp.sp,
+                color = choice.color ?: Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            Text(
+                text = "Aperçu — sur fond clair, comme dans les bulles de conversation :",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.85f),
+                fontFamily = fonts.body,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    // Couleur par défaut des bulles de l'IA (surfaceVariant M3, thème clair) :
+                    // sert uniquement à prévisualiser la lisibilité de la couleur choisie.
+                    .background(Color(0xFFE7E0EC))
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = previewText,
+                    fontFamily = previewFamily,
+                    fontSize = choice.sizeSp.sp,
+                    color = choice.color ?: Color(0xFF1D1B20) // couleur de texte par défaut sur ce fond, si "Auto"
+                )
+            }
         }
     }
 }
@@ -937,59 +1025,6 @@ private fun SideTab(
 }
 
 private class DropdownEntry(val value: String, val label: String, val family: FontFamily)
-
-/** Sélecteur de police : liste déroulante (chaque police s'affiche dans son propre style) + aperçu. */
-@Composable
-private fun FontPicker(
-    label: String,
-    options: List<FontOption>,
-    fontPrefs: FontPrefs,
-    selectedFile: String?,
-    defaultFile: String,
-    previewText: String,
-    previewSize: TextUnit,
-    fonts: AppFonts,
-    onSelect: (String?) -> Unit
-) {
-    val entries = remember(options) {
-        options.map { DropdownEntry(it.file, it.label, fontPrefs.familyFor(it.file) ?: FontFamily.Default) }
-    }
-    // Sans choix enregistré, on affiche la police par défaut si elle est présente dans le dossier.
-    val effectiveFile = selectedFile ?: defaultFile
-    val current = entries.firstOrNull { it.value == effectiveFile }
-
-    Text(
-        text = label,
-        fontFamily = fonts.bodyBold,
-        color = Color.White,
-        style = TextStyle(shadow = STextShadow),
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
-    SettingsDropdown(
-        entries = entries,
-        selectedLabel = current?.label ?: "Police du système",
-        selectedFamily = current?.family ?: FontFamily.Default,
-        onSelect = { file -> onSelect(file) }
-    )
-    Spacer(Modifier.height(10.dp))
-    Text(
-        text = previewText,
-        fontFamily = current?.family ?: FontFamily.Default,
-        fontSize = previewSize,
-        color = Color.White,
-        style = TextStyle(shadow = STextShadow),
-        modifier = Modifier.fillMaxWidth()
-    )
-    if (selectedFile != null) {
-        Spacer(Modifier.height(10.dp))
-        SettingsButton(
-            text = "Rétablir la police par défaut",
-            onClick = { onSelect(null) },
-            fonts = fonts,
-            secondary = true
-        )
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

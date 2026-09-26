@@ -82,9 +82,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberAppTextStyles
+import com.aventure.desdice.ui.bodySp
+import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
@@ -191,6 +196,9 @@ fun ClassicDiceScreen(
     viewModel: GameViewModel = viewModel()
 ) {
     val fonts = rememberAppFonts()
+    val context = LocalContext.current
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val textStyles = rememberAppTextStyles(fonts, fontPrefs)
     // Fleche retour : si onBack n'est pas fourni, on declenche le meme retour que
     // le bouton du telephone (le BackHandler de MainActivity ferme alors la page).
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
@@ -363,9 +371,9 @@ fun ClassicDiceScreen(
                     text = "🎲 Des classiques",
                     style = TextStyle(
                         fontFamily = fonts.display,
-                        fontSize = 24.sp,
+                        fontSize = textStyles.titleSp(24f),
                         letterSpacing = 1.sp,
-                        color = Color.White,
+                        color = textStyles.titleColor ?: Color.White,
                         shadow = Shadow(Color(0xB3000000), Offset(0f, 3f), 8f)
                     )
                 )
@@ -380,6 +388,7 @@ fun ClassicDiceScreen(
                     success = lastSuccess,
                     fate = lastFate,
                     fonts = fonts,
+                    textStyles = textStyles,
                     spin = spin,
                     progress = progress,
                     cubeFateFaces = fateFaces.take(6),
@@ -397,8 +406,8 @@ fun ClassicDiceScreen(
                     text = "Historique",
                     style = TextStyle(
                         fontFamily = fonts.bodyBold,
-                        fontSize = 16.sp,
-                        color = Color.White,
+                        fontSize = textStyles.bodySp(16f),
+                        color = textStyles.bodyColor ?: Color.White,
                         shadow = TextShadow
                     )
                 )
@@ -414,8 +423,8 @@ fun ClassicDiceScreen(
                         modifier = Modifier.fillMaxWidth(),
                         style = TextStyle(
                             fontFamily = fonts.body,
-                            fontSize = 14.4.sp,
-                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = textStyles.bodySp(14.4f),
+                            color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.9f),
                             shadow = TextShadow
                         )
                     )
@@ -457,6 +466,7 @@ fun ClassicDiceScreen(
                     background = Color.White,
                     contentColor = DangerText,
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !rolling,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -468,7 +478,7 @@ fun ClassicDiceScreen(
                     text = it,
                     style = TextStyle(
                         fontFamily = fonts.body,
-                        fontSize = 14.sp,
+                        fontSize = textStyles.bodySp(14f),
                         color = Color(0xFFFFC9C9),
                         shadow = TextShadow
                     )
@@ -484,23 +494,23 @@ fun ClassicDiceScreen(
             title = {
                 Text(
                     "Effacer l'historique",
-                    style = TextStyle(fontFamily = fonts.display, fontSize = 22.sp, color = Ink)
+                    style = TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(22f), color = Ink)
                 )
             },
             text = {
                 Text(
                     "Effacer tout l'historique des dés classiques ?",
-                    style = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink)
+                    style = TextStyle(fontFamily = fonts.body, fontSize = textStyles.bodySp(16f), color = Ink)
                 )
             },
             confirmButton = {
                 TextButton(onClick = { showClearConfirm = false; clearHistory() }) {
-                    Text("Effacer", style = TextStyle(fontFamily = fonts.display, fontSize = 18.sp, color = DangerText))
+                    Text("Effacer", style = TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(18f), color = DangerText))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirm = false }) {
-                    Text("Annuler", style = TextStyle(fontFamily = fonts.display, fontSize = 18.sp, color = Ink))
+                    Text("Annuler", style = TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(18f), color = Ink))
                 }
             }
         )
@@ -583,6 +593,7 @@ private fun ComicButton(
     background: Color,
     contentColor: Color,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -610,7 +621,7 @@ private fun ComicButton(
             textAlign = TextAlign.Center,
             style = TextStyle(
                 fontFamily = fonts.display,
-                fontSize = 17.6.sp,
+                fontSize = textStyles.titleSp(17.6f),
                 letterSpacing = 1.sp,
                 color = contentColor
             )
@@ -633,6 +644,7 @@ private fun DiceSection(
     success: Int?,
     fate: FateFace?,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     spin: SpinState?,
     progress: Animatable<Float, AnimationVector1D>,
     cubeFateFaces: List<FateFace>,
@@ -662,11 +674,11 @@ private fun DiceSection(
         }
 
         val successDie: @Composable (Dp) -> Unit = { dieSize ->
-            DieWithCaption("Dé classique", fonts) {
+            DieWithCaption("Dé classique", fonts, textStyles) {
                 val spec = spin?.success
                 if (spec != null) {
                     Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
-                        TumblingDie(spec, progress, null, fonts, Color.White)
+                        TumblingDie(spec, progress, null, fonts, textStyles, Color.White)
                     }
                 } else {
                     DieBox(
@@ -680,11 +692,11 @@ private fun DiceSection(
             }
         }
         val fateDie: @Composable (Dp) -> Unit = { dieSize ->
-            DieWithCaption("Dé du destin", fonts) {
+            DieWithCaption("Dé du destin", fonts, textStyles) {
                 val spec = spin?.fate
                 if (spec != null) {
                     Box(Modifier.size(dieSize).graphicsLayer { rotationZ = 1f }) {
-                        TumblingDie(spec, progress, cubeFateFaces, fonts, FateDieBackground)
+                        TumblingDie(spec, progress, cubeFateFaces, fonts, textStyles, FateDieBackground)
                     }
                 } else {
                     DieBox(
@@ -693,7 +705,7 @@ private fun DiceSection(
                         size = dieSize,
                         onClick = onRollFate,
                         enabled = !rolling
-                    ) { FateDieFace(fate, fonts) }
+                    ) { FateDieFace(fate, fonts, textStyles) }
                 }
             }
         }
@@ -752,7 +764,7 @@ private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DieWithCaption(caption: String, fonts: AppFonts, die: @Composable () -> Unit) {
+private fun DieWithCaption(caption: String, fonts: AppFonts, textStyles: AppTextStyles, die: @Composable () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         die()
         Spacer(Modifier.height(6.dp))
@@ -760,8 +772,8 @@ private fun DieWithCaption(caption: String, fonts: AppFonts, die: @Composable ()
             text = caption,
             style = TextStyle(
                 fontFamily = fonts.display,
-                fontSize = 13.6.sp,
-                color = Color.White,
+                fontSize = textStyles.titleSp(13.6f),
+                color = textStyles.titleColor ?: Color.White,
                 shadow = TextShadow
             )
         )
@@ -828,7 +840,7 @@ private fun SuccessDieFace(value: Int?) {
 }
 
 @Composable
-internal fun FateDieFace(fate: FateFace?, fonts: AppFonts) {
+internal fun FateDieFace(fate: FateFace?, fonts: AppFonts, textStyles: AppTextStyles) {
     if (fate == null) {
         Text(text = "🔮", style = TextStyle(fontSize = 54.sp))
     } else {
@@ -838,7 +850,7 @@ internal fun FateDieFace(fate: FateFace?, fonts: AppFonts) {
             Text(
                 text = fate.label,
                 textAlign = TextAlign.Center,
-                style = TextStyle(fontFamily = fonts.display, fontSize = 16.sp, color = Purple)
+                style = TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(16f), color = Purple)
             )
         }
     }
@@ -958,6 +970,7 @@ internal fun TumblingDie(
     progress: Animatable<Float, AnimationVector1D>,
     cubeFateFaces: List<FateFace>?,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     faceColor: Color,
     // De de reussite seulement : symboles a dessiner sur chaque face, par face (index 0..5)
     // puis par point. null = points noirs (page "Des classiques").
@@ -967,11 +980,11 @@ internal fun TumblingDie(
     val emojiLayouts = remember(cubeFateFaces) {
         cubeFateFaces?.map { textMeasurer.measure(it.emoji, TextStyle(fontSize = 58.sp, color = Ink)) }
     }
-    val labelLayouts = remember(cubeFateFaces, fonts) {
+    val labelLayouts = remember(cubeFateFaces, fonts, textStyles) {
         cubeFateFaces?.map {
             textMeasurer.measure(
                 it.label,
-                TextStyle(fontFamily = fonts.display, fontSize = 16.sp, color = Purple, textAlign = TextAlign.Center)
+                TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(16f), color = Purple, textAlign = TextAlign.Center)
             )
         }
     }

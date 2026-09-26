@@ -58,9 +58,14 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.bodySp
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberAppTextStyles
+import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -124,6 +129,8 @@ fun CreateStoryScreen(
     val mutex = remember { Mutex() }
     val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val textStyles = rememberAppTextStyles(fonts, fontPrefs)
 
     var title by remember { mutableStateOf("") }
     var subtitle by remember { mutableStateOf("") }
@@ -429,8 +436,8 @@ fun CreateStoryScreen(
             Text(
                 text = "\uD83D\uDCD6 Nouvelle histoire",
                 fontFamily = fonts.display,
-                color = Color.White,
-                fontSize = 26.sp,
+                color = textStyles.titleColor ?: Color.White,
+                fontSize = textStyles.titleSp(26f),
                 textAlign = TextAlign.Center,
                 letterSpacing = 1.sp,
                 style = TextStyle(
@@ -452,11 +459,12 @@ fun CreateStoryScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // --- Import d'une identite exportee ---
-                SectionTitle("Importer une identité exportée (optionnel)", fonts)
+                SectionTitle("Importer une identité exportée (optionnel)", fonts, textStyles)
                 ComicButton(
                     text = if (importing) "Import en cours…" else "Choisir un fichier",
                     onClick = { pickIdentityFile.launch("*/*") },
                     fonts = fonts,
+                    textStyles = textStyles,
                     secondary = true,
                     enabled = !importing && !saving
                 )
@@ -475,6 +483,7 @@ fun CreateStoryScreen(
                     value = title,
                     onValueChange = { title = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     singleLine = true
                 )
@@ -483,6 +492,7 @@ fun CreateStoryScreen(
                     value = subtitle,
                     onValueChange = { subtitle = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     singleLine = true
                 )
@@ -491,6 +501,7 @@ fun CreateStoryScreen(
                     value = loreText,
                     onValueChange = { loreText = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     minHeight = 110.dp
                 )
@@ -499,18 +510,19 @@ fun CreateStoryScreen(
                     value = protagonistName,
                     onValueChange = { protagonistName = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     singleLine = true
                 )
 
                 // --- Longueur de l'histoire ---
-                SectionTitle("Longueur de l'histoire", fonts)
+                SectionTitle("Longueur de l'histoire", fonts, textStyles)
                 Text(
                     text = "Détermine combien de temps dure l'aventure, et si l'IA doit " +
                         "la découper en chapitres.",
                     fontFamily = fonts.body,
-                    fontSize = 13.sp,
-                    color = Color.White,
+                    fontSize = textStyles.bodySp(13f),
+                    color = textStyles.bodyColor ?: Color.White,
                     style = TextStyle(shadow = TextShadow)
                 )
                 Row(
@@ -521,6 +533,7 @@ fun CreateStoryScreen(
                         text = "Courte\n(~10 échanges)",
                         onClick = { storyLength = "short" },
                         fonts = fonts,
+                        textStyles = textStyles,
                         secondary = storyLength != "short",
                         enabled = !saving,
                         modifier = Modifier.weight(1f)
@@ -529,6 +542,7 @@ fun CreateStoryScreen(
                         text = "Moyenne\n(20 à 30)",
                         onClick = { storyLength = "medium" },
                         fonts = fonts,
+                        textStyles = textStyles,
                         secondary = storyLength != "medium",
                         enabled = !saving,
                         modifier = Modifier.weight(1f)
@@ -537,6 +551,7 @@ fun CreateStoryScreen(
                         text = "Longue\n(chapitres)",
                         onClick = { storyLength = "long" },
                         fonts = fonts,
+                        textStyles = textStyles,
                         secondary = storyLength != "long",
                         enabled = !saving,
                         modifier = Modifier.weight(1f)
@@ -548,14 +563,14 @@ fun CreateStoryScreen(
                             "l'histoire en chapitres (chacun avec une vraie fin) et te " +
                             "demandera avant de commencer le suivant.",
                         fontFamily = fonts.body,
-                        fontSize = 12.sp,
-                        color = Color.White,
+                        fontSize = textStyles.bodySp(12f),
+                        color = textStyles.bodyColor ?: Color.White,
                         style = TextStyle(shadow = TextShadow)
                     )
                 }
 
                 // --- Objectif moral (optionnel) ---
-                SectionTitle("Objectif moral (optionnel)", fonts)
+                SectionTitle("Objectif moral (optionnel)", fonts, textStyles)
                 Text(
                     text = "En plus de l'univers décrit plus haut (qui reste la trame de " +
                         "l'histoire), une valeur ou une notion que l'aventure doit mettre en " +
@@ -563,8 +578,8 @@ fun CreateStoryScreen(
                         "courage face à la peur, entraide... L'IA la fait vivre par le récit, " +
                         "jamais par un discours moralisateur direct.",
                     fontFamily = fonts.body,
-                    fontSize = 13.sp,
-                    color = Color.White,
+                    fontSize = textStyles.bodySp(13f),
+                    color = textStyles.bodyColor ?: Color.White,
                     style = TextStyle(shadow = TextShadow)
                 )
                 ComicTextField(
@@ -572,12 +587,13 @@ fun CreateStoryScreen(
                     value = moralGoal,
                     onValueChange = { moralGoal = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     minHeight = 70.dp
                 )
 
                 // --- Image de fond ---
-                SectionTitle("Image de fond", fonts)
+                SectionTitle("Image de fond", fonts, textStyles)
                 ComicButton(
                     text = if (bgUri == null && importedBgBytes == null) "Choisir une image" else "Changer l'image",
                     onClick = {
@@ -586,6 +602,7 @@ fun CreateStoryScreen(
                         )
                     },
                     fonts = fonts,
+                    textStyles = textStyles,
                     secondary = true,
                     enabled = !saving
                 )
@@ -620,12 +637,13 @@ fun CreateStoryScreen(
                 }
 
                 // --- Totem de depart ---
-                SectionTitle("Totem de départ", fonts)
+                SectionTitle("Totem de départ", fonts, textStyles)
                 ComicTextField(
                     label = "Nom du totem",
                     value = totemLabel,
                     onValueChange = { totemLabel = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     singleLine = true
                 )
@@ -634,6 +652,7 @@ fun CreateStoryScreen(
                     value = totemPowers,
                     onValueChange = { totemPowers = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     minHeight = 60.dp
                 )
@@ -642,6 +661,7 @@ fun CreateStoryScreen(
                     value = totemSpecial,
                     onValueChange = { totemSpecial = it },
                     fonts = fonts,
+                    textStyles = textStyles,
                     enabled = !saving,
                     minHeight = 60.dp
                 )
@@ -662,6 +682,7 @@ fun CreateStoryScreen(
                             )
                         },
                         fonts = fonts,
+                        textStyles = textStyles,
                         secondary = true,
                         enabled = !saving,
                         modifier = Modifier.weight(1f)
@@ -713,7 +734,8 @@ fun CreateStoryScreen(
                     ComicButton(
                         text = "Créer l'histoire",
                         onClick = { submit() },
-                        fonts = fonts
+                        fonts = fonts,
+                        textStyles = textStyles
                     )
                 }
             }
@@ -723,13 +745,13 @@ fun CreateStoryScreen(
 
 /** Intitule de section : Bangers blanc pose directement sur l'image. */
 @Composable
-private fun SectionTitle(text: String, fonts: AppFonts) {
+private fun SectionTitle(text: String, fonts: AppFonts, textStyles: AppTextStyles) {
     Text(
         text = text,
         fontFamily = fonts.display,
-        fontSize = 19.sp,
+        fontSize = textStyles.titleSp(19f),
         letterSpacing = 0.5.sp,
-        color = Color.White,
+        color = textStyles.titleColor ?: Color.White,
         style = TextStyle(shadow = TextShadow),
         modifier = Modifier.padding(top = 6.dp)
     )
@@ -745,6 +767,7 @@ private fun ComicTextField(
     value: String,
     onValueChange: (String) -> Unit,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     singleLine: Boolean = false,
@@ -759,8 +782,8 @@ private fun ComicTextField(
         Text(
             text = label,
             fontFamily = fonts.bodyBold,
-            fontSize = 14.sp,
-            color = Color.White,
+            fontSize = textStyles.bodySp(14f),
+            color = textStyles.bodyColor ?: Color.White,
             style = TextStyle(shadow = TextShadow),
             modifier = Modifier.padding(bottom = 6.dp)
         )
@@ -781,8 +804,8 @@ private fun ComicTextField(
             enabled = enabled,
             textStyle = TextStyle(
                 fontFamily = fonts.body,
-                fontSize = 15.sp,
-                color = Color.White,
+                fontSize = textStyles.bodySp(15f),
+                color = textStyles.bodyColor ?: Color.White,
                 shadow = TextShadow
             ),
             cursorBrush = SolidColor(Color.White),
@@ -806,6 +829,7 @@ private fun ComicButton(
     text: String,
     onClick: () -> Unit,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     modifier: Modifier = Modifier,
     secondary: Boolean = false,
     enabled: Boolean = true,
@@ -842,8 +866,8 @@ private fun ComicButton(
             Text(
                 text = text,
                 fontFamily = fonts.display,
-                color = textColor.copy(alpha = alpha),
-                fontSize = 16.sp,
+                color = (textStyles.titleColor ?: textColor).copy(alpha = alpha),
+                fontSize = textStyles.titleSp(16f),
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Center,
                 // Meme ombre que les titres des champs : le texte ressort sur l'image.

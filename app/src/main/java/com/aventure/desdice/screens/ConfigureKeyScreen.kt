@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -53,9 +54,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.bodySp
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberAppTextStyles
+import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
 
@@ -97,6 +103,9 @@ fun ConfigureKeyScreen(
 ) {
     val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
+    val context = LocalContext.current
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val textStyles = rememberAppTextStyles(fonts, fontPrefs)
 
     val configState by viewModel.configScreenState.collectAsState()
     val loading = configState == null
@@ -214,8 +223,8 @@ fun ConfigureKeyScreen(
             Text(
                 text = "\uD83D\uDD11 Clé API Mistral",
                 fontFamily = fonts.display,
-                color = Color.White,
-                fontSize = 26.sp,
+                color = textStyles.titleColor ?: Color.White,
+                fontSize = textStyles.titleSp(26f),
                 textAlign = TextAlign.Center,
                 letterSpacing = 1.sp,
                 style = TextStyle(
@@ -244,6 +253,7 @@ fun ConfigureKeyScreen(
                             KeyStatusBlock(
                                 maskedKey = maskedKey,
                                 fonts = fonts,
+                                textStyles = textStyles,
                                 saving = saving,
                                 onContinue = onDone,
                                 onChangeKey = { showChangeForm = true },
@@ -252,6 +262,7 @@ fun ConfigureKeyScreen(
                         } else {
                             NoKeyBlock(
                                 fonts = fonts,
+                                textStyles = textStyles,
                                 keyInput = keyInput,
                                 onKeyInputChange = { keyInput = it },
                                 saving = saving,
@@ -283,7 +294,7 @@ fun ConfigureKeyScreen(
                         Text(
                             text = "Modèle utilisé pour la narration",
                             fontFamily = fonts.bodyBold,
-                            color = Color.White,
+                            color = textStyles.bodyColor ?: Color.White,
                             style = TextStyle(shadow = TextShadow),
                             modifier = Modifier.padding(bottom = 6.dp)
                         )
@@ -291,8 +302,8 @@ fun ConfigureKeyScreen(
                             text = "Plus le modèle est riche, plus les histoires sont détaillées — " +
                                 "mais aussi (légèrement) plus coûteux sur ton forfait Mistral. " +
                                 "Modifiable à tout moment, même en cours de partie.",
-                            fontSize = 14.sp,
-                            color = Color.White.copy(alpha = 0.95f),
+                            fontSize = textStyles.bodySp(14f),
+                            color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.95f),
                             fontFamily = fonts.body,
                             style = TextStyle(shadow = TextShadow),
                             modifier = Modifier.padding(bottom = 10.dp)
@@ -303,6 +314,7 @@ fun ConfigureKeyScreen(
                             selectedModel = selectedModel,
                             enabled = !saving,
                             fonts = fonts,
+                            textStyles = textStyles,
                             onSelect = { value -> selectModel(value) }
                         )
                     }
@@ -325,6 +337,7 @@ fun ConfigureKeyScreen(
 private fun KeyStatusBlock(
     maskedKey: String,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     saving: Boolean,
     onContinue: () -> Unit,
     onChangeKey: () -> Unit,
@@ -357,15 +370,15 @@ private fun KeyStatusBlock(
     }
 
     Spacer(Modifier.height(10.dp))
-    ComicButton(text = "Continuer vers les histoires \u2192", onClick = onContinue, fonts = fonts, enabled = !saving)
+    ComicButton(text = "Continuer vers les histoires \u2192", onClick = onContinue, fonts = fonts, textStyles = textStyles, enabled = !saving)
     Spacer(Modifier.height(8.dp))
-    ComicButton(text = "Changer la clé", onClick = onChangeKey, fonts = fonts, secondary = true, enabled = !saving)
+    ComicButton(text = "Changer la clé", onClick = onChangeKey, fonts = fonts, textStyles = textStyles, secondary = true, enabled = !saving)
     Spacer(Modifier.height(8.dp))
     if (confirmRemove) {
         Text(
             text = "Retirer la clé API et revenir au mode manuel ?",
-            fontSize = 14.sp,
-            color = Color.White,
+            fontSize = textStyles.bodySp(14f),
+            color = textStyles.bodyColor ?: Color.White,
             fontFamily = fonts.body,
             style = TextStyle(shadow = TextShadow),
             modifier = Modifier.padding(bottom = 6.dp)
@@ -375,6 +388,7 @@ private fun KeyStatusBlock(
                 text = "Confirmer",
                 onClick = { confirmRemove = false; onRemoveKey() },
                 fonts = fonts,
+                textStyles = textStyles,
                 danger = true,
                 enabled = !saving,
                 modifier = Modifier.weight(1f)
@@ -383,19 +397,21 @@ private fun KeyStatusBlock(
                 text = "Annuler",
                 onClick = { confirmRemove = false },
                 fonts = fonts,
+                textStyles = textStyles,
                 secondary = true,
                 enabled = !saving,
                 modifier = Modifier.weight(1f)
             )
         }
     } else {
-        ComicButton(text = "Retirer la clé", onClick = { confirmRemove = true }, fonts = fonts, danger = true, enabled = !saving)
+        ComicButton(text = "Retirer la clé", onClick = { confirmRemove = true }, fonts = fonts, textStyles = textStyles, danger = true, enabled = !saving)
     }
 }
 
 @Composable
 private fun NoKeyBlock(
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     keyInput: String,
     onKeyInputChange: (String) -> Unit,
     saving: Boolean,
@@ -409,8 +425,8 @@ private fun NoKeyBlock(
             "console.mistral.ai, email + mot de passe, sans carte bancaire) pour " +
             "que l'histoire s'écrive toute seule à chaque lancer, quelle que soit " +
             "l'histoire choisie ensuite.",
-        fontSize = 14.sp,
-        color = Color.White.copy(alpha = 0.95f),
+        fontSize = textStyles.bodySp(14f),
+        color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.95f),
         fontFamily = fonts.body,
         style = TextStyle(shadow = TextShadow),
         modifier = Modifier.padding(bottom = 12.dp)
@@ -423,7 +439,7 @@ private fun NoKeyBlock(
         enabled = !saving,
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        textStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink),
+        textStyle = TextStyle(fontFamily = fonts.body, fontSize = textStyles.bodySp(15f), color = Ink),
         cursorBrush = SolidColor(Ink),
         modifier = Modifier
             .fillMaxWidth()
@@ -437,7 +453,7 @@ private fun NoKeyBlock(
                     Text(
                         text = "Clé API Mistral",
                         fontFamily = fonts.body,
-                        fontSize = 15.sp,
+                        fontSize = textStyles.bodySp(15f),
                         color = Ink.copy(alpha = 0.5f)
                     )
                 }
@@ -451,13 +467,14 @@ private fun NoKeyBlock(
         text = "\uD83D\uDD11 Activer la narration automatique",
         onClick = onActivate,
         fonts = fonts,
+        textStyles = textStyles,
         enabled = !saving && keyInput.isNotBlank()
     )
     Spacer(Modifier.height(8.dp))
     if (showCancel) {
-        ComicButton(text = "Annuler", onClick = onCancel, fonts = fonts, secondary = true, enabled = !saving)
+        ComicButton(text = "Annuler", onClick = onCancel, fonts = fonts, textStyles = textStyles, secondary = true, enabled = !saving)
     } else {
-        ComicButton(text = "Passer pour l'instant \u2192", onClick = onSkip, fonts = fonts, secondary = true, enabled = !saving)
+        ComicButton(text = "Passer pour l'instant \u2192", onClick = onSkip, fonts = fonts, textStyles = textStyles, secondary = true, enabled = !saving)
     }
 }
 
@@ -468,6 +485,7 @@ private fun ComicButton(
     text: String,
     onClick: () -> Unit,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     modifier: Modifier = Modifier,
     secondary: Boolean = false,
     danger: Boolean = false,
@@ -503,7 +521,7 @@ private fun ComicButton(
                 text = text,
                 fontFamily = fonts.display,
                 color = textColor.copy(alpha = alpha),
-                fontSize = 16.sp,
+                fontSize = textStyles.titleSp(16f),
                 letterSpacing = 1.sp,
                 textAlign = TextAlign.Center
             )
@@ -521,6 +539,7 @@ private fun ModelDropdown(
     selectedModel: String,
     enabled: Boolean,
     fonts: AppFonts,
+    textStyles: AppTextStyles,
     onSelect: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -543,7 +562,7 @@ private fun ModelDropdown(
                 text = selectedLabel,
                 fontFamily = fonts.body,
                 color = Ink,
-                fontSize = 14.sp,
+                fontSize = textStyles.bodySp(14f),
                 modifier = Modifier.weight(1f)
             )
             Text(text = "\u25BE", fontSize = 18.sp, color = Ink)
@@ -561,7 +580,7 @@ private fun ModelDropdown(
                             text = label,
                             fontFamily = fonts.body,
                             color = Ink,
-                            fontSize = 14.sp
+                            fontSize = textStyles.bodySp(14f)
                         )
                     },
                     onClick = {
