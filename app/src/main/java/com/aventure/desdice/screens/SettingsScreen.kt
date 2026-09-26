@@ -3,11 +3,15 @@ package com.aventure.desdice.screens
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -41,6 +45,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,8 +59,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -80,6 +87,10 @@ import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.listAssetFonts
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.ui.TextStyleChoice
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 import kotlinx.coroutines.launch
 
 // Palette identique aux autres écrans. Noms préfixés "S" et privés pour ne pas
@@ -599,6 +610,55 @@ private fun MusicCard(fonts: AppFonts) {
             ),
             modifier = Modifier.fillMaxWidth()
         )
+        if (hasTracks) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 14.dp)
+                    .height(2.dp)
+                    .background(SLineColor)
+            )
+            Text(
+                text = "Morceaux tirés au sort",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = "Décoche ceux que tu ne veux pas entendre : ils ne seront jamais tirés.",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.85f),
+                fontFamily = fonts.body,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
+            val tracks = remember { MusicPlayer.listTracks() }
+            tracks.forEach { track ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Text(
+                        text = track.label,
+                        fontFamily = fonts.body,
+                        color = Color.White,
+                        style = TextStyle(shadow = STextShadow),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = soundPrefs.isTrackEnabled(track.name),
+                        onCheckedChange = { soundPrefs.setTrackEnabled(track.name, it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = SRed,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
+        }
         if (hasTracks && !muted) {
             Spacer(Modifier.height(6.dp))
             SettingsButton(
@@ -784,26 +844,12 @@ private fun TextStyleSection(
             style = TextStyle(shadow = STextShadow),
             modifier = Modifier.padding(bottom = 8.dp)
         )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ColorSwatch(
-                color = null,
-                label = "Auto",
-                selected = choice.color == null,
-                onClick = { choice.setColor(null) }
-            )
-            FontPrefs.TEXT_COLOR_PRESETS.forEach { (label, swatch) ->
-                ColorSwatch(
-                    color = swatch,
-                    label = label,
-                    selected = choice.color == swatch,
-                    onClick = { choice.setColor(swatch) }
-                )
-            }
-        }
+        ColorWheelPicker(
+            color = choice.color,
+            onColorSelected = { choice.setColor(it) },
+            onReset = { choice.setColor(null) },
+            fonts = fonts
+        )
 
         Box(
             modifier = Modifier
@@ -876,6 +922,118 @@ private fun TextStyleSection(
             }
         }
     }
+}
+
+/**
+ * Roue chromatique (teinte + saturation) avec un curseur de luminosité en dessous, pour
+ * choisir une couleur de texte librement plutôt que parmi des pastilles prédéfinies.
+ * Taper ou faire glisser le doigt sur la roue choisit la teinte (angle) et la saturation
+ * (distance au centre) ; le rond "Auto" à côté revient à la couleur automatique de l'écran.
+ */
+@Composable
+private fun ColorWheelPicker(
+    color: Color?,
+    onColorSelected: (Color) -> Unit,
+    onReset: () -> Unit,
+    fonts: AppFonts
+) {
+    // Teinte/saturation/luminosité de départ : dérivées de la couleur déjà choisie, ou d'un
+    // point neutre par défaut si "Auto" (le curseur n'a pas encore de position propre).
+    val startHsv = remember(color) {
+        val c = color ?: Color(0xFFFFC94D)
+        val out = FloatArray(3)
+        AndroidColor.RGBToHSV((c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt(), out)
+        out
+    }
+    var hue by remember(color) { mutableFloatStateOf(startHsv[0]) }
+    var sat by remember(color) { mutableFloatStateOf(startHsv[1]) }
+    var value by remember(color) { mutableFloatStateOf(startHsv[2].coerceAtLeast(0.3f)) }
+
+    fun currentColor() = Color(AndroidColor.HSVToColor(floatArrayOf(hue, sat, value)))
+
+    fun pickAt(x: Float, y: Float, sizePx: Float) {
+        val radius = sizePx / 2f
+        val dx = x - radius
+        val dy = y - radius
+        val dist = hypot(dx, dy).coerceAtMost(radius)
+        var angle = Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
+        if (angle < 0) angle += 360f
+        hue = angle
+        sat = if (radius > 0f) (dist / radius).coerceIn(0f, 1f) else 0f
+        onColorSelected(currentColor())
+    }
+
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        val wheelSize = 190.dp
+        Box(
+            modifier = Modifier
+                .size(wheelSize)
+                .pointerInput(Unit) {
+                    detectTapGestures { offset -> pickAt(offset.x, offset.y, size.width.toFloat()) }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures { change, _ ->
+                        change.consume()
+                        pickAt(change.position.x, change.position.y, size.width.toFloat())
+                    }
+                }
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val radius = size.minDimension / 2f
+                // Teinte en anneau (sweep), puis blanc->transparent du centre vers le bord pour
+                // la saturation : au centre, toutes les teintes se rejoignent en blanc, comme
+                // sur un cercle chromatique classique.
+                drawCircle(
+                    brush = Brush.sweepGradient(
+                        (0..360 step 30).map { deg ->
+                            Color(AndroidColor.HSVToColor(floatArrayOf(deg.toFloat(), 1f, 1f)))
+                        }
+                    )
+                )
+                drawCircle(brush = Brush.radialGradient(listOf(Color.White, Color.Transparent), radius = radius))
+                if (value < 1f) {
+                    // Assombrit l'ensemble pour représenter la luminosité choisie.
+                    drawCircle(color = Color.Black.copy(alpha = 1f - value))
+                }
+                if (color != null) {
+                    val angleRad = Math.toRadians(hue.toDouble())
+                    val r = sat * radius
+                    val point = Offset(
+                        x = center.x + (r * cos(angleRad)).toFloat(),
+                        y = center.y + (r * sin(angleRad)).toFloat()
+                    )
+                    drawCircle(color = Color.White, radius = 8.dp.toPx(), center = point, style = Stroke(width = 3.dp.toPx()))
+                    drawCircle(color = Color.Black.copy(alpha = 0.6f), radius = 8.dp.toPx(), center = point, style = Stroke(width = 1.dp.toPx()))
+                }
+            }
+        }
+
+        ColorSwatch(
+            color = null,
+            label = "Auto",
+            selected = color == null,
+            onClick = onReset
+        )
+    }
+
+    Spacer(Modifier.height(14.dp))
+    Text(
+        text = "Luminosité",
+        fontFamily = fonts.bodyBold,
+        color = Color.White,
+        style = TextStyle(shadow = STextShadow)
+    )
+    Slider(
+        value = value,
+        onValueChange = { value = it; onColorSelected(currentColor()) },
+        valueRange = 0.15f..1f,
+        colors = SliderDefaults.colors(
+            thumbColor = Color.White,
+            activeTrackColor = SRed,
+            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
