@@ -102,8 +102,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.aventure.desdice.ui.AppFonts
+import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.MusicPlayer
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberAppTextStyles
 import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
@@ -513,6 +515,8 @@ fun DiceResultCard(
     val fonts = rememberAppFonts()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val fontPrefs = remember(context) { FontPrefs.get(context) }
+    val textStyles = rememberAppTextStyles(fonts, fontPrefs)
     val textMeasurer = rememberTextMeasurer()
     val playDiceRollSound = rememberDiceRollSound()
 
@@ -657,7 +661,7 @@ fun DiceResultCard(
                     val spec = spin?.success
                     if (spec != null) {
                         Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
-                            TumblingDie(spec, progress, null, fonts, Color.White, pipGlyphs = spinGlyphs)
+                            TumblingDie(spec, progress, null, fonts, textStyles, Color.White, pipGlyphs = spinGlyphs)
                         }
                     } else {
                         DieBox(
@@ -686,7 +690,7 @@ fun DiceResultCard(
                     val spec = spin?.fate
                     if (spec != null) {
                         Box(Modifier.size(dieSize).graphicsLayer { rotationZ = 1f }) {
-                            TumblingDie(spec, progress, cubeFateFaces, fonts, FateDieBg)
+                            TumblingDie(spec, progress, cubeFateFaces, fonts, textStyles, FateDieBg)
                         }
                     } else {
                         DieBox(
@@ -696,7 +700,7 @@ fun DiceResultCard(
                             onClick = { roll("fate") },
                             enabled = !rolling
                         ) {
-                            FateDieFace(fateFace, fonts)
+                            FateDieFace(fateFace, fonts, textStyles)
                         }
                     }
                 }
