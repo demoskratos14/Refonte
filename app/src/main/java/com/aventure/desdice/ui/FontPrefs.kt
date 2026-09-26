@@ -1,6 +1,7 @@
 package com.aventure.desdice.ui
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Typeface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -14,64 +15,128 @@ import androidx.compose.ui.text.font.FontFamily
 data class FontOption(val file: String, val label: String)
 
 /**
- * Choix de polices de l'utilisateur, mémorisés dans les SharedPreferences.
+ * Réglages complets (police, couleur, taille) d'UNE catégorie de texte, persistés dans les
+ * SharedPreferences fournies sous les 3 clés passées au constructeur.
  *
- * Les deux propriétés sont des états Compose : tout écran qui appelle
- * rememberAppFonts() est recomposé automatiquement dès qu'un choix change.
- * `null` = police par défaut (Nunito pour le texte, Bangers pour les titres).
+ * Chaque catégorie de FontPrefs ([FontPrefs.title], [FontPrefs.body], [FontPrefs.reply]) est
+ * une instance indépendante : changer la couleur des titres n'affecte ni la police du texte
+ * courant, ni la taille des réponses de l'IA.
+ *
+ * `fontFile == null` = police par défaut de la catégorie ; `color == null` = couleur
+ * automatique (celle de l'écran / du thème, comme avant l'ajout de ce réglage). Toutes les
+ * propriétés sont des états Compose : tout écran qui les lit est recomposé automatiquement dès
+ * qu'elles changent.
+ */
+class TextStyleChoice internal constructor(
+    private val prefs: SharedPreferences,
+    private val keyFont: String,
+    private val keyColor: String,
+    private val keySize: String,
+    defaultFontFile: String?,
+    defaultSizeSp: Float,
+    val minSizeSp: Float,
+    val maxSizeSp: Float
+) {
+    /** Fichier choisi dans assets/fonts, ou null = police par défaut de la catégorie. */
+    var fontFile: String? by mutableStateOf(prefs.getString(keyFont, defaultFontFile))
+        private set
+
+    private var colorArgb: Int? by mutableStateOf(
+        prefs.getInt(keyColor, NO_COLOR).takeIf { it != NO_COLOR }
+    )
+
+    /** Couleur choisie, ou null = automatique. */
+    val color: Color? get() = colorArgb?.let { Color(it) }
+
+    /** Taille du texte, en sp. */
+    var sizeSp: Float by mutableFloatStateOf(
+        prefs.getFloat(keySize, defaultSizeSp).coerceIn(minSizeSp, maxSizeSp)
+    )
+        private set
+
+    fun setFont(file: String?) {
+        fontFile = file
+        prefs.edit().apply {
+            if (file == null) remove(keyFont) else putString(keyFont, file)
+        }.apply()
+    }
+
+    fun setColor(newColor: Color?) {
+        colorArgb = newColor?.let { it.toArgb() and 0x00FFFFFF or (0xFF shl 24) }
+        prefs.edit().apply {
+            if (newColor == null) remove(keyColor) else putInt(keyColor, colorArgb!!)
+        }.apply()
+    }
+
+    fun setSize(sp: Float) {
+        sizeSp = sp.coerceIn(minSizeSp, maxSizeSp)
+        prefs.edit().putFloat(keySize, sizeSp).apply()
+    }
+
+    private companion object {
+        const val NO_COLOR = 0
+    }
+}
+
+/**
+ * Choix de polices/couleurs/tailles de l'utilisateur, mémorisés dans les SharedPreferences.
+ *
+ * Trois catégories indépendantes (chacune une [TextStyleChoice]) :
+ *   - [title] : titres (histoires, en-têtes, boutons). Par défaut Bangers.
+ *   - [body]  : texte courant (descriptions, libellés d'interface, narration hors bulles IA).
+ *     Par défaut Nunito.
+ *   - [reply] : échanges avec l'IA narratrice (bulles de conversation + champ de saisie du
+ *     joueur). Par défaut la même police que [body], réglable séparément.
+ *
+ * Réglages > page « Écriture ».
  */
 class FontPrefs private constructor(private val appContext: Context) {
 
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    /** Police du texte courant de l'appli (nom de fichier dans assets/fonts). */
-    var bodyFontFile: String? by mutableStateOf(prefs.getString(KEY_BODY, null))
-        private set
-
-    /** Police des titres (histoires, en-têtes, boutons). */
-    var titleFontFile: String? by mutableStateOf(prefs.getString(KEY_TITLE, null))
-        private set
-
-    fun setBodyFont(file: String?) {
-        bodyFontFile = file
-        prefs.edit().putString(KEY_BODY, file).apply()
-    }
-
-    fun setTitleFont(file: String?) {
-        titleFontFile = file
-        prefs.edit().putString(KEY_TITLE, file).apply()
-    }
+    val title = TextStyleChoice(
+        prefs, KEY_TITLE_FONT, KEY_TITLE_COLOR, KEY_TITLE_SIZE,
+        DEFAULT_TITLE_FILE, DEFAULT_TITLE_SIZE_SP, MIN_TITLE_SIZE_SP, MAX_TITLE_SIZE_SP
+    )
+    val body = TextStyleChoice(
+        prefs, KEY_BODY_FONT, KEY_BODY_COLOR, KEY_BODY_SIZE,
+        DEFAULT_BODY_FILE, DEFAULT_BODY_SIZE_SP, MIN_BODY_SIZE_SP, MAX_BODY_SIZE_SP
+    )
+    val reply = TextStyleChoice(
+        prefs, KEY_REPLY_FONT, KEY_REPLY_COLOR, KEY_REPLY_SIZE,
+        DEFAULT_BODY_FILE, DEFAULT_REPLY_SIZE_SP, MIN_REPLY_SIZE_SP, MAX_REPLY_SIZE_SP
+    )
 
     // ------------------------------------------------------------------
-    // Couleur et taille du texte des zones de réponse (échanges avec l'IA,
-    // champ de saisie du joueur). Réglages > page « Écriture ».
+    // Compatibilité avec l'ancienne API à plat (utilisée ailleurs dans le projet avant
+    // l'introduction de title/body/reply). Ne stocke rien de nouveau : délègue directement
+    // aux instances ci-dessus, mêmes clés SharedPreferences qu'avant pour body/title/reply
+    // couleur+taille -> aucune perte de réglage déjà enregistré par un utilisateur.
+    // Préférer title/body/reply directement dans le nouveau code.
     // ------------------------------------------------------------------
+    @Deprecated("Utiliser body.fontFile", ReplaceWith("body.fontFile"))
+    val bodyFontFile: String? get() = body.fontFile
 
-    /** Couleur choisie, ou null = automatique (couleur par défaut de l'écran). */
-    var replyTextColorArgb: Int? by mutableStateOf(
-        prefs.getInt(KEY_REPLY_COLOR, NO_COLOR).takeIf { it != NO_COLOR }
-    )
-        private set
+    @Deprecated("Utiliser title.fontFile", ReplaceWith("title.fontFile"))
+    val titleFontFile: String? get() = title.fontFile
 
-    val replyTextColor: Color? get() = replyTextColorArgb?.let { Color(it) }
+    @Deprecated("Utiliser body.setFont(file)", ReplaceWith("body.setFont(file)"))
+    fun setBodyFont(file: String?) = body.setFont(file)
 
-    /** Taille du texte des réponses, en sp. */
-    var replyTextSizeSp: Float by mutableFloatStateOf(
-        prefs.getFloat(KEY_REPLY_SIZE, DEFAULT_REPLY_SIZE_SP)
-    )
-        private set
+    @Deprecated("Utiliser title.setFont(file)", ReplaceWith("title.setFont(file)"))
+    fun setTitleFont(file: String?) = title.setFont(file)
 
-    fun setReplyTextColor(color: Color?) {
-        replyTextColorArgb = color?.let { it.toArgb() and 0x00FFFFFF or (0xFF shl 24) }
-        prefs.edit().apply {
-            if (color == null) remove(KEY_REPLY_COLOR) else putInt(KEY_REPLY_COLOR, replyTextColorArgb!!)
-        }.apply()
-    }
+    @Deprecated("Utiliser reply.color", ReplaceWith("reply.color"))
+    val replyTextColor: Color? get() = reply.color
 
-    fun setReplyTextSize(sp: Float) {
-        replyTextSizeSp = sp.coerceIn(MIN_REPLY_SIZE_SP, MAX_REPLY_SIZE_SP)
-        prefs.edit().putFloat(KEY_REPLY_SIZE, replyTextSizeSp).apply()
-    }
+    @Deprecated("Utiliser reply.sizeSp", ReplaceWith("reply.sizeSp"))
+    val replyTextSizeSp: Float get() = reply.sizeSp
+
+    @Deprecated("Utiliser reply.setColor(color)", ReplaceWith("reply.setColor(color)"))
+    fun setReplyTextColor(color: Color?) = reply.setColor(color)
+
+    @Deprecated("Utiliser reply.setSize(sp)", ReplaceWith("reply.setSize(sp)"))
+    fun setReplyTextSize(sp: Float) = reply.setSize(sp)
 
     private val familyCache = HashMap<String, FontFamily?>()
 
@@ -88,12 +153,21 @@ class FontPrefs private constructor(private val appContext: Context) {
         const val FONTS_DIR = "fonts"
         const val DEFAULT_BODY_FILE = "Nunito-Regular.ttf"
         const val DEFAULT_TITLE_FILE = "Bangers-Regular.ttf"
+
+        const val DEFAULT_TITLE_SIZE_SP = 22f
+        const val MIN_TITLE_SIZE_SP = 16f
+        const val MAX_TITLE_SIZE_SP = 34f
+
+        const val DEFAULT_BODY_SIZE_SP = 15f
+        const val MIN_BODY_SIZE_SP = 12f
+        const val MAX_BODY_SIZE_SP = 20f
+
         const val DEFAULT_REPLY_SIZE_SP = 15f
         const val MIN_REPLY_SIZE_SP = 12f
         const val MAX_REPLY_SIZE_SP = 24f
 
-        /** Couleurs proposées dans les Réglages ; "Auto" (null) n'y figure pas, gérée à part. */
-        val REPLY_TEXT_COLOR_PRESETS: List<Pair<String, Color>> = listOf(
+        /** Couleurs proposées dans les Réglages, communes aux 3 catégories ; "Auto" (null) gérée à part. */
+        val TEXT_COLOR_PRESETS: List<Pair<String, Color>> = listOf(
             "Blanc" to Color(0xFFFFFFFF),
             "Crème" to Color(0xFFFBF3E1),
             "Ambre" to Color(0xFFFFC94D),
@@ -105,11 +179,23 @@ class FontPrefs private constructor(private val appContext: Context) {
         )
 
         private const val PREFS_NAME = "app_font_prefs"
-        private const val KEY_BODY = "body_font_file"
-        private const val KEY_TITLE = "title_font_file"
+
+        // Mêmes clés qu'avant la refonte pour la police du texte/titres et pour la
+        // couleur/taille des réponses IA : les réglages déjà enregistrés par un utilisateur
+        // sont conservés tels quels après mise à jour de l'appli.
+        private const val KEY_TITLE_FONT = "title_font_file"
+        private const val KEY_TITLE_COLOR = "title_color_argb"
+        private const val KEY_TITLE_SIZE = "title_size_sp"
+
+        private const val KEY_BODY_FONT = "body_font_file"
+        private const val KEY_BODY_COLOR = "body_color_argb"
+        private const val KEY_BODY_SIZE = "body_size_sp"
+
+        // La police des réponses IA est un nouveau réglage (avant : toujours celle du texte
+        // courant) -> nouvelle clé, pas de conflit possible.
+        private const val KEY_REPLY_FONT = "reply_font_file"
         private const val KEY_REPLY_COLOR = "reply_text_color_argb"
         private const val KEY_REPLY_SIZE = "reply_text_size_sp"
-        private const val NO_COLOR = 0
 
         @Volatile
         private var instance: FontPrefs? = null
