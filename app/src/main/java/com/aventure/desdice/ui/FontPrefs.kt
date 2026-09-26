@@ -166,17 +166,8 @@ class FontPrefs private constructor(private val appContext: Context) {
         const val MIN_REPLY_SIZE_SP = 12f
         const val MAX_REPLY_SIZE_SP = 24f
 
-        /** Couleurs proposées dans les Réglages, communes aux 3 catégories ; "Auto" (null) gérée à part. */
-        val TEXT_COLOR_PRESETS: List<Pair<String, Color>> = listOf(
-            "Blanc" to Color(0xFFFFFFFF),
-            "Crème" to Color(0xFFFBF3E1),
-            "Ambre" to Color(0xFFFFC94D),
-            "Ciel" to Color(0xFF8FD3FE),
-            "Menthe" to Color(0xFF8FE3B0),
-            "Rose" to Color(0xFFFFA8C5),
-            "Lavande" to Color(0xFFC9A8FF),
-            "Encre" to Color(0xFF14161A)
-        )
+        // Couleurs prédéfinies : remplacées par une roue chromatique (Réglages > Écriture,
+        // ColorWheelPicker dans SettingsScreen.kt) -- plus de liste fixe à proposer ici.
 
         private const val PREFS_NAME = "app_font_prefs"
 

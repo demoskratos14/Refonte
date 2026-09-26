@@ -32,8 +32,15 @@ import com.aventure.desdice.R
  *     propose de la relancer si on en a envie ;
  *   - quand l'appli passe en arrière-plan, la musique continue BACKGROUND_GRACE_MS
  *     (le temps d'aller copier une clé API dans une autre appli, par exemple), puis se
- *     met en pause ; elle reprend toute seule au retour dans l'appli.
+ *     met en pause ; elle reprend toute seule au retour dans l'appli ;
+ *   - Réglages > Écriture... pardon, Réglages > Sons permet de décocher certains morceaux :
+ *     seuls ceux restés cochés (SoundPrefs.isTrackEnabled) sont tirés au sort ici.
  */
+
+/** Un morceau détecté dans res/raw : `name` est le nom de ressource (ex. "music_fantasy_epic",
+ *  stable, sert de clé pour l'activer/le désactiver), `label` un libellé lisible. */
+data class MusicTrack(val name: String, val label: String, val resId: Int)
+
 object MusicPlayer {
 
     private var player: MediaPlayer? = null
@@ -54,31 +61,48 @@ object MusicPlayer {
     var inStory = false
         private set
 
-    private val trackIds: List<Int> by lazy {
+    private val allTracks: List<MusicTrack> by lazy {
         try {
             R.raw::class.java.fields
                 .filter { it.name.startsWith("music_") }
-                .mapNotNull { runCatching { it.getInt(null) }.getOrNull() }
+                .mapNotNull { f ->
+                    runCatching { MusicTrack(f.name, prettyTrackName(f.name), f.getInt(null)) }.getOrNull()
+                }
+                .sortedBy { it.label.lowercase() }
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    fun hasTracks(): Boolean = trackIds.isNotEmpty()
+    /** "music_fantasy_epic" -> "Fantasy epic". */
+    private fun prettyTrackName(resName: String): String =
+        resName.removePrefix("music_").replace('_', ' ').replaceFirstChar { it.uppercase() }
+
+    /** Tous les morceaux détectés dans res/raw, activés ou non (Réglages > Sons). */
+    fun listTracks(): List<MusicTrack> = allTracks
+
+    fun hasTracks(): Boolean = allTracks.isNotEmpty()
+
+    /** Morceaux détectés ET cochés dans les Réglages : seuls ceux-là sont tirés au sort. */
+    private fun enabledTrackIds(context: Context): List<Int> {
+        val prefs = SoundPrefs.get(context)
+        return allTracks.filter { prefs.isTrackEnabled(it.name) }.map { it.resId }
+    }
 
     /** Lance un morceau au hasard (différent du précédent s'il y en a plusieurs). Sans effet si muet ou sans morceau. */
     fun startRandom(context: Context) {
         val app = context.applicationContext
         appContext = app
         val volume = SoundPrefs.get(app).effectiveMusicVolume
-        if (volume <= 0f || trackIds.isEmpty()) return
-        val candidates = if (trackIds.size > 1) trackIds.filter { it != lastTrack } else trackIds
+        val tracks = enabledTrackIds(app)
+        if (volume <= 0f || tracks.isEmpty()) return
+        val candidates = if (tracks.size > 1) tracks.filter { it != lastTrack } else tracks
         val id = candidates.random()
         release()
         try {
             val mp = MediaPlayer.create(app, id) ?: return
             mp.setVolume(volume, volume)
-            if (trackIds.size == 1) {
+            if (tracks.size == 1) {
                 mp.isLooping = true
             } else {
                 mp.setOnCompletionListener { finished ->

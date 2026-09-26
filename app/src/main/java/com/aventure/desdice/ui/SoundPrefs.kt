@@ -64,12 +64,33 @@ class SoundPrefs private constructor(context: Context) {
         prefs.edit().putBoolean(KEY_MUTED, muted).apply()
     }
 
+    // ------------------------------------------------------------------
+    // Morceaux de musique activés/désactivés pour le tirage au sort (Réglages > Sons,
+    // MusicCard). Un morceau non listé ici est considéré activé -- décocher tout
+    // reviendrait simplement à ce qu'aucun morceau ne soit tiré (voir
+    // MusicPlayer.startRandom), sans rapport avec l'interrupteur "Musique" lui-même.
+    // ------------------------------------------------------------------
+
+    /** Noms de ressource (ex. "music_fantasy_epic") des morceaux décochés par l'utilisateur. */
+    var disabledMusicTracks: Set<String> by mutableStateOf(
+        prefs.getStringSet(KEY_DISABLED_TRACKS, emptySet())?.toSet() ?: emptySet()
+    )
+        private set
+
+    fun isTrackEnabled(name: String): Boolean = name !in disabledMusicTracks
+
+    fun setTrackEnabled(name: String, enabled: Boolean) {
+        disabledMusicTracks = if (enabled) disabledMusicTracks - name else disabledMusicTracks + name
+        prefs.edit().putStringSet(KEY_DISABLED_TRACKS, disabledMusicTracks).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "app_sound_prefs"
         private const val KEY_VOLUME = "dice_volume"
         private const val KEY_MUTED = "dice_muted"
         private const val KEY_MUSIC_VOLUME = "music_volume"
         private const val KEY_MUSIC_MUTED = "music_muted"
+        private const val KEY_DISABLED_TRACKS = "disabled_music_tracks"
 
         @Volatile
         private var instance: SoundPrefs? = null
