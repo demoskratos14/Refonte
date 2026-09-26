@@ -71,9 +71,9 @@ import org.json.JSONObject
  * moment du lancer, seul ce texte (`display_content`) est affiché, pas la description
  * technique qui l'accompagnait dans le message réellement envoyé à l'IA.
  *
- * Couleur et taille du texte des échanges (bulles + champ de saisie) suivent les
- * réglages de l'utilisateur (FontPrefs.replyTextColor / replyTextSizeSp, Réglages >
- * Écriture) ; la police suit fonts.body, comme le reste de l'application.
+ * Police, couleur et taille du texte des échanges (bulles + champ de saisie) suivent les
+ * réglages de l'utilisateur (FontPrefs.reply, Réglages > Écriture) — entièrement indépendants
+ * des réglages du texte courant et des titres.
  *
  * Quand la réponse de l'IA se termine par des lignes "OPTION: ..." (voir la consigne
  * PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext), ces lignes
@@ -149,9 +149,9 @@ fun AiPanel(
     val fonts = rememberAppFonts()
     val fontPrefs = remember(context) { FontPrefs.get(context) }
     val replyStyle = TextStyle(
-        fontFamily = fonts.body,
-        fontSize = fontPrefs.replyTextSizeSp.sp,
-        color = fontPrefs.replyTextColor ?: androidx.compose.ui.graphics.Color.Unspecified
+        fontFamily = fonts.reply,
+        fontSize = fontPrefs.reply.sizeSp.sp,
+        color = fontPrefs.reply.color ?: androidx.compose.ui.graphics.Color.Unspecified
     )
 
     var messages by remember { mutableStateOf<List<ChatEntry>>(emptyList()) }
