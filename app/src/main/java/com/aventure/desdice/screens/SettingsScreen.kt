@@ -639,6 +639,19 @@ private fun MusicCard(fonts: AppFonts) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
+                    val isThisPlaying = MusicPlayer.isPlaying && MusicPlayer.currentTrackName == track.name
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.18f))
+                            .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                            .clickable { MusicPlayer.togglePreview(context, track) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = if (isThisPlaying) "⏸" else "▶", fontSize = 14.sp, color = Color.White)
+                    }
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         text = track.label,
                         fontFamily = fonts.body,
@@ -1008,12 +1021,20 @@ private fun ColorWheelPicker(
             }
         }
 
-        ColorSwatch(
-            color = null,
-            label = "Auto",
-            selected = color == null,
-            onClick = onReset
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ColorSwatch(
+                color = null,
+                label = "Auto",
+                selected = color == null,
+                onClick = onReset
+            )
+            ColorSwatch(
+                color = Color.Black,
+                label = "Noir",
+                selected = color == Color.Black,
+                onClick = { onColorSelected(Color.Black) }
+            )
+        }
     }
 
     Spacer(Modifier.height(14.dp))
