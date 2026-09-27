@@ -107,7 +107,7 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
             SettingsScreen(onBack = { showSettings = false })
         }
         !audiencePrefs.hasChosen -> {
-            AudienceChoiceScreen(onChosen = { audiencePrefs.setAudience(it) })
+            AudienceChoiceScreen(onChosen = { audiencePrefs.updateAudience(it) })
         }
         !keyStepDone -> {
             ConfigureKeyScreen(
