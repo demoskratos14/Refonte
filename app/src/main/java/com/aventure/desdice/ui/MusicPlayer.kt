@@ -28,8 +28,9 @@ import com.aventure.desdice.R
  *   - un morceau tiré au hasard démarre au lancement de l'appli (MusicHost) ;
  *   - à la fin d'un morceau, un autre est tiré au hasard (jamais le même deux fois de
  *     suite s'il y en a plusieurs) ;
- *   - entrer dans une histoire coupe la musique (enterStory) ; la page de jeu
- *     propose de la relancer si on en a envie ;
+ *   - continue de jouer en entrant dans une histoire (ne se coupe plus toute seule) ;
+ *     un lien dans l'en-tête de la page de jeu permet de la couper, la relancer, ou
+ *     changer de morceau ;
  *   - quand l'appli passe en arrière-plan, la musique continue BACKGROUND_GRACE_MS
  *     (le temps d'aller copier une clé API dans une autre appli, par exemple), puis se
  *     met en pause ; elle reprend toute seule au retour dans l'appli ;
@@ -60,10 +61,6 @@ object MusicPlayer {
     /** Nom de ressource (ex. "music_fantasy_epic") du morceau chargé, ou null si aucun. Permet
      *  à l'aperçu des Réglages de savoir lequel afficher en "en cours". */
     var currentTrackName: String? by mutableStateOf(null)
-        private set
-
-    /** true quand on est dans une page de jeu : le démarrage automatique est alors désactivé. */
-    var inStory = false
         private set
 
     private val allTracks: List<MusicTrack> by lazy {
@@ -189,10 +186,10 @@ object MusicPlayer {
         if (isPlaying && currentTrackName == track.name) stop() else preview(context, track)
     }
 
-    /** Démarrage automatique des menus : seulement si rien ne joue et qu'on n'est pas dans une histoire. */
+    /** Démarrage automatique au lancement de l'appli (MusicHost) : seulement si rien ne joue déjà. */
     fun autoStart(context: Context) {
         appContext = context.applicationContext
-        if (player == null && !inStory) startRandom(context)
+        if (player == null) startRandom(context)
     }
 
     /**
@@ -214,17 +211,6 @@ object MusicPlayer {
         currentTrackName = null
     }
 
-    /** Entrée dans une histoire : la musique s'arrête pour ne pas gêner la lecture. */
-    fun enterStory() {
-        inStory = true
-        stop()
-    }
-
-    /** Sortie de la page de jeu. La musique ne redémarre pas toute seule. */
-    fun leaveStory() {
-        inStory = false
-    }
-
     /** Appliqué quand le curseur de volume des Réglages bouge. */
     fun updateVolume(context: Context) {
         val volume = SoundPrefs.get(context).effectiveMusicVolume
@@ -235,7 +221,7 @@ object MusicPlayer {
     fun onMusicMutedChanged(context: Context) {
         if (SoundPrefs.get(context).musicMuted) {
             stop()
-        } else if (!inStory && player == null) {
+        } else if (player == null) {
             startRandom(context)
         }
     }
