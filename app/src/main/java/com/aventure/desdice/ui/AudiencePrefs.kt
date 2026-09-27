@@ -42,7 +42,7 @@ class AudiencePrefs private constructor(context: Context) {
 
     val hasChosen: Boolean get() = audience != null
 
-    fun setAudience(value: Audience) {
+    fun updateAudience(value: Audience) {
         audience = value
         prefs.edit().putString(KEY_AUDIENCE, value.prefValue).apply()
     }
