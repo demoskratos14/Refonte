@@ -124,7 +124,21 @@ fun rememberBackgroundPainter(slot: BackgroundSlot): Painter {
     }
     val bitmap = loaded.second
     val customPainter = remember(bitmap) { bitmap?.let { BitmapPainter(it) } }
-    val defaultPainter = painterResource(id = slot.defaultRes)
+
+    // Le fond par défaut de la page "Nouvelle histoire" (carrousel) dépend du public
+    // visé (Réglages > Profil, voir AudiencePrefs.kt) : new_story_bg est la version
+    // "garçons" historique, conservée en repli tant qu'aucun choix n'a été fait.
+    val audiencePrefs = remember(context) { AudiencePrefs.get(context) }
+    val defaultRes = if (slot == BackgroundSlot.NEW_STORY) {
+        when (audiencePrefs.audience) {
+            Audience.FILLES -> R.drawable.new_story_bg_filles
+            Audience.DUO -> R.drawable.new_story_bg_duo
+            Audience.GARCONS, null -> slot.defaultRes
+        }
+    } else {
+        slot.defaultRes
+    }
+    val defaultPainter = painterResource(id = defaultRes)
 
     return when {
         version == 0L -> defaultPainter

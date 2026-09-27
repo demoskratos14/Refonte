@@ -33,12 +33,39 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Icones alternatives 1 a 8 (desactivees tant qu'on ne les choisit pas) -->
+        <!-- Icones 1 a 6, declinees en 3 versions (filles / garcons / duo) : seule la
+             version correspondant au public vise (Reglages > Profil) est proposee dans
+             Reglages > Icone (voir AppIconStore.iconsFor), mais les 18 alias existent
+             tous des le depart -- l'appli active seulement celui choisi. -->
         <activity-alias
-            android:name=".Icon1"
+            android:name=".Icon1Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt1"
+            android:icon="@mipmap/ic_alt1_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon1Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt1_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon1Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt1_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -48,10 +75,34 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".Icon2"
+            android:name=".Icon2Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt2"
+            android:icon="@mipmap/ic_alt2_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon2Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt2_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon2Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt2_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -61,10 +112,34 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".Icon3"
+            android:name=".Icon3Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt3"
+            android:icon="@mipmap/ic_alt3_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon3Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt3_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon3Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt3_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -74,10 +149,34 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".Icon4"
+            android:name=".Icon4Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt4"
+            android:icon="@mipmap/ic_alt4_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon4Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt4_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon4Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt4_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -87,10 +186,34 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".Icon5"
+            android:name=".Icon5Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt5"
+            android:icon="@mipmap/ic_alt5_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon5Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt5_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon5Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt5_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -100,10 +223,34 @@
         </activity-alias>
 
         <activity-alias
-            android:name=".Icon6"
+            android:name=".Icon6Filles"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_alt6"
+            android:icon="@mipmap/ic_alt6_filles"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon6Garcons"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt6_garcons"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".Icon6Duo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_alt6_duo"
             android:label="@string/app_name"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -112,6 +259,7 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Icones 7 et 8 : deja mixtes, inchangees, proposees quel que soit le public vise. -->
         <activity-alias
             android:name=".Icon7"
             android:enabled="false"

@@ -77,7 +77,10 @@ import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppIcon
 import com.aventure.desdice.ui.AppIconStore
+import com.aventure.desdice.ui.Audience
+import com.aventure.desdice.ui.AudiencePrefs
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.iconsFor
 import com.aventure.desdice.ui.BackgroundStore
 import com.aventure.desdice.ui.DiceSoundPlayer
 import com.aventure.desdice.ui.MusicPlayer
@@ -105,8 +108,8 @@ private val SLineColor = Color(0x4DFFFFFF)
 private val STextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 
 /** Titres des pages, dans l'ordre. */
-private val PAGE_TITLES = listOf("Polices", "Photos", "Icône", "Sons")
-private const val PAGE_COUNT = 4
+private val PAGE_TITLES = listOf("Polices", "Photos", "Icône", "Sons", "Profil")
+private const val PAGE_COUNT = 5
 
 /**
  * Bouton d'accès aux Réglages : icône engrenage (res/drawable/ic_settings.png).
@@ -129,14 +132,19 @@ fun SettingsGearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Écran Réglages en 4 pages qu'on fait glisser (ou qu'on change en touchant
+ * Écran Réglages en 5 pages qu'on fait glisser (ou qu'on change en touchant
  * l'onglet latéral) :
  *   - Polices : police du texte de l'appli et police des titres, parmi les
  *     fichiers de app/src/main/assets/fonts ;
  *   - Photos : images de fond des pages de l'appli ;
- *   - Icône : icône de l'appli parmi 9 (l'originale + 8), un clic suffit ;
+ *   - Icône : icône de l'appli parmi 9 proposées, un clic suffit -- lesquelles
+ *     sont proposées dépend du public visé, réglé sur la page « Profil » ;
  *   - Sons : couper ou baisser le bruit des dés (res/raw/dice_roll.mp3) et la
- *     musique de fond (fichiers res/raw/music_*).
+ *     musique de fond (fichiers res/raw/music_*) ;
+ *   - Profil : public visé (filles / garçons / les 2), qui détermine les icônes
+ *     ci-dessus et le fond par défaut de la page « Nouvelle histoire » du
+ *     carrousel (voir AudiencePrefs.kt) -- choisi une première fois dans
+ *     AudienceChoiceScreen, avant même cet écran.
  *   Couleur et taille du texte des échanges avec l'IA (bulles de conversation et
  *   champ de saisie du joueur, voir AiPanel.kt) se règlent aussi ici, sur la
  *   page « Polices ».
@@ -325,9 +333,11 @@ fun SettingsScreen(
                         }
                         } else if (page == 2) {
                             AppIconCard(fonts = fonts)
-                        } else {
+                        } else if (page == 3) {
                             SoundCard(fonts = fonts)
                             MusicCard(fonts = fonts)
+                        } else {
+                            ProfileCard(fonts = fonts)
                         }
 
                         SettingsButton(text = "Retour", onClick = onBack, fonts = fonts, secondary = true)
@@ -457,10 +467,16 @@ private fun BackgroundRow(slot: BackgroundSlot, store: BackgroundStore, fonts: A
     }
 }
 
-/** Page « Icône » : grille 3 x 3 des icônes proposées, un clic applique l'icône. */
+/**
+ * Page « Icône » : grille 3 x 3 des icônes proposées, un clic applique l'icône.
+ * Les icônes proposées dépendent du public visé (page « Profil », voir
+ * AudiencePrefs.kt et AppIconStore.iconsFor) : toujours 9 au total.
+ */
 @Composable
 private fun AppIconCard(fonts: AppFonts) {
     val context = LocalContext.current
+    val audiencePrefs = remember(context) { AudiencePrefs.get(context) }
+    val icons = remember(audiencePrefs.audience) { iconsFor(audiencePrefs.audience) }
     var selected by remember { mutableStateOf(AppIconStore.current(context)) }
     var error by remember { mutableStateOf<String?>(null) }
     // L'icône d'origine est dessinée depuis la ressource du lanceur (icône adaptative comprise).
@@ -475,14 +491,15 @@ private fun AppIconCard(fonts: AppFonts) {
     SettingsCard(title = "\uD83C\uDFA8 Icône de l'application", fonts = fonts) {
         Text(
             text = "Touche une icône pour l'appliquer. Selon ton téléphone, le changement " +
-                "peut mettre quelques secondes à apparaître sur l'écran d'accueil.",
+                "peut mettre quelques secondes à apparaître sur l'écran d'accueil. Les icônes " +
+                "proposées dépendent du public visé, réglable sur la page « Profil ».",
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.95f),
             fontFamily = fonts.body,
             style = TextStyle(shadow = STextShadow),
             modifier = Modifier.padding(bottom = 14.dp)
         )
-        AppIcon.values().toList().chunked(3).forEachIndexed { rowIndex, row ->
+        icons.chunked(3).forEachIndexed { rowIndex, row ->
             if (rowIndex > 0) Spacer(Modifier.height(12.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -517,6 +534,41 @@ private fun AppIconCard(fonts: AppFonts) {
                 fontFamily = fonts.body,
                 style = TextStyle(shadow = STextShadow),
                 modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Page « Profil » : public visé (filles / garçons / les 2), choisi une première
+ * fois dans AudienceChoiceScreen et modifiable ici. Détermine les icônes
+ * proposées (page « Icône », voir AppIconStore.iconsFor) et le fond par défaut
+ * de la page « Nouvelle histoire » du carrousel (voir AudiencePrefs.kt).
+ */
+@Composable
+private fun ProfileCard(fonts: AppFonts) {
+    val context = LocalContext.current
+    val audiencePrefs = remember(context) { AudiencePrefs.get(context) }
+    val current = audiencePrefs.audience
+
+    SettingsCard(title = "\uD83D\uDC65 Public visé", fonts = fonts) {
+        Text(
+            text = "Cette histoire est faite pour… Ce choix change les icônes proposées " +
+                "dans la page « Icône » et le fond de la page « Nouvelle histoire » du " +
+                "carrousel.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+        Audience.values().forEachIndexed { index, audience ->
+            if (index > 0) Spacer(Modifier.height(10.dp))
+            SettingsButton(
+                text = if (audience == current) "\u2713 ${audience.label}" else audience.label,
+                onClick = { audiencePrefs.setAudience(audience) },
+                fonts = fonts,
+                secondary = audience != current
             )
         }
     }

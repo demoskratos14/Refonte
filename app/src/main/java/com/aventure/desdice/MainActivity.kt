@@ -15,12 +15,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aventure.desdice.screens.AudienceChoiceScreen
 import com.aventure.desdice.screens.ClassicDiceScreen
 import com.aventure.desdice.screens.ConfigureKeyScreen
 import com.aventure.desdice.screens.CreateStoryScreen
 import com.aventure.desdice.screens.SettingsScreen
 import com.aventure.desdice.screens.StorySelectorScreen
+import com.aventure.desdice.ui.AudiencePrefs
 import com.aventure.desdice.ui.MusicHost
 import com.aventure.desdice.viewmodel.GameViewModel
 
@@ -52,7 +55,12 @@ class MainActivity : ComponentActivity() {
 
 /**
  * Navigation :
- * 1) ConfigureKeyScreen au premier ecran (cle API Mistral, optionnelle --
+ * 0) AudienceChoiceScreen tout premier ecran, une seule fois : choix du public
+ *    vise (filles / garcons / les 2), qui determine les icones proposees dans
+ *    Reglages et le fond par defaut de la page "Nouvelle histoire" du carrousel
+ *    (voir AudiencePrefs.kt). Pas de bouton retour ; reste modifiable ensuite
+ *    depuis Reglages > Profil ;
+ * 1) ConfigureKeyScreen ensuite (cle API Mistral, optionnelle --
  *    "Passer" ou "Continuer" appellent tous deux onDone). Son engrenage
  *    ouvre SettingsScreen (choix des polices) ;
  * 2) StorySelectorScreen (carrousel) tant qu'aucune histoire n'est
@@ -77,6 +85,9 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
     // arrière-plan. MainGameScreen la coupe à l'entrée dans une histoire (voir MusicPlayer.kt).
     MusicHost()
 
+    val context = LocalContext.current
+    val audiencePrefs = remember(context) { AudiencePrefs.get(context) }
+
     var keyStepDone by remember { mutableStateOf(false) }
     var showConfigureKey by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -94,6 +105,9 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
         // y compris au premier écran ; testé en premier pour passer par-dessus.
         showSettings -> {
             SettingsScreen(onBack = { showSettings = false })
+        }
+        !audiencePrefs.hasChosen -> {
+            AudienceChoiceScreen(onChosen = { audiencePrefs.setAudience(it) })
         }
         !keyStepDone -> {
             ConfigureKeyScreen(
