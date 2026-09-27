@@ -27,6 +27,7 @@ object MistralClient {
     val MODEL_CHOICES: List<Pair<String, String>> = listOf(
         "ministral-8b-2512" to "Ministral 8B — très économique, style plus simple",
         "mistral-small-2603" to "Mistral Small — rapide et économique (recommandé)",
+        "mistral-small-creative-2512" to "Mistral Small Creative — spécialisé écriture narrative (expérimental)",
         "mistral-medium-latest" to "Mistral Medium — histoires plus riches, un peu plus cher",
         "mistral-large-latest" to "Mistral Large — le plus capable, et moins cher que Medium"
     )
