@@ -36,7 +36,7 @@
         <!-- Icones 1 a 6, declinees en 3 versions (filles / garcons / duo) : seule la
              version correspondant au public vise (Reglages > Profil) est proposee dans
              Reglages > Icone (voir AppIconStore.iconsFor), mais les 18 alias existent
-             tous des le depart -- l'appli active seulement celui choisi. -->
+             tous des le depart : l'appli active seulement celui choisi. -->
         <activity-alias
             android:name=".Icon1Filles"
             android:enabled="false"
