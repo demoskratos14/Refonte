@@ -1,6 +1,5 @@
 package com.aventure.desdice
 
-import android.app.Activity
 import android.graphics.BitmapFactory
 import android.content.Context
 import android.media.AudioAttributes
@@ -186,17 +185,6 @@ fun MainGameScreen(
     val stories by viewModel.stories.collectAsState()
     val currentSlug by viewModel.currentStorySlug.collectAsState()
     val fonts = rememberAppFonts()
-
-    // Entrer dans une histoire coupe la musique des menus (elle ne gêne pas la lecture) ;
-    // le lien « Lancer une musique » de l'en-tête permet de la relancer. Pas de reprise
-    // automatique à la sortie, et rien ne change lors d'une rotation de l'écran.
-    val hostActivity = LocalContext.current as? Activity
-    DisposableEffect(Unit) {
-        MusicPlayer.enterStory()
-        onDispose {
-            if (hostActivity?.isChangingConfigurations != true) MusicPlayer.leaveStory()
-        }
-    }
 
     var showAllowedValues by remember { mutableStateOf(false) }
     // Totem dont la fiche (pouvoirs / capacite speciale) est affichee.
@@ -410,7 +398,8 @@ private fun GameHeader(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
-        // Musique : coupée à l'entrée dans l'histoire, relançable ici (morceau au hasard).
+        // Musique : continue de jouer en entrant dans l'histoire (ne se coupe plus toute
+        // seule) ; ce lien permet de la couper, la relancer, ou changer de morceau.
         if (MusicPlayer.hasTracks()) {
             val musicContext = LocalContext.current
             val underlined = bodyStyle(fonts, 14.sp).copy(textDecoration = TextDecoration.Underline)
