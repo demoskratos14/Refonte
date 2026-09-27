@@ -566,7 +566,7 @@ private fun ProfileCard(fonts: AppFonts) {
             if (index > 0) Spacer(Modifier.height(10.dp))
             SettingsButton(
                 text = if (audience == current) "\u2713 ${audience.label}" else audience.label,
-                onClick = { audiencePrefs.setAudience(audience) },
+                onClick = { audiencePrefs.updateAudience(audience) },
                 fonts = fonts,
                 secondary = audience != current
             )
