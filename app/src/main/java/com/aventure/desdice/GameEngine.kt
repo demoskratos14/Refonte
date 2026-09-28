@@ -629,6 +629,31 @@ class GameEngine(private val baseDir: File) {
         }
     }
 
+    /**
+     * Rappel COURT et A JOUR de l'état réel des jauges (menace + énergie de
+     * chaque totem/allié), distinct du texte fixe de buildMechanicsContext()
+     * qui ne décrit que la RÈGLE. Sans ce rappel, l'IA n'a aucune valeur
+     * chiffrée à sa disposition et finit par inventer où en sont les jauges.
+     * Recalculé à CHAQUE appel API, jamais figé dans sess.aiConversation
+     * (même principe que buildStoryProgressNote/buildPendingQuestNote).
+     */
+    private fun buildGaugeStateNote(sess: DiceSession): String {
+        val totemLines = if (sess.customTotems.isEmpty()) {
+            "aucun totem/allié pour l'instant"
+        } else {
+            sess.customTotems.joinToString(" | ") { t ->
+                val energy = sess.totemEnergy[t.key] ?: 0
+                val label = t.label.ifEmpty { t.key }
+                "$label: $energy/$TOTEM_ENERGY_THRESHOLD" +
+                    if (energy >= TOTEM_ENERGY_THRESHOLD) " (PLEINE, utilisable)" else ""
+            }
+        }
+        return "ÉTAT ACTUEL DES JAUGES (ne mentionne jamais ce rappel technique au joueur -- utilise-le " +
+            "seulement pour savoir où en sont réellement les jauges, ne les invente jamais) : " +
+            "Jauge de menace : ${sess.threatLevel}/$THREAT_THRESHOLD. " +
+            "Jauges totémiques : $totemLines."
+    }
+
     private val questLaunchedTag = "[[QUETE_LANCEE]]"
     private val storyEndedTag = "[[HISTOIRE_TERMINEE]]"
 
@@ -651,7 +676,13 @@ class GameEngine(private val baseDir: File) {
     }
 
     private fun buildFullPrompt(sess: DiceSession, story: StoryEntry?): String {
-        val lines = mutableListOf(buildMechanicsContext(sess, story, autoMode = false), "", "--- HISTOIRE DÉJÀ VÉCUE ---")
+        val lines = mutableListOf(
+            buildMechanicsContext(sess, story, autoMode = false),
+            "",
+            buildGaugeStateNote(sess),
+            "",
+            "--- HISTOIRE DÉJÀ VÉCUE ---"
+        )
         val log = sess.storyLogText()
         lines += log.ifEmpty { "(aucun chapitre enregistré pour l'instant, on commence une aventure toute neuve)" }
         return lines.joinToString("\n")
@@ -736,6 +767,10 @@ class GameEngine(private val baseDir: File) {
             // conversation envoyée se termine par un message user".
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
+        messagesToSend.add(
+            (messagesToSend.size - 1).coerceAtLeast(0),
+            AiMessage("system", buildGaugeStateNote(sess))
+        )
         buildPendingQuestNote(sess, currentStory)?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
