@@ -80,7 +80,7 @@ private fun HelpDialog(title: String, text: String, onDismiss: () -> Unit) {
     )
 }
 
-/** Les 3 textes d'aide, un par écran. À adapter/compléter au fil de l'eau. */
+/** Les 3 textes d'aide, un par écran (clé API, création d'histoire, jeu en cours). */
 object HelpTexts {
 
     val API_KEY_TITLE = "Comment obtenir une clé API Mistral ?"
@@ -138,33 +138,88 @@ Chaque tour de jeu repose sur deux dés et une conversation avec une IA narratri
 
 LE DÉ DE RÉUSSITE
 
-Il indique si une action réussit (1 à 6). Chaque point du dé porte le symbole d'un totem plutôt qu'un simple point noir : le mode de tirage (un seul symbole, un tirage aléatoire par point, ou un mélange) se choisit dans les réglages du dé.
+Il indique si une action réussit :
+- 1 : échec critique, mais toujours rattrapable (jamais la fin de l'histoire)
+- 2 : échec, ou réussite très dure
+- 3 : réussite partielle
+- 4 : bonne réussite
+- 5 : très bonne réussite
+- 6 : réussite héroïque
+
+Chaque point du dé porte le symbole d'un totem plutôt qu'un simple point noir : le mode de tirage (un seul symbole, un tirage aléatoire par point, ou un mélange) se choisit avec le sélecteur de symbole, sous la jauge de menace.
 
 LE DÉ DU DESTIN
 
-Il tombe sur l'un de 6 symboles et pimente la scène en cours. Le symbole ❓ ("Question") se comporte différemment selon la longueur choisie à la création de l'histoire :
-- Histoire COURTE : il déclenche un événement soudain et inattendu, tout de suite dans la scène.
-- Histoire MOYENNE : il ouvre une quête secondaire qui se construit petit à petit, en parallèle de l'histoire principale.
-- Histoire LONGUE : il met de côté une quête secondaire courte, qui se lance automatiquement à la fin du chapitre en cours.
+Il tombe sur l'un de 6 symboles et pimente la scène en cours :
+- ❤️ Cœur : un allié ou un héros intervient, guérison, lien renforcé
+- ☀️ Soleil : bénédiction, pouvoir renforcé ou stabilisé
+- ⭐ Étoile : chance exceptionnelle, découverte précieuse ou récompense
+- ❗ Point d'exclamation : une connaissance, ou un animal lié à un totem, vient aider
+- 🌀 Spirale : chaos ou transformation, effet imprévisible
+- ❓ Point d'interrogation : se comporte différemment selon la longueur de l'histoire (voir ci-dessous)
 
-Certaines combinaisons des deux dés (un 1 ou un 6 avec le ❓, par exemple) ont un effet un peu spécial, décrit au moment du lancer.
+Le ❓ selon la longueur choisie à la création :
+- Histoire COURTE : événement soudain et inattendu, tout de suite dans la scène.
+- Histoire MOYENNE : quête secondaire qui se construit petit à petit, en parallèle de l'histoire principale.
+- Histoire LONGUE : une quête secondaire courte est mise de côté et se lance automatiquement à la fin du chapitre en cours.
 
-LA MENACE ET LES QUÊTES
+Dans les histoires moyennes et longues, le ❓ ne ressort plus tant qu'une quête secondaire est en cours.
 
-Une jauge de menace peut monter au fil de l'histoire. Les quêtes secondaires, une fois lancées, apparaissent dans leur propre liste jusqu'à ce qu'elles soient marquées terminées.
+COMBINAISONS SPÉCIALES
+
+Quand le dé de réussite donne un 1 (échec) ou un 6 (réussite héroïque), le symbole du destin change de nature. Par exemple, un 1 avec ❤️ fait intervenir un allié providentiel malgré l'échec ; un 6 avec 🌀 provoque une transformation durable de l'histoire. Chacune des 12 combinaisons (1 ou 6, avec chacun des 6 symboles) a son propre effet, décrit au moment du lancer.
+
+CONFIGURER LES VALEURS AUTORISÉES
+
+Le bouton « Configurer les valeurs autorisées » permet de choisir quelles faces peuvent sortir, pour chacun des deux dés. Par exemple, retirer le 1 pour une partie plus douce, ou ne garder que certains symboles du destin. Le bouton « Réinitialiser » remet toutes les faces.
+
+LA JAUGE DE MENACE
+
+Elle monte de 3 points quand le dé de réussite donne 1, et redescend d'un point sur un 5 ou un 6. Quand elle atteint 10 points, une complication inattendue survient dans l'histoire, puis la jauge retombe à zéro.
 
 LES TOTEMS
 
-Chaque totem a sa fiche (pouvoirs, capacité spéciale), consultable en touchant son badge sous le titre. De nouveaux totems peuvent s'ajouter en cours d'histoire.
+Chaque totem a sa fiche (pouvoirs, capacité spéciale), consultable en touchant son badge sous le titre. Chaque totem a aussi une jauge : à chaque lancer qui le concerne, elle se remplit du score obtenu (totem à symbole unique) ou d'un point par symbole (mélange).
+
+Arrivée à 15 points, le bouton « Utiliser » du totem s'active : il déclenche sa capacité ou son aide, l'IA en tient compte dans le récit, et la jauge repart à zéro.
+
+Les symboles patte et baguette portent le pouvoir « Second Souffle » : le dernier lancer du dé de réussite est annulé et relancé sur-le-champ.
+
+Le bouton « Ajouter / gérer les totems » permet d'en créer de nouveaux en cours d'histoire (nom, pouvoirs séparés par des virgules, capacité spéciale, emoji ou image) ou d'en supprimer.
+
+LES QUÊTES SECONDAIRES
+
+Une fois lancées, elles apparaissent dans leur propre liste jusqu'à ce qu'elles soient marquées terminées.
+
+L'HISTORIQUE DES LANCERS
+
+Chaque lancer est noté dans l'historique. « ↩ Annuler » retire le dernier lancer ; « Effacer » vide tout l'historique de cette histoire (une confirmation est demandée).
 
 LA NARRATION
 
-L'IA propose parfois des actions sous forme de boutons à toucher directement ; il reste toujours possible d'écrire sa propre réponse à la place, dans le champ de saisie. Le bouton "Démarrer l'histoire" (ou "Continuer l'aventure ailleurs" sans clé API) lance ou relance le tout premier message envoyé à l'IA.
+L'IA propose parfois des actions sous forme de boutons à toucher directement ; il reste toujours possible d'écrire sa propre réponse à la place, dans le champ de saisie. Le bouton « Démarrer l'histoire » lance le tout premier message envoyé à l'IA ; il disparaît dès que l'IA a répondu.
 
 En arrière-plan, un résumé du chapitre s'écrit automatiquement tous les 6 échanges environ, et une dernière fois quand l'histoire se termine, pour que l'IA garde le fil même sur une très longue histoire.
 
+SANS CLÉ API
+
+Sans clé Mistral, l'IA n'intervient pas : le bouton devient « Copier le prompt complet pour une IA », à coller dans l'assistant de ton choix. Tu peux aussi recopier ses réponses à la main.
+
+LE JOURNAL
+
+En bas de l'écran, on peut exporter le journal de l'histoire en PDF (un chapitre par entrée), ainsi que l'identité de l'histoire, que l'on peut réimporter en créant une autre histoire.
+
+LA MUSIQUE
+
+Un morceau tiré au hasard démarre à l'ouverture de l'appli et continue de jouer pendant l'histoire. Sous « Changer d'histoire », un lien permet de la couper, de la relancer, ou de passer à un autre morceau.
+
 LES RÉGLAGES
 
-Le bouton ⚙️ des réglages permet de changer les polices, les couleurs et tailles de texte, le volume des dés et de la musique (avec le choix des morceaux tirés au sort), et l'icône de l'appli.
+Ils s'ouvrent avec l'engrenage ⚙️ de l'écran de la clé API (depuis la partie : « Changer d'histoire », puis l'icône 🔑). On y trouve cinq pages, à faire glisser :
+- Polices : police, couleur et taille des titres, du texte courant et des réponses de l'IA
+- Photos : image de fond de chaque page
+- Icône : icône de l'appli, parmi 9 propositions selon le public choisi
+- Sons : volume (ou coupure) du bruit des dés et de la musique, et choix des morceaux tirés au sort
+- Profil : public visé (filles, garçons, les 2)
 """.trimIndent()
 }

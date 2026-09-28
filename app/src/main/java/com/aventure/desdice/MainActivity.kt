@@ -81,8 +81,9 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
-    // Musique de fond des menus : démarre à l'ouverture de l'appli, se met en pause en
-    // arrière-plan. MainGameScreen la coupe à l'entrée dans une histoire (voir MusicPlayer.kt).
+    // Musique de fond : démarre à l'ouverture de l'appli, continue pendant les histoires
+    // (MainGameScreen propose de la couper, la relancer ou changer de morceau) et se met
+    // en pause en arrière-plan (voir MusicPlayer.kt).
     MusicHost()
 
     val context = LocalContext.current

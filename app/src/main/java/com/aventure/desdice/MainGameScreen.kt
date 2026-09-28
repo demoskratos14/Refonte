@@ -103,6 +103,8 @@ import coil.compose.AsyncImage
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.MusicPlayer
+import com.aventure.desdice.ui.HelpButton
+import com.aventure.desdice.ui.HelpTexts
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.ui.rememberAppTextStyles
 import com.aventure.desdice.ui.SoundPrefs
@@ -373,17 +375,28 @@ private fun GameHeader(
             .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = headerTitle,
-            textAlign = TextAlign.Center,
-            style = TextStyle(
-                fontFamily = fonts.display,
-                fontSize = 26.sp,
-                letterSpacing = 1.sp,
-                color = Color.White,
-                shadow = Shadow(Color(0xB3000000), Offset(0f, 3f), 8f)
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = headerTitle,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 40.dp),
+                style = TextStyle(
+                    fontFamily = fonts.display,
+                    fontSize = 26.sp,
+                    letterSpacing = 1.sp,
+                    color = Color.White,
+                    shadow = Shadow(Color(0xB3000000), Offset(0f, 3f), 8f)
+                )
             )
-        )
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                HelpButton(
+                    title = HelpTexts.GAME_MECHANICS_TITLE,
+                    text = HelpTexts.GAME_MECHANICS
+                )
+            }
+        }
         Text(
             text = "Prêt pour l'aventure !",
             style = bodyStyle(fonts, 15.sp, Color.White.copy(alpha = 0.92f)),
