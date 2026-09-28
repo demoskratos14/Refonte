@@ -57,6 +57,8 @@ import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
 import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.HelpButton
+import com.aventure.desdice.ui.HelpTexts
 import com.aventure.desdice.ui.bodySp
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
@@ -220,20 +222,31 @@ fun ConfigureKeyScreen(
             // On laisse le livre et la magie visibles en haut de l'ecran.
             Spacer(Modifier.height(imageHeight * 0.36f))
 
-            Text(
-                text = "\uD83D\uDD11 Clé API Mistral",
-                fontFamily = fonts.display,
-                color = textStyles.titleColor ?: Color.White,
-                fontSize = textStyles.titleSp(26f),
-                textAlign = TextAlign.Center,
-                letterSpacing = 1.sp,
-                style = TextStyle(
-                    shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 3f), blurRadius = 10f)
-                ),
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 14.dp)
-            )
+            ) {
+                Text(
+                    text = "\uD83D\uDD11 Clé API Mistral",
+                    fontFamily = fonts.display,
+                    color = textStyles.titleColor ?: Color.White,
+                    fontSize = textStyles.titleSp(26f),
+                    textAlign = TextAlign.Center,
+                    letterSpacing = 1.sp,
+                    style = TextStyle(
+                        shadow = Shadow(color = Color.Black.copy(alpha = 0.85f), offset = Offset(0f, 3f), blurRadius = 10f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.Center)
+                )
+                // Bouton d'aide "Comment obtenir une clé API Mistral ?" (HelpContent.kt),
+                // même esprit que celui posé sur la création d'histoire.
+                Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    HelpButton(title = HelpTexts.API_KEY_TITLE, text = HelpTexts.API_KEY)
+                }
+            }
 
             // --- Contenu pose directement sur l'image (plus de carte papier) ---
             Box(
