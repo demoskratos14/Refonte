@@ -9,8 +9,10 @@ propres histoires depuis l'appli, ou on réimporte un fichier d'identité
 précédemment exporté.
 
 L'appli est écrite entièrement en **Kotlin / Jetpack Compose**, y compris le
-moteur de jeu. Un écran **Réglages** permet de personnaliser les polices, les
-images de fond des pages et l'icône de l'application.
+moteur de jeu. Un écran **Réglages** permet de personnaliser les polices
+(avec couleur et taille), les images de fond des pages, l'icône de
+l'application, les sons (dés et musique) et le public visé. Des **boutons
+d'aide** expliquent, écran par écran, comment s'en servir.
 
 ## Historique : pourquoi cette architecture
 
@@ -32,9 +34,12 @@ images de fond des pages et l'icône de l'application.
    `CreateStoryScreen.kt`, `StorySelectorScreen.kt`) passent désormais
    uniquement par `GameViewModel`/`GameEngine`. Le dossier `python/`, Chaquopy
    et les dépendances `pillow`/`fpdf2` ont été retirés du projet.
-6. **Écran Réglages** : choix des polices (texte et titres), des images de
-   fond des pages et de l'icône de l'application, sans passer par le moteur
-   de jeu (voir la section « Réglages » plus bas).
+6. **Écran Réglages** : choix des polices (texte, titres, réponses de l'IA),
+   des images de fond des pages, de l'icône de l'application, des sons et du
+   public visé, sans passer par le moteur de jeu (voir la section
+   « Réglages » plus bas).
+7. **Boutons d'aide** : un petit bouton rond ouvre une fenêtre d'explication
+   propre à l'écran où l'on se trouve (voir « Aides intégrées » plus bas).
 
 ## Comment Kotlin et le moteur de jeu communiquent
 
@@ -64,38 +69,41 @@ images de fond des pages et l'icône de l'application.
   directement plutôt que de l'observer dans `sessionState`.
 - Il n'y a plus de répertoire de travail à fixer au démarrage : `GameEngine`
   reçoit directement `context.filesDir` à la construction.
-- **Les réglages d'apparence** (polices, fonds, icône) ne passent pas par
-  `GameEngine` : ils sont gérés par trois petits objets du package `ui`
-  (`FontPrefs`, `BackgroundStore`, `AppIconStore`), voir plus bas.
+- **Les réglages** (polices, fonds, icône, sons, public visé) ne passent pas
+  par `GameEngine` : ils sont gérés par de petits objets du package `ui`
+  (`FontPrefs`, `BackgroundStore`, `AppIconStore`, `SoundPrefs`,
+  `AudiencePrefs`), voir plus bas.
 
 ## Navigation (MainActivity.kt → `AppNavigation`)
 
 | Ordre | Écran | Rôle |
 |---|---|---|
-| 1 | `ConfigureKeyScreen` | Premier écran : saisie de la clé API Mistral (optionnelle, « Passer » possible) et choix du modèle. Un **engrenage** (en haut à droite) ouvre les Réglages |
+| 0 | `AudienceChoiceScreen` | Tout premier écran, une seule fois : choix du public visé (filles / garçons / les 2). Détermine les icônes proposées dans Réglages et le fond par défaut de la page « Nouvelle histoire ». Pas de bouton retour ; modifiable ensuite dans Réglages > Profil |
+| 1 | `ConfigureKeyScreen` | Deuxième écran : saisie de la clé API Mistral (optionnelle, « Passer » possible) et choix du modèle. Un **engrenage** (en haut à droite) ouvre les Réglages |
 | 2 | `StorySelectorScreen` | Carrousel des histoires + page « Nouvelle histoire » ; icône dé (en haut à gauche) → « Des classiques » ; icône 🔑 → configuration de la clé ; corbeille sur les histoires personnalisées |
 | 3 | `MainGameScreen` | La partie en cours (voir ci-dessous) |
-| — | `SettingsScreen` | Réglages, en 3 pages qu'on fait glisser : Polices, Photos, Icône |
+| — | `SettingsScreen` | Réglages, en 5 pages qu'on fait glisser : Polices, Photos, Icône, Sons, Profil |
 | — | `CreateStoryScreen` | Création d'une histoire personnalisée (voir ci-dessous) |
-| — | `ClassicDiceScreen` | Page « Des classiques » : dé de réussite + dé du destin, indépendants de toute histoire |
+| — | `ClassicDiceScreen` | Page « Des classiques » : dé de réussite (d6 ou autre dé) + dé du destin, indépendants de toute histoire (voir « Des classiques » plus bas) |
 
 Le bouton retour du téléphone ferme les écrans secondaires ; depuis la
 partie, il rouvre le carrousel sans changer l'histoire active.
 
 `SettingsScreen` est testé en premier dans le `when` d'`AppNavigation` : on
-peut donc l'ouvrir depuis la page de la clé API dès le tout premier écran,
-ou après l'avoir rouverte depuis le carrousel. Retour = on revient à la page
-de la clé.
+peut donc l'ouvrir depuis la page de la clé API dès le premier écran de
+configuration, ou après l'avoir rouverte depuis le carrousel. Retour = on
+revient à la page de la clé. Depuis la partie, le chemin est donc :
+« Changer d'histoire » → icône 🔑 → engrenage.
 
 ### L'écran de jeu, de haut en bas
 
-1. En-tête (titre de l'histoire, lien « Changer d'histoire ») et badges des totems (touche = fiche du totem).
+1. En-tête : titre de l'histoire avec, en haut à droite, le **bouton d'aide** « Comment fonctionne le jeu ? » ; lien « Changer d'histoire » ; liens musique (couper / lancer / autre morceau, visibles s'il existe des morceaux) ; bouton « 🚀 Démarrer l'histoire » (avec clé API, tant que l'IA n'a rien répondu). Puis les badges des totems (touche = fiche du totem).
 2. `AiPanel` : conversation avec l'IA (fil complet, message libre, lecture vocale du dernier message, réinitialisation avec confirmation) ; masqué (message + bouton vers la configuration) tant qu'aucune clé Mistral n'est enregistrée. Remonté juste sous l'en-tête (au-dessus des dés) pour rester bien visible ; dès qu'une nouvelle réponse de l'IA arrive, l'écran défile automatiquement pour l'amener en haut (position mesurée via `onGloballyPositioned`, dans `MainGameScreen.kt`).
 3. `DiceResultCard` : lancers de dés (dés 3D animés), résultat, note pour l'IA.
 4. `ThreatGauge` : jauge de menace.
 5. `SymbolPicker` : symbole affiché sur le dé de réussite (mode unique / aléatoire / mixte).
 6. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent.
-7. `TotemGaugesRow` : une jauge par totem, utilisable quand elle est pleine ; gestion des totems ajoutés en cours de partie (`TotemManagementDialog`).
+7. `TotemGaugesRow` : une jauge par totem (15 points pour la remplir), bouton « Utiliser » actif quand elle est pleine (la jauge repart alors à zéro ; les symboles patte et baguette relancent le dernier lancer de réussite : « Second Souffle ») ; bouton « ➕ Ajouter / gérer les totems » (`TotemManagementDialog` : nom, pouvoirs, capacité spéciale, emoji ou image, suppression).
 8. `SideQuestsList` : quêtes secondaires (voir « Le symbole ❓ du dé du destin selon la longueur »).
 9. `ContinueSection` : démarrer ou relancer un chapitre, ou copier le prompt complet (mode manuel).
 10. `HistoryList` : historique des lancers (annuler le dernier, tout effacer).
@@ -104,11 +112,39 @@ de la clé.
 Le fond de l'écran de jeu est l'image de l'histoire en cours (elle se choisit
 à la création de l'histoire) ; il n'est pas modifiable depuis les Réglages.
 
+### La page « Des classiques » (`ClassicDiceScreen`)
+
+Pensée comme un aide-mémoire pour une partie sur table, **sans lien avec une
+histoire** :
+
+- **Dé de réussite** au choix : d4, dé classique à 6 faces (avec points), d8,
+  d10, d12, d20, ou « Autre » pour saisir un nombre de faces libre (de 2 à
+  999). Un d6 affiche des points, tout autre dé affiche le nombre tiré. Le
+  choix est mémorisé (`ClassicDicePrefs`, package `ui`).
+- **Dé du destin** : les 6 symboles habituels.
+- Les dés sont de vrais **cubes 3D** qui roulent, rebondissent et s'immobilisent
+  sur la face tirée (le résultat est tiré avant l'animation, qui dure 1,8 s).
+  On touche un dé pour le lancer ; un bouton rond ⚡ entre les deux lance les
+  deux à la fois.
+- **Historique** des lancers, avec « Effacer l'historique » (confirmation
+  demandée), enregistré dans `classic_dice_state.json`.
+- Le bruit des dés suit les réglages de la page Sons.
+- Fond : `BackgroundSlot.CLASSIC_DICE`.
+
 ### Création d'une histoire (`CreateStoryScreen`)
 
-Champs : titre, sous-titre, texte de lore, prénom du héros (optionnel — si
-vide, l'IA s'adresse à « le personnage principal »), totem de départ
-(libellé/pouvoirs/spécial + image), image de fond.
+Un bouton d'aide explique chaque champ (`HelpTexts.CREATE_STORY`).
+
+Champs, de haut en bas : import d'une identité exportée (optionnel), titre,
+sous-titre, description de l'univers (texte de lore envoyé à l'IA), **héros**
+(optionnel : un ou plusieurs prénoms, « + Ajouter un héros » et ✕ pour en
+retirer un ; les champs laissés vides sont ignorés, et sans héros l'IA
+s'adresse à « le personnage principal »), longueur de l'histoire, objectif
+moral (optionnel), image de fond (optionnelle), totem de départ
+(nom / pouvoirs séparés par des virgules / capacité spéciale + image
+optionnelle). Une image venue d'un import d'identité est utilisée tant que
+l'utilisateur n'en choisit pas une autre. Le bouton « Créer l'histoire »
+enchaîne création, totems et progression importée, puis ferme l'écran.
 
 **Longueur de l'histoire** (`storyLength`, propagé jusqu'à
 `StoryEntry.storyLength` et transmis à l'IA via
@@ -197,38 +233,43 @@ la création (`addCustomTotemAwait` puis `applyImportedProgress`).
 
 Accessible par l'engrenage de `ConfigureKeyScreen` (composable
 `SettingsGearButton`). L'écran se compose d'un en-tête fixe (flèche de retour
-+ titre) et de **3 pages** qu'on change en glissant, ou en touchant l'onglet
-vertical collé au bord de l'écran (« Photos › », « ‹ Polices », « Icône › »…).
-Le fond de la page Réglages est lui-même personnalisable.
++ titre) et de **5 pages** qu'on change en glissant, ou en touchant l'onglet
+vertical collé au bord de l'écran (« Photos › », « ‹ Polices », « Icône › »…) :
+**Polices, Photos, Icône, Sons, Profil**. Le fond de la page Réglages est
+lui-même personnalisable.
 
-### Page 1 — Polices
+### Page 1 — Polices (police, couleur, taille)
 
-Deux choix **indépendants**, parmi les fichiers `.ttf` / `.otf` présents dans
-`app/src/main/assets/fonts/` (chaque police est affichée dans son propre
-style, avec un aperçu) :
+Trois catégories de texte **indépendantes**, chacune avec sa police, sa
+couleur et sa taille (`TextStyleChoice` dans `ui/FontPrefs.kt`) :
 
-| Choix | Effet dans `AppFonts` | Où on le voit |
-|---|---|---|
-| Police du texte de l'application | `body` (et `bodyBold`, voir ci-dessous) | descriptions, narration, notes, intitulés en gras |
-| Police des titres | `display` | titres des histoires, en-têtes, titres de sections, boutons, légendes des dés |
+| Catégorie | Effet | Défaut | Taille (sp) |
+|---|---|---|---|
+| Titres (`FontPrefs.title`, `AppFonts.display`) | titres des histoires, en-têtes, titres de sections, boutons, légendes des dés | Bangers | 16 à 34 (22 par défaut) |
+| Texte courant (`FontPrefs.body`, `AppFonts.body` / `bodyBold`) | descriptions, libellés d'interface, écrans de réglages, narration hors bulles IA | Nunito | 12 à 20 (15 par défaut) |
+| Réponses de l'IA (`FontPrefs.reply`, `AppFonts.reply`) | bulles de conversation avec l'IA et champ où le joueur écrit ses réponses | police du texte courant | 12 à 24 (15 par défaut) |
 
-- Par défaut : `Nunito-Regular.ttf` pour le texte et `Bangers-Regular.ttf` pour
-  les titres. « Rétablir la police par défaut » efface le choix.
+- Les polices se choisissent parmi les fichiers `.ttf` / `.otf` présents dans
+  `app/src/main/assets/fonts/` (chaque police est affichée dans son propre
+  style, avec un aperçu). Pour **ajouter une police** : déposer le fichier
+  dans ce dossier, elle apparaît d'elle-même dans les listes.
+- La couleur se choisit avec une **roue chromatique** ; « Auto » (aucune
+  couleur choisie) garde la couleur d'origine de chaque écran.
 - Les variantes de style (fichiers se terminant par Bold, Italic, Light, Thin,
   Medium, Black) ne sont pas proposées comme police à part entière. La
   variante grasse du texte est retrouvée automatiquement : si on choisit
   `Foo-Regular.ttf`, `bodyBold` cherche `Foo-Bold.ttf` dans le même dossier,
   sinon il retombe sur la police normale.
-- Le choix est mémorisé dans les `SharedPreferences` (`app_font_prefs`) par
-  `ui/FontPrefs.kt`. Comme `FontPrefs` expose des états Compose et que
-  `rememberAppFonts()` les lit, **tous les écrans changent de police
-  immédiatement**, sans redémarrage.
+- Un réglage « Rétablir » efface le choix de la catégorie.
+- Les choix sont mémorisés dans les `SharedPreferences` (`app_font_prefs`)
+  par `ui/FontPrefs.kt`. Comme `FontPrefs` expose des états Compose et que
+  `rememberAppFonts()` / `rememberAppTextStyles()` les lisent, **tous les
+  écrans changent immédiatement**, sans redémarrage. Les tailles sont
+  appliquées comme un multiplicateur (`titleSp()`, `bodySp()`) pour garder les
+  proportions entre gros et petits titres.
 - Si le fichier choisi est illisible ou a disparu, `rememberAppFonts()`
   retombe sur l'ordre de recherche d'origine (`assets/fonts`, puis `res/font`,
   puis police du système).
-
-Pour **ajouter une police** : déposer le fichier dans `assets/fonts/`, elle
-apparaît d'elle-même dans les listes.
 
 ### Page 2 — Photos (images de fond)
 
@@ -239,7 +280,7 @@ Cinq pages de l'appli ont un fond personnalisable (`ui/BackgroundStore.kt`,
 |---|---|---|
 | Page de la clé API | `raw/bg_key_page.jpg` | `ConfigureKeyScreen` |
 | Page Réglages | `raw/bg_settings.jpg` | `SettingsScreen` |
-| Nouvelle histoire (carrousel) | `drawable/new_story_bg` | `StorySelectorScreen` (dernière page) |
+| Nouvelle histoire (carrousel) | `drawable/new_story_bg` (public « garçons » ou pas encore de choix), `drawable/new_story_bg_filles` ou `drawable/new_story_bg_duo` selon le public visé (voir `AudiencePrefs`) | `StorySelectorScreen` (dernière page) |
 | Création d'histoire | `drawable/bg_create_story.jpg` | `CreateStoryScreen` |
 | Dés classiques | `drawable/bg_classic_dice.jpg` | `ClassicDiceScreen` |
 
@@ -259,6 +300,8 @@ Cinq pages de l'appli ont un fond personnalisable (`ui/BackgroundStore.kt`,
   livre) et de `CreateStoryScreen` (image calée en haut, décalée pour garder
   la lune visible) ont été réglées pour les images d'origine ; avec une autre
   image, le sujet principal peut ne pas tomber au même endroit.
+- Le fond de l'écran de jeu est l'image de l'histoire en cours ; il ne se
+  règle pas ici.
 
 Pour **rendre le fond d'une autre page personnalisable** : ajouter une entrée
 à `BackgroundSlot` (clé, libellé, image par défaut), puis remplacer le
@@ -268,18 +311,26 @@ affiche automatiquement toutes les entrées.
 
 ### Page 3 — Icône de l'application
 
-Grille de 3 × 3 : l'icône d'origine (étiquette « Origine ») + 8 icônes
-alternatives. Un clic sur une icône l'applique ; l'icône en cours est
-entourée de blanc avec une pastille « ✓ ».
+Grille de 3 × 3 : **9 icônes visibles** à la fois. Il existe 21 icônes au
+total (`AppIcon` dans `ui/AppIconStore.kt`) :
+
+- l'icône d'origine et les icônes 7 et 8, **communes** (toujours proposées) ;
+- les icônes 1 à 6, chacune déclinée en 3 versions — **filles, garçons, duo**
+  (les 2) —, dont seule la version correspondant au public visé
+  (`AudiencePrefs.audience`) est proposée. `iconsFor(audience)` construit la
+  liste ; sans choix, elle retombe sur « duo ».
+
+Un clic sur une icône l'applique ; l'icône en cours est entourée de blanc
+avec une pastille « ✓ ».
 
 **Comment ça marche** : Android ne permet pas de remplacer l'icône d'une
 appli par une image arbitraire une fois installée. On déclare donc dans le
 manifeste **un `<activity-alias>` par icône** (tous pointant sur
 `MainActivity`, chacun avec son propre `android:icon`) ; un seul est activé à
-la fois et c'est lui que le lanceur affiche. `ui/AppIconStore.kt`
-(`AppIcon`, `AppIconStore.current()` / `apply()`) active l'alias choisi puis
-désactive les autres avec `PackageManager.setComponentEnabledSetting(…,
-DONT_KILL_APP)` : l'appli ne redémarre pas.
+la fois et c'est lui que le lanceur affiche. `AppIconStore.current()` /
+`apply()` active l'alias choisi puis désactive les autres avec
+`PackageManager.setComponentEnabledSetting(…, DONT_KILL_APP)` : l'appli ne
+redémarre pas.
 
 - L'état des alias est conservé par Android (pas de fichier à nous).
 - Selon le lanceur du téléphone, la nouvelle icône peut mettre quelques
@@ -287,10 +338,74 @@ DONT_KILL_APP)` : l'appli ne redémarre pas.
 - Si un alias manque dans le manifeste, le clic affiche un message d'erreur
   au lieu de planter.
 
-Pour **ajouter une icône** : ajouter les ressources `ic_altN` et
-`icon_preview_N` (voir plus bas), un `<activity-alias android:name=".IconN"
-android:enabled="false" …>` dans le manifeste, et une entrée
-`ICON_N("IconN", R.drawable.icon_preview_N)` dans l'énumération `AppIcon`.
+Pour **ajouter une icône** : ajouter ses ressources (icône de lanceur et
+miniature `icon_preview_…`), un `<activity-alias android:name=".NomAlias"
+android:enabled="false" …>` dans le manifeste, et une entrée dans
+l'énumération `AppIcon` (avec son public, ou `null` si elle est commune).
+
+### Page 4 — Sons (`ui/SoundPrefs.kt`, `ui/MusicPlayer.kt`)
+
+Deux cartes, mémorisées dans les `SharedPreferences` `app_sound_prefs` :
+
+- **Bruit des dés** : curseur de volume (0 à 100 %) et interrupteur pour le
+  couper ; le volume choisi est conservé quand le son est coupé. Le son est
+  `res/raw/dice_roll.<extension>` (mp3, wav ou ogg), joué par un `SoundPool`
+  dans `MainGameScreen` et `ClassicDiceScreen` au volume
+  `SoundPrefs.effectiveVolume`. `DiceSoundPlayer` (dans `SoundPrefs.kt`,
+  `MediaPlayer`) ne sert qu'au bouton d'essai de cette page.
+- **Musique** : interrupteur, curseur de volume (50 % par défaut, plus discret
+  que les dés) et **liste des morceaux** : on peut en écouter un (aperçu, même
+  si la musique est coupée) et cocher / décocher ceux qui participent au tirage
+  au sort. Les morceaux sont découverts tout seuls : tout fichier
+  `res/raw/music_*.mp3` (ou `.ogg`) entre dans la liste, sans rien déclarer
+  dans le code.
+
+Comportement de la musique (`MusicPlayer`, `MusicHost` posé dans
+`AppNavigation`) :
+
+- un morceau tiré au hasard démarre au lancement de l'appli ; à la fin d'un
+  morceau, un autre est tiré (jamais le même deux fois de suite s'il y en a
+  plusieurs, et en boucle s'il n'y en a qu'un) ;
+- elle **continue en entrant dans une histoire** (rien ne la coupe
+  automatiquement) ; l'en-tête de l'écran de jeu
+  permet de la couper, la relancer (« Lancer une musique » réactive la
+  musique si elle était coupée dans les Réglages) ou changer de morceau ;
+- quand l'appli passe en arrière-plan, elle continue 3 minutes
+  (`BACKGROUND_GRACE_MS`, le temps d'aller copier une clé API ailleurs), puis
+  se met en pause ; elle reprend au retour dans l'appli.
+
+### Page 5 — Profil (`ui/AudiencePrefs.kt`)
+
+Le **public visé** (filles / garçons / les 2), choisi une première fois par
+`AudienceChoiceScreen` puis modifiable ici (`ProfileCard`). Il détermine les
+icônes proposées dans la page Icône et le fond par défaut de la page
+« Nouvelle histoire » du carrousel. Mémorisé dans les `SharedPreferences`
+`app_audience_prefs`.
+
+## Aides intégrées (`ui/HelpContent.kt`)
+
+Un petit bouton rond (`HelpButton`, icône `res/drawable/ic_help.png`) ouvre
+une fenêtre d'explication **propre à l'écran où il est posé** : chaque écran
+lui passe son propre titre et son propre texte, pris dans l'objet
+`HelpTexts`. Il n'y a donc pas de texte d'aide commun.
+
+| Écran | Titre | Texte (`HelpTexts`) |
+|---|---|---|
+| `ConfigureKeyScreen` | Comment obtenir une clé API Mistral ? | `API_KEY_TITLE` / `API_KEY` |
+| `CreateStoryScreen` | Créer une nouvelle histoire | `CREATE_STORY_TITLE` / `CREATE_STORY` |
+| `MainGameScreen` (en-tête, en haut à droite) | Comment fonctionne le jeu ? | `GAME_MECHANICS_TITLE` / `GAME_MECHANICS` |
+
+`GAME_MECHANICS` décrit les deux dés (faces, combinaisons 1 / 6), les valeurs
+autorisées, la menace (10 points), les totems (15 points, « Utiliser », Second
+Souffle, ajout de totems), les quêtes, l'historique, la narration, le mode
+sans clé, le journal, la musique et les Réglages. Les seuils (10 et 15) et
+les règles viennent de `DiceSession.kt` : **si on les change, mettre le texte
+à jour à la main**.
+
+Pour **ajouter l'aide d'un nouvel écran** : ajouter un couple `XXX_TITLE` /
+`XXX` dans `HelpTexts`, puis poser
+`HelpButton(title = HelpTexts.XXX_TITLE, text = HelpTexts.XXX)` à l'endroit
+voulu de l'écran.
 
 ## Fichiers stockés sur l'appareil
 
@@ -302,7 +417,9 @@ android:enabled="false" …>` dans le manifeste, et une entrée
 | `totem_images/` | images des totems ajoutés |
 | `classic_dice_state.json` | historique de la page « Des classiques » |
 | `backgrounds/<emplacement>.jpg` | fonds de pages personnalisés (Réglages > Photos) |
-| `SharedPreferences` `app_font_prefs` | polices choisies (texte et titres) |
+| `SharedPreferences` `app_font_prefs` | polices, couleurs et tailles choisies (titres, texte courant, réponses de l'IA) |
+| `SharedPreferences` `app_sound_prefs` | volumes et coupures (dés, musique), morceaux décochés |
+| `SharedPreferences` `app_audience_prefs` | public visé (filles / garçons / les 2) |
 
 Désinstaller l'appli efface tout cela. L'icône active est mémorisée par
 Android lui-même (état des alias).
@@ -341,43 +458,47 @@ DesDeAventure/
         │   ├── model/Story.kt
         │   ├── viewmodel/GameViewModel.kt  # utilise GameEngine
         │   ├── screens/
+        │   │   ├── AudienceChoiceScreen.kt   # tout premier écran : public visé
         │   │   ├── TotemManagementDialog.kt  # gestion des totems ajoutés en cours de partie
         │   │   ├── ClassicDiceScreen.kt      # page "Des classiques"
         │   │   ├── ConfigureKeyScreen.kt     # saisie de la clé API Mistral (+ engrenage vers Réglages)
         │   │   ├── CreateStoryScreen.kt      # création d'une histoire personnalisée
-        │   │   ├── SettingsScreen.kt         # Réglages : polices, fonds, icône (+ SettingsGearButton)
+        │   │   ├── SettingsScreen.kt         # Réglages : polices, fonds, icône, sons, profil (+ SettingsGearButton)
         │   │   └── StorySelectorScreen.kt    # carrousel des histoires
         │   └── ui/
-        │       ├── AppFonts.kt        # chargement des polices (rememberAppFonts)
-        │       ├── FontPrefs.kt       # polices choisies + liste des polices de assets/fonts
+        │       ├── AppFonts.kt        # chargement des polices (rememberAppFonts, rememberAppTextStyles)
+        │       ├── FontPrefs.kt       # polices, couleurs, tailles choisies + liste des polices de assets/fonts
+        │       ├── AudiencePrefs.kt   # public visé (Audience, AudiencePrefs)
+        │       ├── SoundPrefs.kt      # volumes / coupures, morceaux cochés, DiceSoundPlayer
+        │       ├── MusicPlayer.kt     # musique de fond (MusicPlayer, MusicHost)
+        │       ├── HelpContent.kt     # boutons d'aide (HelpButton) et textes (HelpTexts)
         │       ├── BackgroundStore.kt # fonds personnalisés (BackgroundSlot, rememberBackgroundPainter)
         │       └── AppIconStore.kt    # icône de l'appli (AppIcon, activation des alias)
 ```
 
 ### Ressources attendues dans `res/`
 
-- **Fonds par défaut** : `drawable/bg_classic_dice.jpg` (« Des classiques »), `drawable/bg_create_story.jpg` (création d'histoire), `drawable/new_story_bg` (dernière page du carrousel), `raw/bg_key_page.jpg` (clé API), `raw/bg_settings.jpg` (Réglages).
-- **Icônes d'interface** : `drawable/classic_dice_icon` (icône du carrousel), `drawable/ic_settings.png` (engrenage).
+- **Fonds par défaut** : `drawable/bg_classic_dice.jpg` (« Des classiques »), `drawable/bg_create_story.jpg` (création d'histoire), `drawable/new_story_bg`, `new_story_bg_filles` et `new_story_bg_duo` (dernière page du carrousel, selon le public visé), `raw/bg_key_page.jpg` (clé API), `raw/bg_settings.jpg` (Réglages).
+- **Icônes d'interface** : `drawable/classic_dice_icon` (icône du carrousel), `drawable/ic_settings.png` (engrenage), `drawable/ic_help.png` (bouton d'aide, image du personnage qui réfléchit).
+- **Sons** : `raw/dice_roll.mp3` (bruit des dés) et, pour la musique de fond, tout fichier `raw/music_<nom>.mp3` ou `.ogg` (détecté automatiquement ; sans fichier, la musique est simplement absente).
 - **Polices** : Bangers et Nunito (dont `Nunito-Bold.ttf`) dans `assets/fonts/`, plus toute police à proposer dans Réglages.
 - **Icône d'origine** :
   - `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png` et `ic_launcher_round.png` (Android avant la version 8) ;
   - `mipmap-anydpi-v26/ic_launcher.xml` et `ic_launcher_round.xml` (icône adaptative, Android 8 et plus), qui utilisent `drawable-nodpi/ic_original_bg.jpg` et `ic_original_fg.png`.
-- **Icônes alternatives 1 à 8** :
-  - `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_altN.png` (Android avant la version 8) ;
-  - `mipmap-anydpi-v26/ic_altN.xml` (icône adaptative) qui utilise `drawable-nodpi/ic_altN_bg.jpg` et `ic_altN_fg.png` ;
-  - `drawable-nodpi/icon_preview_N.png` : miniature affichée dans Réglages.
+- **Icônes alternatives** (icônes 1 à 6 en trois versions filles / garçons / duo, plus les icônes 7 et 8 communes, soit 20 icônes en plus de l'originale) : pour chacune, une icône de lanceur (`mipmap-…`, référencée par l'`android:icon` de son alias dans le manifeste) et une miniature affichée dans Réglages : `drawable-nodpi/icon_preview_N_filles.png`, `icon_preview_N_garcons.png`, `icon_preview_N_duo.png` (N de 1 à 6), `icon_preview_7.png` et `icon_preview_8.png`.
 - `values/strings.xml` (`app_name`).
 
 ### Le manifeste (`AndroidManifest.xml`)
 
 - `MainActivity` **n'a plus** de filtre `MAIN` / `LAUNCHER` (sinon l'appli
   apparaîtrait en double dans le lanceur) ; elle reste `exported="true"`.
-- Neuf `<activity-alias>` portent ce filtre : `.IconOriginal` (activé par
-  défaut, `@mipmap/ic_launcher` + `@mipmap/ic_launcher_round`) et `.Icon1` à
-  `.Icon8` (désactivés par défaut, `@mipmap/ic_alt1` à `ic_alt8`).
+- Vingt et un `<activity-alias>` portent ce filtre : `.IconOriginal` (activé
+  par défaut, `@mipmap/ic_launcher` + `@mipmap/ic_launcher_round`) et vingt
+  alias désactivés par défaut : `.Icon1Filles`, `.Icon1Garcons`, `.Icon1Duo`
+  … `.Icon6Filles`, `.Icon6Garcons`, `.Icon6Duo`, puis `.Icon7` et `.Icon8`.
 - Les noms d'alias doivent rester alignés avec l'énumération `AppIcon`
-  (`"IconOriginal"`, `"Icon1"`… dans `AppIconStore.kt`) : le code retrouve les
-  alias par `com.aventure.desdice.<nom>`.
+  (`"IconOriginal"`, `"Icon1Filles"`… dans `AppIconStore.kt`) : le code
+  retrouve les alias par `com.aventure.desdice.<nom>`.
 
 ## Construire l'APK
 
@@ -428,7 +549,7 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 2. Si Kotlin passe un jour à **2.0 ou plus**, le compilateur Compose se configure autrement : ajouter le plugin `org.jetbrains.kotlin.plugin.compose` et **supprimer** le bloc `composeOptions` de `app/build.gradle`.
 3. Ne pas retirer `androidx.appcompat` : le thème du manifeste (`Theme.AppCompat.Light.NoActionBar`) en dépend.
 4. `Unresolved reference: toBitmap` dans `SettingsScreen.kt` : ajouter la dépendance `androidx.core:core-ktx` (elle sert à dessiner la miniature de l'icône d'origine).
-5. `Unresolved reference: R.drawable.icon_preview_N`, `R.mipmap.ic_altN` ou `R.raw.bg_settings` : une ressource d'icône ou de fond manque ou est mal nommée (noms en minuscules, sans espace ni tiret).
+5. `Unresolved reference: R.drawable.icon_preview_…`, `R.drawable.ic_help`, `R.raw.dice_roll` ou `R.raw.bg_settings` : une ressource d'icône, de fond ou de son manque ou est mal nommée (noms en minuscules, sans espace ni tiret). Un fichier `music_…` manquant n'est pas une erreur : la musique est juste absente.
 6. Un clic sur une icône affiche « les alias du manifeste ne sont pas en place » : le `AndroidManifest.xml` n'est pas celui qui contient les `<activity-alias>`.
 
 ## Ouvrir le projet dans Android Studio (optionnel)
