@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,6 +63,8 @@ import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
 import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.HelpButton
+import com.aventure.desdice.ui.HelpTexts
 import com.aventure.desdice.ui.bodySp
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
@@ -135,7 +139,9 @@ fun CreateStoryScreen(
     var title by remember { mutableStateOf("") }
     var subtitle by remember { mutableStateOf("") }
     var loreText by remember { mutableStateOf("") }
-    var protagonistName by remember { mutableStateOf("") }
+    // Au moins un champ affiché en permanence (même vide, pour laisser la place au premier
+    // héros) ; les champs laissés vides sont filtrés au moment de la création (submit()).
+    var protagonistNames by remember { mutableStateOf(listOf("")) }
     // "short" (~10 echanges), "medium" (20-30) ou "long" (illimite, en
     // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "medium"
     // choisi par defaut pour une NOUVELLE histoire (contrairement au "long"
@@ -208,7 +214,9 @@ fun CreateStoryScreen(
                     title = parsed.optString("title", "")
                     subtitle = parsed.optString("subtitle", "")
                     loreText = parsed.optString("lore_text", "")
-                    protagonistName = parsed.optString("protagonist_name", "")
+                    protagonistNames = parsed.optJSONArray("protagonist_names")?.let { arr ->
+                        (0 until arr.length()).map { arr.optString(it) }
+                    }?.ifEmpty { listOf("") } ?: listOf("")
                     totemLabel = parsed.optString("totem_label", "")
                     totemPowers = parsed.optString("totem_powers", "")
                     totemSpecial = parsed.optString("totem_special", "")
@@ -322,7 +330,7 @@ fun CreateStoryScreen(
                     bgImageBytes = bgBytes,
                     totemImageBytes = totemBytes,
                     totemImageFilename = totemFilename,
-                    protagonistName = protagonistName,
+                    protagonistNames = protagonistNames.map { it.trim() }.filter { it.isNotEmpty() },
                     storyLength = storyLength,
                     moralGoal = moralGoal
                 )
@@ -452,6 +460,24 @@ fun CreateStoryScreen(
                     .padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 14.dp)
             )
 
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Text(
+                    text = "Ce qui est attendu ici",
+                    fontFamily = fonts.body,
+                    fontSize = textStyles.bodySp(14f),
+                    color = textStyles.bodyColor ?: Color.White,
+                    style = TextStyle(textDecoration = TextDecoration.Underline, shadow = TextShadow)
+                )
+                Spacer(Modifier.width(6.dp))
+                HelpButton(title = HelpTexts.CREATE_STORY_TITLE, text = HelpTexts.CREATE_STORY)
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -505,14 +531,46 @@ fun CreateStoryScreen(
                     enabled = !saving,
                     minHeight = 110.dp
                 )
-                ComicTextField(
-                    label = "Prénom du héros (optionnel — laisser vide si le joueur doit le donner en jeu)",
-                    value = protagonistName,
-                    onValueChange = { protagonistName = it },
+                SectionTitle("Héros de l'histoire (optionnel — laisser vide si le joueur doit les donner en jeu)", fonts, textStyles)
+                protagonistNames.forEachIndexed { index, name ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            ComicTextField(
+                                label = if (index == 0) "Prénom du héros" else "Prénom du héros ${index + 1}",
+                                value = name,
+                                onValueChange = { new ->
+                                    protagonistNames = protagonistNames.toMutableList().also { it[index] = new }
+                                },
+                                fonts = fonts,
+                                textStyles = textStyles,
+                                enabled = !saving,
+                                singleLine = true
+                            )
+                        }
+                        if (protagonistNames.size > 1) {
+                            Text(
+                                text = "✕",
+                                fontFamily = fonts.bodyBold,
+                                fontSize = 20.sp,
+                                color = textStyles.bodyColor ?: Color.White,
+                                style = TextStyle(shadow = TextShadow),
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .clickable(enabled = !saving) {
+                                        protagonistNames = protagonistNames.toMutableList().also { it.removeAt(index) }
+                                    }
+                                    .padding(8.dp)
+                            )
+                        }
+                    }
+                }
+                ComicButton(
+                    text = "+ Ajouter un héros",
+                    onClick = { protagonistNames = protagonistNames + "" },
                     fonts = fonts,
                     textStyles = textStyles,
-                    enabled = !saving,
-                    singleLine = true
+                    secondary = true,
+                    enabled = !saving
                 )
 
                 // --- Longueur de l'histoire ---

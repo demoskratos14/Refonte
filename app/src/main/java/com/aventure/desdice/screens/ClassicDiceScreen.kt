@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,10 +33,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,6 +77,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -84,6 +90,7 @@ import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppTextStyles
 import com.aventure.desdice.ui.BackgroundSlot
+import com.aventure.desdice.ui.ClassicDicePrefs
 import com.aventure.desdice.ui.FontPrefs
 import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.rememberAppFonts
@@ -136,6 +143,9 @@ private val PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
 private data class ClassicRoll(
     val id: Int,
     val success: Int?,
+    // Nombre de faces du dé de réussite tiré (6 pour tout lancer enregistré avant l'ajout du
+    // choix du dé : le champ est alors absent de l'historique).
+    val faces: Int,
     val fateEmoji: String?,
     val fateLabel: String?
 )
@@ -168,6 +178,7 @@ private fun parseHistory(result: JSONObject): List<ClassicRoll> {
             ClassicRoll(
                 id = entry.optInt("id"),
                 success = if (entry.isNull("success")) null else entry.optInt("success"),
+                faces = if (entry.isNull("faces")) 6 else entry.optInt("faces", 6),
                 fateEmoji = entry.optString("fate_emoji", "").ifEmpty { null },
                 fateLabel = entry.optString("fate_label", "").ifEmpty { null }
             )
@@ -177,7 +188,8 @@ private fun parseHistory(result: JSONObject): List<ClassicRoll> {
 }
 
 /**
- * Page "Des classiques" : le de de reussite (1-6) et le de du destin,
+ * Page "Des classiques" : le de de reussite (6 faces par defaut, ou d4/d8/d10/d12/d20 ou
+ * un nombre de faces libre, voir DiceChoiceSection) et le de du destin,
  * independants de toute histoire, pense comme aide-memoire pendant une
  * partie sur table. Habillage repris de render_classic_dice_page
  * (dice_web.py) : fond photo, boutons "BD", polices Bangers / Nunito.
@@ -199,6 +211,7 @@ fun ClassicDiceScreen(
     val context = LocalContext.current
     val fontPrefs = remember(context) { FontPrefs.get(context) }
     val textStyles = rememberAppTextStyles(fonts, fontPrefs)
+    val dicePrefs = remember(context) { ClassicDicePrefs.get(context) }
     // Fleche retour : si onBack n'est pas fourni, on declenche le meme retour que
     // le bouton du telephone (le BackHandler de MainActivity ferme alors la page).
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
@@ -241,12 +254,26 @@ fun ClassicDiceScreen(
                 // dans le StateFlow du ViewModel) qu'a la fin, pour ne pas
                 // spoiler le suspense -- meme logique que rollAwaitingAnimation()
                 // sur l'ecran de jeu principal.
-                val result = viewModel.classicDiceRollAwait(kind)
+                val faces = dicePrefs.successFaces
+                val result = viewModel.classicDiceRollAwait(kind, faces)
                 val newest = parseHistory(result).lastOrNull()
 
                 val successValue = newest?.success
-                val successSpec = if (kind != "fate" && successValue != null && successValue in 1..6) {
-                    newSpinSpec(faceIndex = successValue - 1, bounces = 3, timeScale = 1f)
+                val usedFaces = newest?.faces ?: faces
+                var successNumbers: List<Int>? = null
+                val successSpec = if (kind != "fate" && successValue != null) {
+                    if (usedFaces == 6 && successValue in 1..6) {
+                        newSpinSpec(faceIndex = successValue - 1, bounces = 3, timeScale = 1f)
+                    } else {
+                        // Autre dé qu'un d6 : pas de points, le cube porte des nombres. La face
+                        // qui finit vers nous affiche le vrai résultat, les cinq autres des
+                        // nombres tirés au hasard dans la même plage (pour l'illusion pendant qu'il roule).
+                        val finalFace = Random.nextInt(6)
+                        successNumbers = List(6) { i ->
+                            if (i == finalFace) successValue else Random.nextInt(1, usedFaces + 1)
+                        }
+                        newSpinSpec(faceIndex = finalFace, bounces = 3, timeScale = 1f)
+                    }
                 } else null
 
                 val cubeFaces = fateFaces.take(6)
@@ -260,7 +287,7 @@ fun ClassicDiceScreen(
                 } else null
 
                 if (successSpec != null || fateSpec != null) {
-                    spin = SpinState(successSpec, fateSpec)
+                    spin = SpinState(successSpec, fateSpec, successNumbers)
                     playDiceRollSound()
                     progress.snapTo(0f)
                     progress.animateTo(1f, tween(durationMillis = SpinDurationMs, easing = LinearEasing))
@@ -305,7 +332,9 @@ fun ClassicDiceScreen(
 
     // Dernieres valeurs affichees sur les des (meme logique que
     // _last_classic_dice_values : on remonte l'historique pour chaque de).
-    val lastSuccess = history.firstOrNull { it.success != null }?.success
+    // Le dernier résultat du dé de réussite n'est montré à plat que s'il a été tiré avec le dé
+    // actuellement choisi (un 4 sur un d6 n'a pas de sens affiché sur un d20) ; sinon "⚡".
+    val lastSuccess = history.firstOrNull { it.success != null && it.faces == dicePrefs.successFaces }?.success
     val lastFateRoll = history.firstOrNull { it.fateEmoji != null }
     val lastFate: FateFace? = lastFateRoll?.let { r ->
         r.fateEmoji?.let { e -> FateFace(e, r.fateLabel.orEmpty()) }
@@ -382,9 +411,21 @@ fun ClassicDiceScreen(
 
             val sectionModifier = Modifier.align(Alignment.CenterHorizontally)
 
+            // --- Choix du dé de réussite (nombre de faces) ----------------
+            Section(sectionModifier) {
+                DiceChoiceSection(
+                    prefs = dicePrefs,
+                    enabled = !rolling,
+                    fonts = fonts,
+                    textStyles = textStyles
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+
             // --- Section 1 : les des + boutons (sans fond : la photo reste visible)
             Section(sectionModifier) {
                 DiceSection(
+                    successFaces = dicePrefs.successFaces,
                     success = lastSuccess,
                     fate = lastFate,
                     fonts = fonts,
@@ -436,7 +477,9 @@ fun ClassicDiceScreen(
                     ) {
                         history.forEachIndexed { index, roll ->
                             val parts = mutableListOf<String>()
-                            if (roll.success != null) parts.add("Dé classique=${roll.success}")
+                            if (roll.success != null) {
+                                parts.add(if (roll.faces == 6) "Dé classique=${roll.success}" else "d${roll.faces}=${roll.success}")
+                            }
                             if (roll.fateEmoji != null) parts.add("Destin=${roll.fateEmoji} ${roll.fateLabel.orEmpty()}")
                             Text(
                                 text = "#${roll.id} — " + parts.joinToString(" | "),
@@ -641,6 +684,7 @@ private fun ComicButton(
  */
 @Composable
 private fun DiceSection(
+    successFaces: Int,
     success: Int?,
     fate: FateFace?,
     fonts: AppFonts,
@@ -674,11 +718,14 @@ private fun DiceSection(
         }
 
         val successDie: @Composable (Dp) -> Unit = { dieSize ->
-            DieWithCaption("Dé classique", fonts, textStyles) {
+            DieWithCaption(if (successFaces == 6) "Dé classique" else "Dé à $successFaces faces", fonts, textStyles) {
                 val spec = spin?.success
                 if (spec != null) {
                     Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
-                        TumblingDie(spec, progress, null, fonts, textStyles, Color.White)
+                        TumblingDie(
+                            spec, progress, null, fonts, textStyles, Color.White,
+                            faceNumbers = spin?.successNumbers
+                        )
                     }
                 } else {
                     DieBox(
@@ -687,7 +734,9 @@ private fun DiceSection(
                         size = dieSize,
                         onClick = onRollSuccess,
                         enabled = !rolling
-                    ) { SuccessDieFace(success) }
+                    ) {
+                        if (successFaces == 6) SuccessDieFace(success) else NumberDieFace(success, fonts)
+                    }
                 }
             }
         }
@@ -839,6 +888,182 @@ private fun SuccessDieFace(value: Int?) {
     }
 }
 
+/** Face a plat d'un de de reussite autre qu'un d6 : le nombre tire, en grand (ou "⚡" avant tout lancer). */
+@Composable
+private fun NumberDieFace(value: Int?, fonts: AppFonts) {
+    if (value == null) {
+        Text(
+            text = "⚡",
+            modifier = Modifier.alpha(0.55f),
+            style = TextStyle(fontSize = 54.sp)
+        )
+    } else {
+        val text = value.toString()
+        val size = when {
+            text.length >= 3 -> 46.sp
+            text.length == 2 -> 64.sp
+            else -> 80.sp
+        }
+        Text(
+            text = text,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            style = TextStyle(fontFamily = fonts.display, fontSize = size, color = Ink)
+        )
+    }
+}
+
+/**
+ * Choix du dé de réussite : dés courants en un tap (d4, classique à 6 faces, d8, d10, d12, d20)
+ * ou "Autre" pour saisir soi-même un nombre de faces (2 à 999). Le choix est mémorisé
+ * (ClassicDicePrefs) ; un dé à 6 faces garde les points, tout autre dé affiche un nombre.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DiceChoiceSection(
+    prefs: ClassicDicePrefs,
+    enabled: Boolean,
+    fonts: AppFonts,
+    textStyles: AppTextStyles
+) {
+    val current = prefs.successFaces
+    var customMode by remember { mutableStateOf(current !in ClassicDicePrefs.COMMON_FACES) }
+    var customText by remember { mutableStateOf(if (customMode) current.toString() else "") }
+
+    Text(
+        text = "Dé de réussite",
+        style = TextStyle(
+            fontFamily = fonts.bodyBold,
+            fontSize = textStyles.bodySp(16f),
+            color = textStyles.bodyColor ?: Color.White,
+            shadow = TextShadow
+        )
+    )
+    Spacer(Modifier.height(8.dp))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        ClassicDicePrefs.COMMON_FACES.forEach { n ->
+            FaceChip(
+                label = if (n == 6) "Classique" else "d$n",
+                selected = !customMode && current == n,
+                enabled = enabled,
+                fonts = fonts,
+                textStyles = textStyles
+            ) {
+                customMode = false
+                prefs.changeSuccessFaces(n)
+            }
+        }
+        FaceChip(
+            label = "Autre",
+            selected = customMode,
+            enabled = enabled,
+            fonts = fonts,
+            textStyles = textStyles
+        ) {
+            customMode = true
+            if (customText.isEmpty()) customText = current.toString()
+        }
+    }
+    if (customMode) {
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CustomFacesField(
+                text = customText,
+                enabled = enabled,
+                fonts = fonts,
+                textStyles = textStyles
+            ) { typed ->
+                val digits = typed.filter { it.isDigit() }.take(3)
+                customText = digits
+                digits.toIntOrNull()
+                    ?.takeIf { it in ClassicDicePrefs.MIN_FACES..ClassicDicePrefs.MAX_FACES }
+                    ?.let { prefs.changeSuccessFaces(it) }
+            }
+            Text(
+                text = "faces (de ${ClassicDicePrefs.MIN_FACES} à ${ClassicDicePrefs.MAX_FACES})",
+                style = TextStyle(
+                    fontFamily = fonts.body,
+                    fontSize = textStyles.bodySp(14f),
+                    color = textStyles.bodyColor ?: Color.White,
+                    shadow = TextShadow
+                )
+            )
+        }
+    }
+}
+
+/** Petit bouton "BD" (même habillage ombre/bordure que ComicButton) pour un choix de dé. */
+@Composable
+private fun FaceChip(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    fonts: AppFonts,
+    textStyles: AppTextStyles,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = Modifier
+            .alpha(if (enabled) 1f else 0.6f)
+            .hardShadow(if (selected) 1.dp else 3.dp, 10.dp, Ink)
+            .background(if (selected) Red else Color.White, shape)
+            .border(3.dp, Ink, shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled,
+                onClick = onClick
+            )
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(
+                fontFamily = fonts.display,
+                fontSize = textStyles.titleSp(17f),
+                color = if (selected) Color.White else Ink
+            )
+        )
+    }
+}
+
+/** Champ numérique pour saisir un nombre de faces libre (chiffres seulement, 3 au plus). */
+@Composable
+private fun CustomFacesField(
+    text: String,
+    enabled: Boolean,
+    fonts: AppFonts,
+    textStyles: AppTextStyles,
+    onTextChange: (String) -> Unit
+) {
+    val shape = RoundedCornerShape(10.dp)
+    BasicTextField(
+        value = text,
+        onValueChange = onTextChange,
+        enabled = enabled,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        textStyle = TextStyle(
+            fontFamily = fonts.display,
+            fontSize = textStyles.titleSp(18f),
+            color = Ink,
+            textAlign = TextAlign.Center
+        ),
+        modifier = Modifier
+            .width(96.dp)
+            .background(Color.White, shape)
+            .border(3.dp, Ink, shape)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    )
+}
+
 @Composable
 internal fun FateDieFace(fate: FateFace?, fonts: AppFonts, textStyles: AppTextStyles) {
     if (fate == null) {
@@ -861,7 +1086,13 @@ internal fun FateDieFace(fate: FateFace?, fonts: AppFonts, textStyles: AppTextSt
 // ----------------------------------------------------------------------
 
 /** Ce qui est en train de rouler (null = ce de-la reste a plat). */
-internal class SpinState(val success: SpinSpec?, val fate: SpinSpec?)
+internal class SpinState(
+    val success: SpinSpec?,
+    val fate: SpinSpec?,
+    // Dé de réussite autre qu'un d6 : nombre écrit sur chacune des 6 faces du cube qui roule
+    // (la face finale porte le vrai résultat). null = points classiques.
+    val successNumbers: List<Int>? = null
+)
 
 /**
  * Parametres aleatoires d'un lancer : deux axes de rotation avec leur
@@ -974,9 +1205,23 @@ internal fun TumblingDie(
     faceColor: Color,
     // De de reussite seulement : symboles a dessiner sur chaque face, par face (index 0..5)
     // puis par point. null = points noirs (page "Des classiques").
-    pipGlyphs: List<List<PipGlyph>>? = null
+    pipGlyphs: List<List<PipGlyph>>? = null,
+    // De de reussite autre qu'un d6 : nombre a ecrire sur chacune des 6 faces (prioritaire sur
+    // les points et sur pipGlyphs). null = comportement d'origine.
+    faceNumbers: List<Int>? = null
 ) {
     val textMeasurer = rememberTextMeasurer()
+    val numberLayouts = remember(faceNumbers, fonts) {
+        faceNumbers?.map { n ->
+            val text = n.toString()
+            val size = when {
+                text.length >= 3 -> 46.sp
+                text.length == 2 -> 64.sp
+                else -> 80.sp
+            }
+            textMeasurer.measure(text, TextStyle(fontFamily = fonts.display, fontSize = size, color = Ink))
+        }
+    }
     val emojiLayouts = remember(cubeFateFaces) {
         cubeFateFaces?.map { textMeasurer.measure(it.emoji, TextStyle(fontSize = 58.sp, color = Ink)) }
     }
@@ -992,7 +1237,7 @@ internal fun TumblingDie(
 
     Canvas(Modifier.fillMaxSize()) {
         val p = (progress.value / spec.timeScale).coerceIn(0f, 1f)
-        drawTumblingCube(spec, finalR, p, faceColor, emojiLayouts, labelLayouts, pipGlyphs)
+        drawTumblingCube(spec, finalR, p, faceColor, emojiLayouts, labelLayouts, pipGlyphs, numberLayouts)
     }
 }
 
@@ -1004,7 +1249,8 @@ private fun DrawScope.drawTumblingCube(
     faceColor: Color,
     emojiLayouts: List<TextLayoutResult>?,
     labelLayouts: List<TextLayoutResult>?,
-    pipGlyphs: List<List<PipGlyph>>? = null
+    pipGlyphs: List<List<PipGlyph>>? = null,
+    numberLayouts: List<TextLayoutResult>? = null
 ) {
     val base = size.width // arete du de au repos = 150 dp
     val q = 1f - p
@@ -1095,7 +1341,12 @@ private fun DrawScope.drawTumblingCube(
             cornerRadius = CornerRadius(corner - border)
         )
 
-        if (emojiLayouts == null || labelLayouts == null) {
+        if (numberLayouts != null) {
+            // De a nombres (autre qu'un d6) : le nombre de la face, centre.
+            numberLayouts.getOrNull(i)?.let { nl ->
+                drawText(nl, topLeft = Offset((base - nl.size.width) / 2f, (base - nl.size.height) / 2f))
+            }
+        } else if (emojiLayouts == null || labelLayouts == null) {
             // De classique : points sur une grille 3x3.
             val pad = border + 10.dp.toPx()
             val cell = (base - 2 * pad) / 3f
