@@ -152,8 +152,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * naviguer vers l'écran de jeu, contrairement à la version
      * fire-and-forget ci-dessus. Ne prend plus bgImageExt (jamais utilisé
      * côté GameEngine, l'image de fond étant toujours réencodée en JPEG
-     * par StoryRegistry) ni protagonistName en position fixe : ce dernier
-     * est optionnel, comme côté GameEngine.createStory().
+     * par StoryRegistry) ni protagonistNames en position fixe : cette liste
+     * est optionnelle (un ou plusieurs héros), comme côté GameEngine.createStory().
      */
     suspend fun createStoryAwait(
         title: String,
@@ -165,7 +165,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         bgImageBytes: ByteArray,
         totemImageBytes: ByteArray,
         totemImageFilename: String,
-        protagonistName: String = "",
+        protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
         moralGoal: String = ""
     ): JSONObject = withContext(Dispatchers.IO) {
@@ -180,7 +180,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 bgImageBytes = bgImageBytes,
                 totemImageBytes = totemImageBytes,
                 totemImageFilename = totemImageFilename,
-                protagonistName = protagonistName,
+                protagonistNames = protagonistNames,
                 storyLength = storyLength,
                 moralGoal = moralGoal
             ).also { loadSessionState(it) }
@@ -278,10 +278,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun classicDiceRoll(kind: String) {
+    fun classicDiceRoll(kind: String, faces: Int = 6) {
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                _classicDiceState.value = engine.classicDiceRoll(kind)
+                _classicDiceState.value = engine.classicDiceRoll(kind, faces)
             }
         }
     }
@@ -309,8 +309,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * du dé doit jouer AVANT que l'historique affiché ne se mette à jour,
      * pour ne pas gâcher le suspense (même logique que rollAwaitingAnimation()).
      */
-    suspend fun classicDiceRollAwait(kind: String): JSONObject =
-        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceRoll(kind) } }
+    suspend fun classicDiceRollAwait(kind: String, faces: Int = 6): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceRoll(kind, faces) } }
 
     /** À appeler une fois l'animation terminée, pour publier le résultat
      * calculé par classicDiceRollAwait(). */
