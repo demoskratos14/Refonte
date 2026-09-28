@@ -17,7 +17,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.aventure.desdice.R
 
 /**
- * Musique de fond des menus.
+ * Musique de fond de l'appli (menus et histoires).
  *
  * Les morceaux sont découverts tout seuls : tout fichier de app/src/main/res/raw
  * dont le nom commence par `music_` (music_foret.mp3, music_ambiance1.ogg...)
@@ -34,7 +34,7 @@ import com.aventure.desdice.R
  *   - quand l'appli passe en arrière-plan, la musique continue BACKGROUND_GRACE_MS
  *     (le temps d'aller copier une clé API dans une autre appli, par exemple), puis se
  *     met en pause ; elle reprend toute seule au retour dans l'appli ;
- *   - Réglages > Écriture... pardon, Réglages > Sons permet de décocher certains morceaux :
+ *   - Réglages > Sons permet de décocher certains morceaux :
  *     seuls ceux restés cochés (SoundPrefs.isTrackEnabled) sont tirés au sort ici.
  */
 
