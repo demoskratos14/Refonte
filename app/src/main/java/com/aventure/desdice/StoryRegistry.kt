@@ -74,6 +74,29 @@ val ALLOWED_BG_IMAGE_EXTS: Set<String> = setOf("jpg", "jpeg", "png", "webp", "gi
 // Structures de données
 // ------------------------------------------------------------------------
 
+/**
+ * Sérialise une liste de prénoms de héros : nouvelle clé "protagonist_names" (tableau), plus
+ * "protagonist_name" (le premier, ou vide) pour qu'une version antérieure de l'appli -- qui ne
+ * connaît qu'un seul héros -- retrouve quand même un nom lisible dans le même fichier.
+ */
+private fun putProtagonistNames(o: JSONObject, names: List<String>) {
+    o.put("protagonist_name", names.firstOrNull().orEmpty())
+    o.put("protagonist_names", JSONArray(names))
+}
+
+/**
+ * Lit une liste de prénoms de héros : le tableau "protagonist_names" s'il est présent (histoires
+ * à plusieurs héros), sinon repli sur l'ancien champ unique "protagonist_name" (histoires créées
+ * avant l'ajout de ce champ).
+ */
+private fun readProtagonistNames(o: JSONObject): List<String> {
+    val arr = o.optJSONArray("protagonist_names")
+    if (arr != null) {
+        return (0 until arr.length()).mapNotNull { i -> arr.optString(i).trim().takeIf { it.isNotEmpty() } }
+    }
+    return o.optString("protagonist_name", "").trim().takeIf { it.isNotEmpty() }?.let { listOf(it) } ?: emptyList()
+}
+
 /** Métadonnées brutes d'une histoire personnalisée, telles que stockées dans custom_stories.json. */
 data class StoryMeta(
     val slug: String,
@@ -85,7 +108,7 @@ data class StoryMeta(
     val totemImageFilename: String?,
     val totemPowers: String,
     val totemSpecial: String,
-    val protagonistName: String,
+    val protagonistNames: List<String>,
     val saveFile: String,
     // "short" (~10 échanges), "medium" (20-30) ou "long" (illimité, en
     // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "long"
@@ -110,7 +133,7 @@ data class StoryMeta(
         put("totem_image_filename", totemImageFilename ?: JSONObject.NULL)
         put("totem_powers", totemPowers)
         put("totem_special", totemSpecial)
-        put("protagonist_name", protagonistName)
+        putProtagonistNames(this, protagonistNames)
         put("save_file", saveFile)
         put("story_length", storyLength)
         put("moral_goal", moralGoal)
@@ -130,7 +153,7 @@ data class StoryMeta(
                 totemImageFilename = if (o.isNull("totem_image_filename") || !o.has("totem_image_filename")) null else o.optString("totem_image_filename"),
                 totemPowers = o.optString("totem_powers", ""),
                 totemSpecial = o.optString("totem_special", ""),
-                protagonistName = o.optString("protagonist_name", ""),
+                protagonistNames = readProtagonistNames(o),
                 saveFile = o.optString("save_file", "dice_state_$slug.json"),
                 storyLength = o.optString("story_length", "long"),
                 moralGoal = o.optString("moral_goal", "")
@@ -163,7 +186,7 @@ data class StoryEntry(
     val pipSymbols: Map<String, PipSymbolInfo> = emptyMap(),
     val totems: List<JSONObject> = emptyList(), // toujours vide pour une histoire personnalisée
     val defaultPipSymbol: String = "",
-    val protagonistRef: String,
+    val protagonistNames: List<String> = emptyList(),
     val fixedAlliesLine: String = "",
     val allyHelpText: Map<String, String> = emptyMap(),
     val isCustom: Boolean,
@@ -195,7 +218,7 @@ data class StoryIdentityImport(
     val totemLabel: String,
     val totemPowers: String,
     val totemSpecial: String,
-    val protagonistName: String,
+    val protagonistNames: List<String>,
     val bgImageB64: String,
     val totemImageB64: String,
     val extraTotems: List<ExtraTotemImport>,
@@ -279,7 +302,7 @@ class StoryRegistry(private val baseDir: File) {
         totemImageFilename: String?,
         totemPowers: String = "",
         totemSpecial: String = "",
-        protagonistName: String = "",
+        protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
         moralGoal: String = ""
     ): String {
@@ -301,7 +324,7 @@ class StoryRegistry(private val baseDir: File) {
             totemImageFilename = totemImageFilename,
             totemPowers = totemPowers.trim(),
             totemSpecial = totemSpecial.trim(),
-            protagonistName = protagonistName.trim(),
+            protagonistNames = protagonistNames.map { it.trim() }.filter { it.isNotEmpty() },
             saveFile = "dice_state_$slug.json",
             storyLength = storyLength,
             moralGoal = moralGoal.trim()
@@ -367,7 +390,7 @@ class StoryRegistry(private val baseDir: File) {
             pipSymbols = emptyMap(),
             totems = emptyList(),
             defaultPipSymbol = "",
-            protagonistRef = meta.protagonistName.trim().ifEmpty { "le personnage principal" },
+            protagonistNames = meta.protagonistNames,
             fixedAlliesLine = "",
             allyHelpText = emptyMap(),
             isCustom = true,
@@ -431,7 +454,7 @@ class StoryRegistry(private val baseDir: File) {
             put("totem_label", meta.totemLabel)
             put("totem_powers", meta.totemPowers)
             put("totem_special", meta.totemSpecial)
-            put("protagonist_name", meta.protagonistName)
+            putProtagonistNames(this, meta.protagonistNames)
             put("bg_image_b64", bgB64)
             put("totem_image_b64", totemB64)
             put("extra_totems", extraTotems ?: JSONArray())
@@ -516,7 +539,7 @@ class StoryRegistry(private val baseDir: File) {
             totemLabel = data.optString("totem_label", "").trim(),
             totemPowers = data.optString("totem_powers", "").trim(),
             totemSpecial = data.optString("totem_special", "").trim(),
-            protagonistName = data.optString("protagonist_name", "").trim(),
+            protagonistNames = readProtagonistNames(data),
             bgImageB64 = data.optString("bg_image_b64", ""),
             totemImageB64 = data.optString("totem_image_b64", ""),
             extraTotems = extraTotems,

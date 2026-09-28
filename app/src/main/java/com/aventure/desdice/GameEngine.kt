@@ -263,7 +263,7 @@ class GameEngine(private val baseDir: File) {
         bgImageBytes: ByteArray,
         totemImageBytes: ByteArray,
         totemImageFilename: String,
-        protagonistName: String = "",
+        protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
         moralGoal: String = ""
     ): JSONObject {
@@ -281,7 +281,7 @@ class GameEngine(private val baseDir: File) {
             totemImageFilename = savedTotemFilename,
             totemPowers = totemPowers,
             totemSpecial = totemSpecial,
-            protagonistName = protagonistName,
+            protagonistNames = protagonistNames,
             storyLength = storyLength,
             moralGoal = moralGoal
         )
@@ -417,8 +417,40 @@ class GameEngine(private val baseDir: File) {
         "spirale" to "chaos/transformation : effet imprévisible, mutation, ou conséquence inattendue"
     )
 
+    /** "Alix" / "Alix et Nao" / "Alix, Nao et Théo" -- vide -> "le joueur". */
+    private fun joinProtagonistNames(names: List<String>): String {
+        val n = names.map { it.trim() }.filter { it.isNotEmpty() }
+        return when (n.size) {
+            0 -> "le joueur"
+            1 -> n[0]
+            else -> n.dropLast(1).joinToString(", ") + " et " + n.last()
+        }
+    }
+
+    /**
+     * Consigne d'adressage à donner à l'IA : "tu" pour un seul héros ; pour plusieurs, un mélange
+     * de vouvoiement collectif (action commune) et de tutoiement par prénom (action ou choix
+     * distinct d'un héros) -- en particulier au moment des choix et des lancers de dés, où
+     * chaque héros doit pouvoir agir et lancer les dés indépendamment des autres.
+     */
+    private fun protagonistAddressing(names: List<String>): String {
+        val n = names.map { it.trim() }.filter { it.isNotEmpty() }
+        return when (n.size) {
+            0 -> "tu t'adresses toujours au joueur en 'tu'."
+            1 -> "tu t'adresses toujours à ${n[0]} en 'tu'."
+            else -> "les héros de cette histoire sont ${joinProtagonistNames(n)} : utilise le " +
+                "vouvoiement collectif (\"vous\") quand leur action est commune, et bascule sur le " +
+                "tutoiement en t'adressant par le prénom de chacun (\"${n[0]}, tu...\") dès qu'un " +
+                "héros agit ou choisit séparément des autres -- en particulier au moment des choix " +
+                "et des lancers de dés, où chaque héros doit pouvoir faire son propre choix et son " +
+                "propre lancer, indépendamment des autres : demande à chacun son lancer à tour de rôle, " +
+                "et quand tu proposes des actions sous forme de lignes OPTION:, commence chacune par le " +
+                "prénom du héros concerné (par exemple \"OPTION: ${n[0]} ouvre la porte\")."
+        }
+    }
+
     private fun buildMechanicsContext(sess: DiceSession, story: StoryEntry?, autoMode: Boolean): String {
-        val protagonistRef = story?.protagonistRef?.ifEmpty { "le joueur" } ?: "le joueur"
+        val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
         val lines = mutableListOf<String>()
         lines += "=== CONTEXTE IA NARRATRICE ==="
         lines += if (autoMode) {
@@ -510,14 +542,14 @@ class GameEngine(private val baseDir: File) {
                 "événements de jeu que je te transmets (lancers de dés, pouvoirs utilisés, quêtes...) ; " +
                 "à chaque action/incertitude tu me demandes explicitement de lancer le dé de réussite, " +
                 "le dé du destin, ou les deux, et tu attends le résultat suivant avant de continuer ; " +
-                "tu t'adresses toujours à $protagonistRef en 'tu'."
+                protagonistAddressing(story?.protagonistNames ?: emptyList())
         } else {
             "ATTENDU DE TOI : histoire collaborative et immersive intégrant mes lancers ; à chaque " +
                 "action/incertitude tu me demandes de lancer réussite/destin/les deux et attends mon " +
                 "résultat avant de continuer ; si j'utilise une jauge pleine ou qu'un ?/! survient je " +
                 "te colle un petit bloc généré par l'appli pour te le signaler précisément ; à la fin " +
                 "de chaque chapitre tu me donnes un résumé à coller dans l'appli pour garder une trace " +
-                "permanente ; tu t'adresses toujours à $protagonistRef en 'tu'."
+                "permanente ; " + protagonistAddressing(story?.protagonistNames ?: emptyList())
         }
         if (autoMode) {
             lines += ""
@@ -636,7 +668,7 @@ class GameEngine(private val baseDir: File) {
             lines += "Commence maintenant le prochain chapitre de l'histoire, dans la continuité " +
                 "directe de ce qui précède."
         } else {
-            val protagonistRef = story?.protagonistRef?.ifEmpty { "le joueur" } ?: "le joueur"
+            val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
             lines += ""
             lines += "Aucun chapitre n'a encore été joué. Commence maintenant le tout premier " +
                 "chapitre de cette aventure : plante le décor et présente la situation de départ de " +
@@ -1018,7 +1050,7 @@ class GameEngine(private val baseDir: File) {
             put("totem_label", parsed.totemLabel)
             put("totem_powers", parsed.totemPowers)
             put("totem_special", parsed.totemSpecial)
-            put("protagonist_name", parsed.protagonistName)
+            put("protagonist_names", JSONArray(parsed.protagonistNames))
             // Base64, pas des bytes bruts, pour rester manipulable en JSON —
             // c'est CreateStoryScreen qui décode avant de rappeler createStory.
             put("bg_image_b64", parsed.bgImageB64)
@@ -1111,6 +1143,9 @@ class GameEngine(private val baseDir: File) {
     // Dés classiques (page indépendante, aucune dépendance manquante)
     // ------------------------------------------------------------------
 
+    private val MIN_CLASSIC_FACES = 2
+    private val MAX_CLASSIC_FACES = 999
+
     private val classicDiceFile = File(baseDir, "classic_dice_state.json")
     private val classicFateKeys = FATE_FACES.map { it.key }
 
@@ -1155,14 +1190,22 @@ class GameEngine(private val baseDir: File) {
 
     fun classicDiceState(): JSONObject = classicDiceToJson(loadClassicDiceState())
 
-    fun classicDiceRoll(kind: String): JSONObject {
+    /**
+     * @param faces nombre de faces du dé de réussite (6 = dé classique, comme avant) ; borné à
+     *   MIN_CLASSIC_FACES..MAX_CLASSIC_FACES. Mémorisé dans l'historique (`faces`) pour que chaque
+     *   ligne s'affiche avec le bon dé ("d20 = 17") même si le choix change ensuite.
+     */
+    fun classicDiceRoll(kind: String, faces: Int = 6): JSONObject {
+        val nFaces = faces.coerceIn(MIN_CLASSIC_FACES, MAX_CLASSIC_FACES)
         val state = loadClassicDiceState()
         val history = state.optJSONArray("history") ?: JSONArray().also { state.put("history", it) }
         val nextId = state.optInt("next_id", 1)
 
         val entry = JSONObject().apply {
             put("id", nextId)
-            put("success", if (kind == "success" || kind == "both") Random.nextInt(1, 7) else JSONObject.NULL)
+            val rollsSuccess = kind == "success" || kind == "both"
+            put("success", if (rollsSuccess) Random.nextInt(1, nFaces + 1) else JSONObject.NULL)
+            put("faces", if (rollsSuccess) nFaces else JSONObject.NULL)
             put("fate", if (kind == "fate" || kind == "both") classicFateKeys.random() else JSONObject.NULL)
         }
         history.put(entry)
