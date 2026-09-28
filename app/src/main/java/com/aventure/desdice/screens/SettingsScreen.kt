@@ -574,7 +574,7 @@ private fun ProfileCard(fonts: AppFonts) {
     }
 }
 
-/** Page « Sons », 2e carte : couper ou baisser la musique de fond des menus. */
+/** Page « Sons », 2e carte : couper ou baisser la musique de fond, choisir les morceaux tirés au sort. */
 @Composable
 private fun MusicCard(fonts: AppFonts) {
     val context = LocalContext.current
@@ -585,8 +585,9 @@ private fun MusicCard(fonts: AppFonts) {
 
     SettingsCard(title = "\uD83C\uDFB5 Musique", fonts = fonts) {
         Text(
-            text = "Un morceau au hasard se lance à l'ouverture de l'appli et s'arrête quand tu entres " +
-                "dans une histoire. Dans la page de jeu, tu peux la relancer si tu en as envie.",
+            text = "Un morceau au hasard se lance à l'ouverture de l'appli et continue de jouer pendant " +
+                "les histoires. Dans la page de jeu, sous « Changer d'histoire », tu peux la couper, " +
+                "la relancer ou passer à un autre morceau.",
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.95f),
             fontFamily = fonts.body,
