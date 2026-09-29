@@ -51,6 +51,12 @@ import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import org.json.JSONArray
 import org.json.JSONObject
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * Panneau de narration IA (equivalent Compose de render_ai_panel_html dans
@@ -162,6 +168,73 @@ fun AiPanel(
 
     val sessionState by viewModel.sessionState.collectAsState()
 
+    // ---- Sauvegarde / reprise de l'histoire (résumé IA + journal + quêtes) ----
+    // Histoire "entamée" = au moins un échange avec l'IA, un chapitre au journal ou un résumé.
+    // Tant qu'elle ne l'est pas : bouton d'import ; dès qu'elle l'est : bouton d'export.
+    val storyStarted = remember(sessionState) {
+        val s = sessionState
+        val conv = s?.optJSONArray("ai_conversation")
+        var hasExchange = false
+        if (conv != null) {
+            for (i in 0 until conv.length()) {
+                if (conv.getJSONObject(i).optString("role") != "system") { hasExchange = true; break }
+            }
+        }
+        hasExchange ||
+            (s?.optJSONArray("story_log")?.length() ?: 0) > 0 ||
+            !s?.optString("story_summary", "").isNullOrBlank()
+    }
+    val scope = rememberCoroutineScope()
+    var backupBusy by remember { mutableStateOf(false) }
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    var pendingExport by remember { mutableStateOf<Triple<ByteArray, String, String>?>(null) }
+
+    // Enregistrement via le sélecteur de fichiers Android (Téléchargements, Drive...) : le fichier
+    // reste sur le téléphone / dans le cloud même après une désinstallation de l'appli.
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        val export = pendingExport
+        if (result.resultCode == Activity.RESULT_OK && uri != null && export != null) {
+            backupMessage = try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(export.first) }
+                "Sauvegarde enregistrée ✔ Garde ce fichier pour reprendre l'histoire après une réinstallation."
+            } catch (e: Exception) {
+                "Impossible d'enregistrer le fichier : ${e.message}"
+            }
+        }
+        pendingExport = null
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                backupBusy = true
+                backupMessage = try {
+                    val text = context.contentResolver.openInputStream(uri)
+                        ?.use { it.readBytes() }
+                        ?.toString(Charsets.UTF_8) ?: ""
+                    val obj = JSONObject(text)
+                    val log = obj.optJSONArray("story_log") ?: JSONArray()
+                    val summary = obj.optString("story_summary", "")
+                    if (log.length() == 0 && summary.isBlank()) {
+                        "Ce fichier ne contient ni résumé ni journal : ce n'est pas une sauvegarde d'histoire."
+                    } else {
+                        viewModel.applyImportedProgress(
+                            obj.optJSONArray("side_quests") ?: JSONArray(),
+                            obj.optInt("next_quest_id", 1),
+                            log,
+                            summary
+                        )
+                        "Sauvegarde importée ✔ Appuie sur « Démarrer l'histoire » pour reprendre où tu en étais."
+                    }
+                } catch (e: Exception) {
+                    "Fichier illisible : ${e.message}"
+                }
+                backupBusy = false
+            }
+        }
+    }
+
     // Reconstruit la liste affichable et relit ai_error a chaque
     // changement d'etat de session (le premier message, "system", n'est
     // jamais montre au joueur). C'est aussi ce qui fait retomber
@@ -237,6 +310,54 @@ fun AiPanel(
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Import (histoire vierge) OU export (histoire entamée) : jamais les deux.
+        // Placé avant le test de clé API : ni l'un ni l'autre n'en a besoin.
+        if (storyStarted) {
+            Button(
+                onClick = {
+                    backupBusy = true
+                    backupMessage = null
+                    scope.launch {
+                        // Résume d'abord les derniers échanges (un appel IA, quelques secondes).
+                        val export = viewModel.exportProgress()
+                        backupBusy = false
+                        if (export.first.isEmpty()) {
+                            backupMessage = "Rien à exporter pour l'instant."
+                        } else {
+                            pendingExport = export
+                            saveLauncher.launch(
+                                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = export.third
+                                    putExtra(Intent.EXTRA_TITLE, export.second)
+                                }
+                            )
+                        }
+                    }
+                },
+                enabled = !backupBusy && !isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (backupBusy) "Préparation de la sauvegarde…" else "📤 Exporter la sauvegarde de l'histoire")
+            }
+        } else {
+            Button(
+                onClick = {
+                    backupMessage = null
+                    importLauncher.launch("*/*")
+                },
+                enabled = !backupBusy && !isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (backupBusy) "Import en cours…" else "📥 Importer une sauvegarde d'histoire")
+            }
+        }
+        backupMessage?.let {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(text = it, style = MaterialTheme.typography.bodySmall)
+        }
         Spacer(modifier = Modifier.height(8.dp))
 
         if (!hasKey) {

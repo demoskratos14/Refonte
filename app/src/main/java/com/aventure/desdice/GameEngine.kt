@@ -846,19 +846,23 @@ class GameEngine(private val baseDir: File) {
     private fun maybeUpdateStoryDigest(
         sess: DiceSession,
         finalChapter: Boolean = false,
-        chapterEnd: Boolean = false
+        chapterEnd: Boolean = false,
+        flushAll: Boolean = false
     ) {
         val digestTrigger = 6
         val digestMaxTokens = 700
         if (!hasMistralKey()) return
-        val flush = finalChapter || chapterEnd
+        // flushAll : digère tout le reliquat sans prétendre que l'extrait clôt un chapitre
+        // (utilisé juste avant un export, en plein milieu d'un chapitre).
+        val flush = finalChapter || chapterEnd || flushAll
         while (true) {
             val pending = sess.pendingDigestMessages()
             val fullChunk = pending.size >= digestTrigger
             if (!fullChunk && (!flush || pending.isEmpty())) return
             val chunk = pending.take(digestTrigger)
             // Dernière tranche = celle qui vide le reliquat (même si elle fait pile 6 messages).
-            val isLastChunk = flush && pending.size <= digestTrigger
+            val isLastChunk = (finalChapter || chapterEnd) && pending.size <= digestTrigger
+            val isFlushEnd = flush && pending.size <= digestTrigger
             val block = chunk.joinToString("\n") { m -> "${if (m.role == "user") "Joueur" else "Narrateur"} : ${m.content}" }
             val existingSummary = sess.storySummary
 
@@ -901,7 +905,7 @@ class GameEngine(private val baseDir: File) {
             if (chapter.isEmpty()) return
             val updatedSummary = text.substring(summaryPos + digestSummaryTag.length).trim().ifEmpty { existingSummary }
             sess.applyStoryDigest(chapter, updatedSummary, chunk.size)
-            if (isLastChunk) return
+            if (isFlushEnd) return
         }
     }
 
@@ -1084,6 +1088,13 @@ class GameEngine(private val baseDir: File) {
         val slug = currentStorySlug
         if (story == null || !story.isCustom || slug == null) return Triple(ByteArray(0), "", "")
         val sess = session
+        // Avant d'exporter : les derniers échanges pas encore résumés le sont maintenant, sinon
+        // ils seraient perdus à la réinstallation (seuls le résumé et le journal sont exportés).
+        // Sans clé Mistral ou en cas d'échec réseau, on exporte simplement l'état actuel.
+        if (sess != null) {
+            maybeUpdateStoryDigest(sess, flushAll = true)
+            sess.save()
+        }
         val extraTotems = JSONArray()
         var sideQuests = JSONArray()
         var nextQuestId = 1
@@ -1116,6 +1127,33 @@ class GameEngine(private val baseDir: File) {
         ) ?: return Triple(ByteArray(0), "", "")
         val payload = data.toString(2)
         return Triple(payload.toByteArray(Charsets.UTF_8), "histoire_$slug.json", "application/json")
+    }
+
+    /**
+     * Sauvegarde légère de la progression, pour reprendre une histoire après une désinstallation :
+     * résumé long terme de l'IA, journal et quêtes secondaires (pas les images ni les totems).
+     * Contrairement à exportIdentity(), marche pour TOUTES les histoires, pas seulement les
+     * personnalisées ; se réimporte sur une histoire encore vierge (voir AiPanel). Les mêmes clés
+     * que l'identité sont utilisées (story_summary, story_log, side_quests, next_quest_id) : un
+     * fichier d'identité exportée est donc aussi accepté à l'import.
+     * Les derniers échanges pas encore résumés le sont d'abord (sans clé Mistral ou en cas
+     * d'échec réseau, on exporte simplement l'état actuel).
+     */
+    fun exportProgress(): Triple<ByteArray, String, String> {
+        val sess = session ?: return Triple(ByteArray(0), "", "")
+        maybeUpdateStoryDigest(sess, flushAll = true)
+        sess.save()
+        val slug = currentStorySlug ?: "histoire"
+        val data = JSONObject().apply {
+            put("format", "histoires_multiples_progression")
+            put("version", 1)
+            put("story_title", currentStory?.title ?: "")
+            put("story_summary", sess.storySummary)
+            put("story_log", JSONArray(sess.storyLog))
+            put("side_quests", JSONArray(sess.sideQuests.map { it.toJson() }))
+            put("next_quest_id", sess.nextQuestId)
+        }
+        return Triple(data.toString(2).toByteArray(Charsets.UTF_8), "progression_$slug.json", "application/json")
     }
 
     /** Miroir de do_import_identity() : ne fait qu'analyser/valider le JSON importé, sans rien appliquer. */
