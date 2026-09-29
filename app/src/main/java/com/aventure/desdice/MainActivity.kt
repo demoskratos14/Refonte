@@ -51,6 +51,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        // Libère le moteur vocal quand l'appli est vraiment fermée.
+        speechManager.shutdown()
+        super.onDestroy()
+    }
 }
 
 /**
@@ -157,7 +163,9 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
             BackHandler { showStorySelector = true }
             MainGameScreen(
                 viewModel = viewModel,
-                onChangeStory = { showStorySelector = true }
+                onChangeStory = { showStorySelector = true },
+                // Sans ce paramètre, le bouton "Écouter" du panneau de narration reste masqué.
+                speechManager = speechManager
             )
         }
     }

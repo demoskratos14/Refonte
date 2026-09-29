@@ -656,6 +656,24 @@ class GameEngine(private val baseDir: File) {
 
     private val questLaunchedTag = "[[QUETE_LANCEE]]"
     private val storyEndedTag = "[[HISTOIRE_TERMINEE]]"
+    private val chapterEndedTag = "[[FIN_CHAPITRE]]"
+
+    /**
+     * Histoire LONGUE uniquement : rappel recalculé et ajouté à CHAQUE appel API (jamais sauvegardé,
+     * comme buildPendingQuestNote). L'IA signale la conclusion d'un chapitre par une balise que
+     * runAiNarrator() retire du texte avant de l'afficher, et qui déclenche tout de suite le résumé
+     * du journal, quel que soit le nombre d'échanges écoulés depuis le dernier résumé.
+     * Passe par un rappel par appel (et non par le message "system" initial, figé) pour aussi
+     * fonctionner sur les histoires déjà commencées.
+     */
+    private fun buildChapterEndNote(story: StoryEntry?): String? {
+        if (normalizeStoryLength(story?.storyLength ?: "long") != LENGTH_LONG) return null
+        return "RAPPEL TECHNIQUE (ne le mentionne jamais au joueur) : quand tu conclus un chapitre " +
+            "(problématique résolue, message où tu proposes la suite au joueur), termine ce message " +
+            "par la balise exacte $chapterEndedTag, seule sur sa propre ligne, à la toute fin du " +
+            "message. N'utilise cette balise que pour la conclusion d'un chapitre, jamais en cours " +
+            "de chapitre."
+    }
 
     /**
      * Histoire LONGUE uniquement : tant qu'une quête secondaire courte attend la fin du chapitre,
@@ -774,6 +792,9 @@ class GameEngine(private val baseDir: File) {
         buildPendingQuestNote(sess, currentStory)?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
+        buildChapterEndNote(currentStory)?.let { note ->
+            messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
+        }
         val (text, error) = MistralClient.chat(
             getMistralKey(),
             messagesToSend,
@@ -782,9 +803,18 @@ class GameEngine(private val baseDir: File) {
         )
         if (error != null) return null to error
         var replyText = text ?: ""
+        // Fin d'un chapitre (pas de l'histoire entière) : le journal est digéré tout de suite,
+        // même s'il reste moins de 6 échanges depuis le dernier résumé.
+        var chapterEnded = false
+        if (replyText.contains(chapterEndedTag)) {
+            replyText = replyText.replace(chapterEndedTag, "").trim()
+            chapterEnded = true
+        }
         if (replyText.contains(questLaunchedTag)) {
             // L'IA a conclu le chapitre et lancé la quête courte : on retire la balise et on ouvre la quête.
+            // C'est aussi une fin de chapitre, même si elle a oublié la balise dédiée.
             replyText = replyText.replace(questLaunchedTag, "").trim()
+            chapterEnded = true
             if (sess.launchPendingQuest(announce = false)) sess.save()
         }
         // Fin définitive de l'histoire (pas juste un chapitre) : le journal ne doit pas rester
@@ -796,7 +826,7 @@ class GameEngine(private val baseDir: File) {
             storyEnded = true
         }
         sess.addAiMessage("assistant", replyText)
-        maybeUpdateStoryDigest(sess, finalChapter = storyEnded)
+        maybeUpdateStoryDigest(sess, finalChapter = storyEnded, chapterEnd = chapterEnded)
         return replyText to null
     }
 
@@ -809,29 +839,42 @@ class GameEngine(private val baseDir: File) {
      *   ($storyEndedTag) : le reliquat d'échanges pas encore digéré (moins de 6, éventuellement)
      *   est alors digéré quand même, comme dernier chapitre, au lieu d'attendre un 6e échange
      *   qui n'arrivera jamais.
+     * @param chapterEnd true quand l'IA vient de conclure un chapitre ($chapterEndedTag) : même
+     *   principe, tout le reliquat est digéré tout de suite pour que la fin du chapitre ne reste
+     *   pas coincée dans la tranche suivante (mélangée au début du chapitre d'après).
      */
-    private fun maybeUpdateStoryDigest(sess: DiceSession, finalChapter: Boolean = false) {
+    private fun maybeUpdateStoryDigest(
+        sess: DiceSession,
+        finalChapter: Boolean = false,
+        chapterEnd: Boolean = false
+    ) {
         val digestTrigger = 6
         val digestMaxTokens = 700
         if (!hasMistralKey()) return
+        val flush = finalChapter || chapterEnd
         while (true) {
             val pending = sess.pendingDigestMessages()
             val fullChunk = pending.size >= digestTrigger
-            if (!fullChunk && (!finalChapter || pending.isEmpty())) return
-            val chunk = if (fullChunk) pending.take(digestTrigger) else pending
-            val isLastChunk = finalChapter && !fullChunk
+            if (!fullChunk && (!flush || pending.isEmpty())) return
+            val chunk = pending.take(digestTrigger)
+            // Dernière tranche = celle qui vide le reliquat (même si elle fait pile 6 messages).
+            val isLastChunk = flush && pending.size <= digestTrigger
             val block = chunk.joinToString("\n") { m -> "${if (m.role == "user") "Joueur" else "Narrateur"} : ${m.content}" }
             val existingSummary = sess.storySummary
 
             val digestSystem = "Tu reçois " +
-                (if (isLastChunk) "le tout dernier extrait (celui qui clôt définitivement l'histoire) " else "un extrait récent ") +
+                (if (isLastChunk && finalChapter) "le tout dernier extrait (celui qui clôt définitivement l'histoire) "
+                else if (isLastChunk) "la fin d'un chapitre (l'extrait se termine sur la conclusion du chapitre) "
+                else "un extrait récent ") +
                 "d'une histoire de jeu de rôle pour enfant (en français) et dois produire DEUX textes " +
                 "bien distincts, chacun introduit par sa balise exacte sur sa propre ligne, rien " +
                 "d'autre avant/après/entre :\n" +
                 "$digestChapterTag\n" +
                 "Un chapitre de journal racontant cet extrait : à la troisième personne, fluide et " +
                 "narratif (pas une liste de faits, pas de dialogue au style direct), 80 à 120 mots" +
-                (if (isLastChunk) ", qui se termine sur la conclusion de l'histoire.\n" else ".\n") +
+                (if (isLastChunk && finalChapter) ", qui se termine sur la conclusion de l'histoire.\n"
+                else if (isLastChunk) ", qui se termine sur la conclusion du chapitre.\n"
+                else ".\n") +
                 "$digestSummaryTag\n" +
                 "Le résumé long terme mis à jour : fusion du résumé existant (s'il y en a un) et des " +
                 "nouveaux faits marquants de cet extrait -- personnages, objets/totems, lieux, " +
