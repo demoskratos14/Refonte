@@ -478,6 +478,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun exportIdentity(): Triple<ByteArray, String, String> =
         withContext(Dispatchers.IO) { mutex.withLock { engine.exportIdentity() } }
 
+    /** @return (octets, nom de fichier, type MIME) de la sauvegarde de progression (résumé IA + journal + quêtes). */
+    suspend fun exportProgress(): Triple<ByteArray, String, String> =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.exportProgress() } }
+
     /** Analyse (sans rien appliquer) un JSON d'identité collé par le joueur -- à pré-remplir dans CreateStoryScreen. */
     suspend fun importIdentity(rawText: String): JSONObject =
         withContext(Dispatchers.IO) { mutex.withLock { engine.importIdentity(rawText) } }
