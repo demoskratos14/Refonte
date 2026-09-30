@@ -109,7 +109,21 @@ import kotlinx.coroutines.launch
  * ca ici.
  */
 /** Un message affiché dans le panneau ; `choices` n'est renseigné que pour le dernier message assistant. */
-private data class ChatEntry(val role: String, val content: String, val choices: List<String> = emptyList())
+private data class ChatEntry(
+    val role: String,
+    val content: String,
+    val choices: List<String> = emptyList(),
+    /** Texte brut envoyé à la voix (avec les séparateurs "---", que SpeechText transforme en « À toi ! »). */
+    val speech: String = content
+)
+
+// Ligne de séparation seule ("---", "***", "___") que l'IA glisse avant/après son appel à agir :
+// masquée à l'écran (remplacée par une ligne vide), lue « À toi ! » par la voix (voir SpeechText).
+private val SEPARATOR_LINE = Regex("""(?m)^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$""")
+private val BLANK_RUNS = Regex("""\n{3,}""")
+
+private fun hideSeparators(text: String): String =
+    BLANK_RUNS.replace(SEPARATOR_LINE.replace(text, ""), "\n\n").trim()
 
 // Ligne "OPTION: <action>" ajoutée par l'IA en fin de réponse (voir la consigne
 // PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext) : tiret ou
@@ -253,7 +267,7 @@ fun AiPanel(
                 val shown = entry.optString("display_content", "").ifEmpty { entry.optString("content") }
                 if (role == "assistant") {
                     val (text, choices) = extractChoices(shown)
-                    list.add(ChatEntry(role, text, choices))
+                    list.add(ChatEntry(role, hideSeparators(text), choices, speech = text))
                 } else {
                     list.add(ChatEntry(role, shown))
                 }
@@ -413,15 +427,15 @@ fun AiPanel(
                         ) {
                             Text(text = content, style = MaterialTheme.typography.bodyMedium.merge(replyStyle))
                             if (isAssistant && speechManager != null) {
-                                IconButton(
-                                    onClick = { speechManager.speak(content) },
-                                    modifier = Modifier.height(28.dp)
+                                // Même bouton pour lancer et arrêter la lecture de CE message.
+                                val isSpeakingThis = speechManager.speakingText == entry.speech
+                                TextButton(
+                                    onClick = {
+                                        if (isSpeakingThis) speechManager.stopSpeaking()
+                                        else speechManager.speak(entry.speech)
+                                    }
                                 ) {
-                                    Icon(
-                                        Icons.Default.PlayArrow,
-                                        contentDescription = "Écouter",
-                                        modifier = Modifier.height(18.dp)
-                                    )
+                                    Text(if (isSpeakingThis) "⏹ Arrêter" else "🔊 Écouter")
                                 }
                             }
                         }

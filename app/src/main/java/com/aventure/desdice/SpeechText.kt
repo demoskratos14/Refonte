@@ -6,6 +6,7 @@ package com.aventure.desdice
 
 object SpeechText {
 
+    private val separatorRegex = Regex("(?m)^[ \\t]*(?:-{3,}|\\*{3,}|_{3,})[ \\t]*$")
     private val headingRegex = Regex("(?m)^\\s{0,3}#{1,6}\\s*")
     private val bulletRegex = Regex("(?m)^\\s*[-•]\\s+")
     private val spacesRegex = Regex("[ \\t]{2,}")
@@ -14,6 +15,12 @@ object SpeechText {
     /** Texte prêt à être lu à voix haute. */
     fun clean(raw: String): String {
         var t = raw
+        // Séparateurs "---" : le dernier (celui qui précède / clôt l'appel à agir) est lu
+        // « À toi ! », les autres sont simplement ignorés.
+        separatorRegex.findAll(t).lastOrNull()?.let { last ->
+            t = t.substring(0, last.range.first) + "À toi !" + t.substring(last.range.last + 1)
+        }
+        t = separatorRegex.replace(t, "")
         // Marqueurs de mise en forme : on garde le texte, on retire seulement les symboles.
         t = t.replace("*", "").replace("`", "")
         t = headingRegex.replace(t, "")
