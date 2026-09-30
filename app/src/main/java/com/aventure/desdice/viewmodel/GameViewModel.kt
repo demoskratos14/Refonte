@@ -356,6 +356,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeCustomTotem(key: String) = runEngine { engine.removeCustomTotem(key) }
+
+    /** Modifie les pouvoirs / la capacité spéciale d'un totem déjà créé. */
+    fun updateCustomTotem(key: String, powers: List<String>, special: String) =
+        runEngine { engine.updateCustomTotem(key, powers, special) }
     fun completeSideQuest(questId: Int) = runEngine { engine.completeSideQuest(questId) }
     fun addStoryEntry(text: String) = runEngine { engine.addStoryEntry(text) }
 
