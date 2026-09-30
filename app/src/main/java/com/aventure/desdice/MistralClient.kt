@@ -42,18 +42,20 @@ object MistralClient {
     val MODEL_CHOICES: List<Pair<String, String>> = listOf(
         "ministral-8b-2512" to "Ministral 8B — très économique, style plus simple",
         "mistral-small-2603" to "Mistral Small — rapide et économique (recommandé)",
-        "labs-mistral-small-creative" to "Mistral Small Creative — spécialisé écriture narrative (expérimental)",
         "mistral-medium-latest" to "Mistral Medium — histoires plus riches, un peu plus cher",
         "mistral-large-latest" to "Mistral Large — le plus capable, et moins cher que Medium"
     )
 
     /**
-     * Anciens identifiants enregistrés dans les réglages -> identifiant actuel de l'API.
-     * "mistral-small-creative-2512" n'a jamais existé côté Mistral (erreur 400 "Invalid model") :
-     * le modèle s'appelle "labs-mistral-small-creative".
+     * Identifiants de modèles qui n'existent plus côté Mistral (erreur 400 "Invalid model"),
+     * peut-être encore enregistrés dans les réglages -> modèle par défaut à la place.
+     * "labs-mistral-small-creative" (modèle Labs de décembre 2025) figure désormais dans la
+     * liste des modèles retirés de la documentation Mistral ; "mistral-small-creative-2512"
+     * était un identifiant erroné de ce même modèle.
      */
     private val LEGACY_MODEL_IDS = mapOf(
-        "mistral-small-creative-2512" to "labs-mistral-small-creative"
+        "mistral-small-creative-2512" to DEFAULT_MODEL,
+        "labs-mistral-small-creative" to DEFAULT_MODEL
     )
 
     /** Résultat brut d'un seul appel HTTP. */
