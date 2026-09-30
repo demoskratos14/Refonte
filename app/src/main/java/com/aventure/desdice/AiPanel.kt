@@ -143,7 +143,14 @@ private fun buildChoicesSpeech(choices: List<String>): String {
 // Ligne "OPTION: <action>" ajoutée par l'IA en fin de réponse (voir la consigne
 // PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext) : tiret ou
 // puce éventuels tolérés devant, tout le reste de la ligne pris comme intitulé du bouton.
-private val OPTION_LINE = Regex("""^\s*(?:[-•*]\s*)?OPTION\s*:\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
+// Tolère le gras markdown (**OPTION:** ...), une numérotation (OPTION 1 :) et une puce.
+private val OPTION_LINE = Regex(
+    """^\s*(?:[-•*]\s*)?\**\s*OPTION\s*\d*\s*\**\s*:\s*\**\s*(.+?)\s*$""",
+    RegexOption.IGNORE_CASE
+)
+
+/** Ligne sans aucun texte (séparateur "---", emojis seuls...) : ignorée autour des choix. */
+private fun isDecorationLine(line: String): Boolean = line.none { it.isLetterOrDigit() }
 
 /**
  * Sépare le texte de narration des choix cliquables qu'il propose en fin de message.
@@ -159,9 +166,11 @@ private fun extractChoices(content: String): Pair<String, List<String>> {
         val line = lines[i]
         val match = OPTION_LINE.matchEntire(line)
         if (match != null) {
-            choices.add(0, match.groupValues[1].trim())
+            choices.add(0, match.groupValues[1].trim().trim('*', ' '))
             cut = i
-        } else if (line.isBlank()) {
+        } else if (isDecorationLine(line)) {
+            // Lignes vides ou décoratives ("---", emojis) après / entre les choix : on les saute
+            // (sinon un simple "---" final empêchait de reconnaître les choix).
             continue
         } else {
             break

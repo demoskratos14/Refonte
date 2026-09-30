@@ -907,6 +907,22 @@ class DiceSession(private var saveFile: File) {
         return true
     }
 
+    /**
+     * Met à jour les pouvoirs et la capacité spéciale d'un totem/allié existant (évolution en
+     * cours d'histoire). Nom, image, jauge et symbole actif ne changent pas.
+     * @return false si la clé ne correspond à aucun totem ajouté.
+     */
+    fun updateCustomTotem(key: String, powers: List<String>, special: String): Boolean {
+        val index = customTotems.indexOfFirst { it.key == key }
+        if (index < 0) return false
+        customTotems[index] = customTotems[index].copy(
+            powers = powers.map { it.trim() }.filter { it.isNotEmpty() },
+            special = special.trim()
+        )
+        save()
+        return true
+    }
+
     /** Coche/décoche un symbole dans le pool des modes aléatoire/mixte. Au moins un reste toujours actif. */
     fun toggleEnabledSymbol(key: String): Boolean {
         if (key !in allSymbolKeys()) return false

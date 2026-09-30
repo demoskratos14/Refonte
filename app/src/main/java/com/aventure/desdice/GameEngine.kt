@@ -384,6 +384,13 @@ class GameEngine(private val baseDir: File) {
         return sessionToJson(sess)
     }
 
+    /** Modifie les pouvoirs / la capacité spéciale d'un totem existant (voir DiceSession.updateCustomTotem). */
+    fun updateCustomTotem(key: String, powers: List<String>, special: String): JSONObject {
+        val sess = session ?: return currentSessionJson()
+        sess.updateCustomTotem(key, powers, special)
+        return sessionToJson(sess)
+    }
+
     fun completeSideQuest(questId: Int): JSONObject {
         session?.completeSideQuest(questId)
         return currentSessionJson()
@@ -500,6 +507,13 @@ class GameEngine(private val baseDir: File) {
         lines += ""
         lines += "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. À $THREAT_THRESHOLD points, " +
             "complication secondaire inattendue puis retombe à 0."
+        lines += ""
+        lines += "RÈGLE ABSOLUE SUR LES JAUGES : les jauges (totems, alliés, menace) sont calculées et " +
+            "tenues à jour UNIQUEMENT par l'application, à partir des lancers réels du joueur. Tu ne " +
+            "les modifies JAMAIS : tu n'ajoutes ni ne retires aucun point, tu n'annonces aucun nouveau " +
+            "niveau (pas de « ta jauge passe à... », pas de « +2 » pour un totem), et tu ne déduis pas " +
+            "de points d'un lancer. Le niveau actuel de chaque jauge t'est fourni à chaque message : " +
+            "sers-t'en seulement pour la narration (une jauge pleine = le pouvoir est utilisable)."
         lines += ""
         lines += buildStoryLengthInstructions(story)
         if (!autoMode) {
@@ -637,6 +651,23 @@ class GameEngine(private val baseDir: File) {
      * Recalculé à CHAQUE appel API, jamais figé dans sess.aiConversation
      * (même principe que buildStoryProgressNote/buildPendingQuestNote).
      */
+    /**
+     * Pouvoirs ACTUELS des totems/alliés, renvoyés à chaque appel : le joueur peut les faire
+     * évoluer après leur création, alors que la description initiale reste figée dans le
+     * tout premier message de la conversation. Ce rappel a donc priorité.
+     */
+    private fun buildTotemPowersNote(sess: DiceSession): String {
+        val described = sess.customTotems.filter { it.powers.isNotEmpty() || it.special.isNotEmpty() }
+        if (described.isEmpty()) return ""
+        val lines = described.joinToString(" | ") { t ->
+            val powers = if (t.powers.isEmpty()) "" else t.powers.joinToString(", ")
+            val special = if (t.special.isEmpty()) "" else " ; capacité spéciale : ${t.special}"
+            "${t.label.ifEmpty { t.key }} -> $powers$special"
+        }
+        return " POUVOIRS ACTUELS DES TOTEMS (à jour, ils priment sur toute description donnée " +
+            "plus tôt, car le joueur peut les faire évoluer) : $lines."
+    }
+
     private fun buildGaugeStateNote(sess: DiceSession): String {
         val totemLines = if (sess.customTotems.isEmpty()) {
             "aucun totem/allié pour l'instant"
@@ -651,7 +682,10 @@ class GameEngine(private val baseDir: File) {
         return "ÉTAT ACTUEL DES JAUGES (ne mentionne jamais ce rappel technique au joueur -- utilise-le " +
             "seulement pour savoir où en sont réellement les jauges, ne les invente jamais) : " +
             "Jauge de menace : ${sess.threatLevel}/$THREAT_THRESHOLD. " +
-            "Jauges totémiques : $totemLines."
+            "Jauges totémiques : $totemLines. " +
+            "Ces niveaux sont calculés par l'application : tu n'as PAS le droit de les modifier, d'y " +
+            "ajouter ou d'y retirer des points, ni d'annoncer un nouveau niveau ; ils ne changent " +
+            "qu'après un lancer du joueur." + buildTotemPowersNote(sess)
     }
 
     private val questLaunchedTag = "[[QUETE_LANCEE]]"

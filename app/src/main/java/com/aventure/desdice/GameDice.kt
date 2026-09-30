@@ -22,8 +22,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -165,7 +170,13 @@ internal fun TotemBadgesRow(state: JSONObject?, onTotemClick: (String) -> Unit) 
 
 /** Fiche d'un totem : icone, nom, pouvoirs et capacite speciale (totem-modal de l'ancienne page). */
 @Composable
-internal fun TotemInfoDialog(totemKey: String, state: JSONObject?, onDismiss: () -> Unit) {
+internal fun TotemInfoDialog(
+    totemKey: String,
+    state: JSONObject?,
+    onDismiss: () -> Unit,
+    /** Si fourni, les totems ajoutés (pas les symboles de base) peuvent être modifiés depuis la fiche. */
+    onSave: ((key: String, powers: List<String>, special: String) -> Unit)? = null
+) {
     val fonts = rememberAppFonts()
     val info = state?.optJSONObject("totem_info")?.optJSONObject(totemKey) ?: return
     val special = info.str("special")
@@ -174,6 +185,13 @@ internal fun TotemInfoDialog(totemKey: String, state: JSONObject?, onDismiss: ()
             for (i in 0 until arr.length()) add(arr.optString(i))
         }
     }
+
+    val editable = onSave != null && state?.optJSONArray("custom_totems")?.let { arr ->
+        (0 until arr.length()).any { arr.optJSONObject(it)?.optString("key") == totemKey }
+    } == true
+    var editing by remember { mutableStateOf(false) }
+    var powersText by remember { mutableStateOf("") }
+    var specialText by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         val shape = RoundedCornerShape(16.dp)
@@ -209,7 +227,52 @@ internal fun TotemInfoDialog(totemKey: String, state: JSONObject?, onDismiss: ()
                 )
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Column(modifier = Modifier.fillMaxWidth()) {
+                if (editing) Column(modifier = Modifier.fillMaxWidth()) {
+                    val fieldStyle = TextStyle(fontFamily = fonts.body, fontSize = 16.sp, color = Ink)
+                    Text(
+                        text = "Pouvoirs (un par ligne)",
+                        style = TextStyle(fontFamily = fonts.bodyBold, fontSize = 16.sp, color = Ink)
+                    )
+                    OutlinedTextField(
+                        value = powersText,
+                        onValueChange = { powersText = it },
+                        textStyle = fieldStyle,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Capacité spéciale",
+                        style = TextStyle(fontFamily = fonts.bodyBold, fontSize = 16.sp, color = Ink)
+                    )
+                    OutlinedTextField(
+                        value = specialText,
+                        onValueChange = { specialText = it },
+                        textStyle = fieldStyle,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ComicButton(
+                        text = "Enregistrer",
+                        onClick = {
+                            onSave?.invoke(
+                                totemKey,
+                                powersText.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                                specialText.trim()
+                            )
+                            editing = false
+                        },
+                        fonts = fonts,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ComicButton(
+                        text = "Annuler",
+                        onClick = { editing = false },
+                        fonts = fonts,
+                        kind = ButtonKind.Secondary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else Column(modifier = Modifier.fillMaxWidth()) {
                     if (powers.isNotEmpty()) {
                         Text(
                             text = "Pouvoirs",
@@ -243,13 +306,29 @@ internal fun TotemInfoDialog(totemKey: String, state: JSONObject?, onDismiss: ()
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                ComicButton(
-                    text = "Fermer",
-                    onClick = onDismiss,
-                    fonts = fonts,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (!editing) {
+                    if (editable) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        ComicButton(
+                            text = "✏️ Modifier les pouvoirs",
+                            onClick = {
+                                powersText = powers.joinToString("\n")
+                                specialText = special
+                                editing = true
+                            },
+                            fonts = fonts,
+                            kind = ButtonKind.Secondary,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ComicButton(
+                        text = "Fermer",
+                        onClick = onDismiss,
+                        fonts = fonts,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

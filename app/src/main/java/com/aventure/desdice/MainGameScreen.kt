@@ -343,7 +343,8 @@ fun MainGameScreen(
         TotemInfoDialog(
             totemKey = key,
             state = sessionState,
-            onDismiss = { infoTotemKey = null }
+            onDismiss = { infoTotemKey = null },
+            onSave = { totemKey, powers, special -> viewModel.updateCustomTotem(totemKey, powers, special) }
         )
     }
 
