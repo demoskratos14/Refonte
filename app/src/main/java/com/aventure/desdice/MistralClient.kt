@@ -42,9 +42,18 @@ object MistralClient {
     val MODEL_CHOICES: List<Pair<String, String>> = listOf(
         "ministral-8b-2512" to "Ministral 8B — très économique, style plus simple",
         "mistral-small-2603" to "Mistral Small — rapide et économique (recommandé)",
-        "mistral-small-creative-2512" to "Mistral Small Creative — spécialisé écriture narrative (expérimental)",
+        "labs-mistral-small-creative" to "Mistral Small Creative — spécialisé écriture narrative (expérimental)",
         "mistral-medium-latest" to "Mistral Medium — histoires plus riches, un peu plus cher",
         "mistral-large-latest" to "Mistral Large — le plus capable, et moins cher que Medium"
+    )
+
+    /**
+     * Anciens identifiants enregistrés dans les réglages -> identifiant actuel de l'API.
+     * "mistral-small-creative-2512" n'a jamais existé côté Mistral (erreur 400 "Invalid model") :
+     * le modèle s'appelle "labs-mistral-small-creative".
+     */
+    private val LEGACY_MODEL_IDS = mapOf(
+        "mistral-small-creative-2512" to "labs-mistral-small-creative"
     )
 
     /** Résultat brut d'un seul appel HTTP. */
@@ -107,7 +116,7 @@ object MistralClient {
         promptCacheKey: String?
     ): RawReply {
         val payload = JSONObject().apply {
-            put("model", model)
+            put("model", LEGACY_MODEL_IDS[model] ?: model)
             put("messages", JSONArray(messages.map { it.toApiJson() }))
             put("temperature", 0.9)
             put("max_tokens", maxTokens)
