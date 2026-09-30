@@ -125,6 +125,21 @@ private val BLANK_RUNS = Regex("""\n{3,}""")
 private fun hideSeparators(text: String): String =
     BLANK_RUNS.replace(SEPARATOR_LINE.replace(text, ""), "\n\n").trim()
 
+/**
+ * Texte lu à voix haute pour les choix proposés à la fin d'un message : numérotés
+ * (« Choix 1 : ... Choix 2 : ... ») pour que les plus jeunes suivent facilement.
+ */
+private fun buildChoicesSpeech(choices: List<String>): String {
+    if (choices.isEmpty()) return ""
+    val intro = if (choices.size == 1) "Voici ton choix." else "Voici tes ${choices.size} choix."
+    val items = choices.mapIndexed { index, choice ->
+        val label = choice.trim()
+        val closed = label.lastOrNull()?.let { it in ".!?…" } == true
+        "Choix ${index + 1} : $label${if (closed) "" else "."}"
+    }
+    return (listOf(intro) + items).joinToString(" ")
+}
+
 // Ligne "OPTION: <action>" ajoutée par l'IA en fin de réponse (voir la consigne
 // PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext) : tiret ou
 // puce éventuels tolérés devant, tout le reste de la ligne pris comme intitulé du bouton.
@@ -272,6 +287,14 @@ fun AiPanel(
                     list.add(ChatEntry(role, shown))
                 }
             }
+        }
+        // Dernier message de l'IA avec des choix : la lecture du message se termine par les choix
+        // numérotés (les anciens messages, dont les choix ne sont plus proposés, restent inchangés).
+        val lastEntry = list.lastOrNull()
+        if (lastEntry != null && lastEntry.role == "assistant" && lastEntry.choices.isNotEmpty()) {
+            list[list.lastIndex] = lastEntry.copy(
+                speech = lastEntry.speech + "\n\n" + buildChoicesSpeech(lastEntry.choices)
+            )
         }
         messages = list
         // opt() (et non optString) : une valeur JSONObject.NULL explicite ne doit jamais
@@ -452,6 +475,19 @@ fun AiPanel(
                 textStyle = replyStyle,
                 onChoiceSelected = { sendToAi(it) }
             )
+            // Bouton à part pour (ré)écouter uniquement les choix, numérotés.
+            if (speechManager != null) {
+                val choicesSpeech = buildChoicesSpeech(pendingChoices)
+                val isSpeakingChoices = speechManager.speakingText == choicesSpeech
+                TextButton(
+                    onClick = {
+                        if (isSpeakingChoices) speechManager.stopSpeaking()
+                        else speechManager.speak(choicesSpeech)
+                    }
+                ) {
+                    Text(if (isSpeakingChoices) "⏹ Arrêter" else "🔊 Écouter les choix")
+                }
+            }
         }
 
         if (isLoading) {

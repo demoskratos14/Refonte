@@ -1121,7 +1121,9 @@ class DiceSession(private var saveFile: File) {
             val summaryMsg = AiMessage(
                 "system",
                 "Résumé de l'histoire avant les échanges récents ci-dessous (personnages, " +
-                    "objets/totems, lieux, quêtes, événements marquants à ne pas oublier) :\n" +
+                    "objets/totems, lieux, quêtes, événements marquants à ne pas oublier). Respecte les " +
+                    "traits des personnages listés (apparence, caractère, rôle) : n'invente rien qui les " +
+                    "contredise et ne les réinvente pas quand ils reviennent :\n" +
                     storySummary
             )
             return head + listOf(summaryMsg) + window

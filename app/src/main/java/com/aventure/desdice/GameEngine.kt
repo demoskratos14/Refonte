@@ -850,7 +850,8 @@ class GameEngine(private val baseDir: File) {
         flushAll: Boolean = false
     ) {
         val digestTrigger = 6
-        val digestMaxTokens = 700
+        // Chapitre (~130 mots) + résumé long terme avec fiches personnages (~350 mots).
+        val digestMaxTokens = 1200
         if (!hasMistralKey()) return
         // flushAll : digère tout le reliquat sans prétendre que l'extrait clôt un chapitre
         // (utilisé juste avant un export, en plein milieu d'un chapitre).
@@ -875,15 +876,26 @@ class GameEngine(private val baseDir: File) {
                 "d'autre avant/après/entre :\n" +
                 "$digestChapterTag\n" +
                 "Un chapitre de journal racontant cet extrait : à la troisième personne, fluide et " +
-                "narratif (pas une liste de faits, pas de dialogue au style direct), 80 à 120 mots" +
+                "narratif (pas une liste de faits, pas de dialogue au style direct), 80 à 130 mots" +
                 (if (isLastChunk && finalChapter) ", qui se termine sur la conclusion de l'histoire.\n"
                 else if (isLastChunk) ", qui se termine sur la conclusion du chapitre.\n"
                 else ".\n") +
+                "Présente chaque nouveau personnage important (humain, créature, animal, esprit...) au " +
+                "moment où il apparaît pour la première fois : en une courte phrase, dis qui il est, son " +
+                "apparence et son rôle, comme pour un lecteur qui le découvre. Un personnage est nouveau " +
+                "s'il ne figure pas déjà dans la partie PERSONNAGES du résumé existant ; ne parle jamais " +
+                "d'un personnage nouveau comme s'il était déjà connu du lecteur.\n" +
                 "$digestSummaryTag\n" +
-                "Le résumé long terme mis à jour : fusion du résumé existant (s'il y en a un) et des " +
-                "nouveaux faits marquants de cet extrait -- personnages, objets/totems, lieux, " +
-                "quêtes, événements à retenir. Style neutre et factuel, pas de tournures narratives. " +
-                "150 mots maximum."
+                "Le résumé long terme mis à jour, en DEUX parties. D'abord la ligne « PERSONNAGES : » " +
+                "suivie d'une ligne par personnage (« - Nom : apparence, caractère, rôle, lien avec le " +
+                "joueur, signe distinctif »). Puis la ligne « FAITS : » suivie des faits marquants " +
+                "(objets/totems, lieux, quêtes, événements à retenir). Fusionne le résumé existant (s'il y " +
+                "en a un) et les nouveautés de cet extrait. Ne supprime JAMAIS un personnage déjà listé : " +
+                "garde ses traits, ne les modifie que si l'histoire les a réellement changés, et ajoute " +
+                "les nouveaux personnages. Si le résumé existant n'a pas de partie PERSONNAGES, crée-la " +
+                "avec tous les personnages connus. Style neutre et factuel, sans tournures narratives. " +
+                "350 mots maximum : si la place manque, raccourcis les FAITS en priorité, jamais les " +
+                "personnages."
             val userPrompt = buildString {
                 if (existingSummary.isNotEmpty()) append("Résumé existant :\n$existingSummary\n\n")
                 append("Extrait de l'histoire (échanges joueur/narrateur) :\n$block\n\n")
