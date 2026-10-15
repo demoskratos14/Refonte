@@ -1,5 +1,6 @@
 package com.aventure.desdice.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Typeface
 import androidx.compose.runtime.Composable
@@ -48,6 +49,9 @@ private fun typefaceFamilyOrNull(context: Context, assetPath: String): FontFamil
         null
     }
 
+// getIdentifier est voulu ici : le dossier res/font est FACULTATIF (les polices vivent dans
+// assets/fonts), donc R.font.xxx ne compilerait pas quand il n'existe pas. On cherche par nom.
+@SuppressLint("DiscouragedApi")
 private fun resFamilyOrNull(context: Context, resNames: List<String>): FontFamily? {
     for (name in resNames) {
         val id = context.resources.getIdentifier(name, "font", context.packageName)
