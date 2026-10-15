@@ -518,13 +518,13 @@ Seul l'APK **debug** est produit (pas de signature de release configurée).
 
 | Élément | Version |
 |---|---|
-| Android Gradle Plugin | 8.2.2 |
-| Kotlin | 1.9.24 |
-| Compilateur Compose (`kotlinCompilerExtensionVersion`) | 1.5.14 |
-| Compose BOM | 2024.06.00 |
-| Gradle (dans le workflow) | 8.7 |
+| Android Gradle Plugin | 9.4.0 |
+| Kotlin (intégré à AGP 9, fixé dans `build.gradle`) | 2.4.20 |
+| Compilateur Compose (plugin `org.jetbrains.kotlin.plugin.compose`) | 2.4.20 |
+| Compose BOM | 2026.09.00 |
+| Gradle (dans le workflow) | 9.6.0 |
 | JDK | 17 |
-| minSdk / targetSdk / compileSdk | 24 / 34 / 34 |
+| minSdk / targetSdk / compileSdk | 24 / 37 / 37 |
 | ABI | arm64-v8a, x86_64 |
 
 Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun

@@ -6,8 +6,12 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath "com.android.tools.build:gradle:8.2.2"
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+        classpath "com.android.tools.build:gradle:9.4.0"
+        // AGP 9 embarque Kotlin ("built-in Kotlin") : plus de plugin org.jetbrains.kotlin.android.
+        // On fixe quand meme la version de Kotlin (>= 2.2.10 requis) ainsi que celle du
+        // plugin du compilateur Compose, qui doivent toujours etre identiques.
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20"
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.20"
     }
 }
 
