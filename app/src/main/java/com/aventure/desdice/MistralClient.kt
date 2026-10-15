@@ -1,11 +1,11 @@
 // MistralClient.kt
-// Portage Kotlin de mistral_client.py.
+// Client HTTP de l'API Mistral (IA narratrice).
 //
-// Fonction volontairement synchrone (comme la fonction Python) : elle est
+// Fonction volontairement synchrone : elle est
 // toujours appelée depuis GameEngine à l'intérieur d'un
 // viewModelScope.launch(Dispatchers.IO) côté GameViewModel, jamais
 // directement sur le thread principal. Utilise HttpURLConnection (aucune
-// dépendance externe), comme urllib côté Python.
+// dépendance externe).
 //
 // Réponses coupées : si Mistral s'arrête parce que max_tokens est atteint
 // (finish_reason = "length"), chat() relance automatiquement l'IA pour qu'elle
@@ -38,7 +38,7 @@ object MistralClient {
             "sans introduction, et termine proprement (en respectant les consignes de fin " +
             "déjà données : lignes OPTION, balise finale, etc.)."
 
-    /** (identifiant exact pour l'API, libellé affiché) — miroir de MODEL_CHOICES. */
+    /** (identifiant exact pour l'API, libellé affiché). */
     val MODEL_CHOICES: List<Pair<String, String>> = listOf(
         "ministral-8b-2512" to "Ministral 8B — très économique, style plus simple",
         "mistral-small-2603" to "Mistral Small — rapide et économique (recommandé)",
@@ -47,11 +47,8 @@ object MistralClient {
     )
 
     /**
-     * Identifiants de modèles qui n'existent plus côté Mistral (erreur 400 "Invalid model"),
-     * peut-être encore enregistrés dans les réglages -> modèle par défaut à la place.
-     * "labs-mistral-small-creative" (modèle Labs de décembre 2025) figure désormais dans la
-     * liste des modèles retirés de la documentation Mistral ; "mistral-small-creative-2512"
-     * était un identifiant erroné de ce même modèle.
+     * Identifiants de modèles refusés par Mistral (erreur 400 "Invalid model"), qui peuvent
+     * rester enregistrés dans les réglages -> modèle par défaut à la place.
      */
     private val LEGACY_MODEL_IDS = mapOf(
         "mistral-small-creative-2512" to DEFAULT_MODEL,

@@ -1,9 +1,9 @@
 // GameEngine.kt
-// Portage Kotlin de game_api.py — ÉTAPE 3, partie 2 (complet).
+// Moteur de jeu : point d'entrée unique de la logique, appelé par GameViewModel.
 //
-// Couvre désormais l'intégralité de game_api.py :
+// Il couvre :
 //   - construction de l'état de session envoyé à Compose (sessionToJson,
-//     miroir de session_to_dict + _totem_info)
+//     y compris les infos de totem)
 //   - navigation entre histoires : listStories/switchStory/selectStory/
 //     deleteStory/createStory
 //   - lancers de dés : roll/undo/clear
@@ -22,13 +22,11 @@
 //     importIdentity/applyImportedProgress
 //   - dés classiques : classicDiceState/classicDiceRoll/classicDiceClear
 //
-// NB : TOTEMS/ALLY_HELP_TEXT (dérivés de STORIES, l'histoire codée en dur)
-// sont toujours vides dans l'appli actuelle — voir StoryRegistry.kt. Le
-// code ci-dessous reflète donc une version simplifiée de _totem_info /
-// do_use_totem_energy qui n'a plus besoin de ces deux globales (y compris
-// la bizarrerie préservée à l'identique dans useTotemEnergy : le libellé
-// "patte"/"baguette" retombe sur la clé elle-même, comme TOTEMS_BY_KEY
-// toujours vide le fait côté Python).
+// NB : TOTEMS/ALLY_HELP_TEXT (dérivés de STORIES, les histoires codées en dur)
+// sont toujours vides dans l'appli actuelle — voir StoryRegistry.kt. Le code
+// ci-dessous n'a donc pas besoin de ces deux globales (voir la particularité
+// de useTotemEnergy : le libellé "patte"/"baguette" retombe sur la clé
+// elle-même, puisqu'aucun totem codé en dur n'existe).
 
 package com.aventure.desdice
 
@@ -50,11 +48,11 @@ class GameEngine(private val baseDir: File) {
     var session: DiceSession? = null
         private set
 
-    /** Session "vide" utilisée avant toute sélection d'histoire (miroir de DiceSession() côté Python, avant switch_story). */
+    /** Session "vide" utilisée avant toute sélection d'histoire (voir switchStory). */
     private fun emptySession(): DiceSession = DiceSession(File(baseDir, "dice_state.json"))
 
     // ------------------------------------------------------------------
-    // Construction de l'état envoyé à Compose (miroir de session_to_dict)
+    // Construction de l'état envoyé à Compose (sessionToJson)
     // ------------------------------------------------------------------
 
     /**
@@ -140,7 +138,7 @@ class GameEngine(private val baseDir: File) {
         }
     }
 
-    /** Miroir de index()/change_story() : état courant, ou session vide si rien n'est sélectionné. */
+    /** État courant, ou session vide si rien n'est sélectionné. */
     fun currentSessionJson(): JSONObject = sessionToJson(session ?: emptySession())
 
     // ------------------------------------------------------------------
@@ -169,7 +167,7 @@ class GameEngine(private val baseDir: File) {
     }
 
     /**
-     * Miroir de switch_story() : bascule PIP_SYMBOLS sur l'histoire
+     * Bascule PIP_SYMBOLS sur l'histoire
      * choisie, ouvre (ou crée) son fichier de sauvegarde dédié, et pose le
      * totem de départ au tout premier lancement.
      */
@@ -178,10 +176,9 @@ class GameEngine(private val baseDir: File) {
 
         PIP_SYMBOLS.clear()
         PIP_SYMBOLS.putAll(story.pipSymbols)
-        // DEFAULT_PIP_SYMBOL reste "" : aucune histoire codée en dur
-        // n'existe plus (StoryEntry.defaultPipSymbol vaut toujours "" pour
-        // une histoire personnalisée) — rien à rebasculer ici, contrairement
-        // au Python qui réassigne dice_engine.DEFAULT_PIP_SYMBOL.
+        // DEFAULT_PIP_SYMBOL reste "" : aucune histoire n'est codée en dur
+        // (StoryEntry.defaultPipSymbol vaut toujours "" pour une histoire
+        // personnalisée) — rien à rebasculer ici.
 
         val saveFile = File(baseDir, story.saveFile)
         val newSession = DiceSession(saveFile)
@@ -222,7 +219,7 @@ class GameEngine(private val baseDir: File) {
 
     /**
      * Redimensionne (ImageUtils.resizeTotemBytes) et enregistre une image
-     * de totem sous un nom généré. Miroir de _save_totem_image() côté Python.
+     * de totem sous un nom généré.
      */
     private fun saveTotemImageBytes(bytes: ByteArray, originalFilename: String): String? {
         if (bytes.isEmpty()) return null
@@ -249,9 +246,9 @@ class GameEngine(private val baseDir: File) {
     }
 
     /**
-     * Miroir de do_create_story(). bgImageExt n'est plus utilisé : comme en
-     * Python (stories.py), l'image de fond est de toute façon toujours
-     * réencodée en JPEG par StoryRegistry.createCustomStory().
+     * Crée une histoire personnalisée. bgImageExt est ignoré :
+     * l'image de fond est toujours réencodée en JPEG par
+     * StoryRegistry.createCustomStory().
      */
     fun createStory(
         title: String,
@@ -356,7 +353,7 @@ class GameEngine(private val baseDir: File) {
     // Totems ajoutés en cours de partie (avec image) / quêtes / journal
     // ------------------------------------------------------------------
 
-    /** Miroir de do_add_custom_totem(). imageBytes peut être vide (pas d'image fournie). */
+    /** Ajoute un totem à la partie en cours. imageBytes peut être vide (pas d'image fournie). */
     fun addCustomTotem(
         label: String,
         powers: String = "",
@@ -371,7 +368,7 @@ class GameEngine(private val baseDir: File) {
         return sessionToJson(sess)
     }
 
-    /** Miroir de do_remove_custom_totem() : supprime aussi le fichier image associé, s'il existe. */
+    /** Retire un totem : supprime aussi le fichier image associé, s'il existe. */
     fun removeCustomTotem(key: String): JSONObject {
         val sess = session ?: return currentSessionJson()
         val entry = sess.customTotems.find { it.key == key }
@@ -402,8 +399,8 @@ class GameEngine(private val baseDir: File) {
     }
 
     // ------------------------------------------------------------------
-    // Narration IA (miroir de build_mechanics_context/build_full_prompt/
-    // build_ai_kickoff_message/maybe_update_story_digest/run_ai_narrator)
+    // Narration IA (contexte de mécaniques, prompt complet, message de
+    // démarrage, digest du journal, appel à l'IA)
     // ------------------------------------------------------------------
 
     private val successCompact: Map<Int, String> = mapOf(
@@ -760,16 +757,16 @@ class GameEngine(private val baseDir: File) {
         return lines.joinToString("\n")
     }
 
-    /** Miroir de narrator_note_for_record() : texte à ajouter pour un "?" (quête débloquée) ou "!" (aide). */
+    /** Texte à ajouter pour un "?" (quête débloquée) ou "!" (aide). */
     private fun narratorNoteForRecord(record: RollRecord?): String {
         val fateKey = record?.fate ?: return ""
-        // Le "?" est désormais entièrement décrit par describeRecord() (dépend de la longueur d'histoire).
+        // Le "?" est entièrement décrit par describeRecord() (dépend de la longueur d'histoire).
         if (fateKey != "exclamation") return ""
         val face = FATE_BY_KEY[fateKey] ?: return ""
         return "${face.emoji} ${face.label} : ${face.desc}"
     }
 
-    /** Miroir de build_ai_event_text(). */
+    /** Texte d'événement envoyé à l'IA pour un lancer. */
     private fun buildAiEventText(sess: DiceSession, record: RollRecord): String {
         val parts = mutableListOf(sess.describeRecord(record))
         val note = narratorNoteForRecord(record)
@@ -780,7 +777,7 @@ class GameEngine(private val baseDir: File) {
     /**
      * Envoie eventText à l'IA (en amorçant la conversation avec le message
      * système si elle est vide), ajoute la réponse à la conversation, et
-     * tente une mise à jour du digest journal/résumé. Miroir de run_ai_narrator().
+     * tente une mise à jour du digest journal/résumé..
      *
      * Le message "system" initial (mécaniques + FORMAT DE L'HISTOIRE) n'est
      * écrit qu'une fois, puis reste figé tel quel dans sess.aiConversation
@@ -868,7 +865,7 @@ class GameEngine(private val baseDir: File) {
     private val digestSummaryTag = "###RESUME###"
 
     /**
-     * Miroir de maybe_update_story_digest() — appel "fantôme" : n'écrit jamais dans aiConversation.
+     * Met à jour le digest de l'histoire — appel "fantôme" : n'écrit jamais dans aiConversation.
      * @param finalChapter true quand l'IA vient de signaler la fin définitive de l'histoire
      *   ($storyEndedTag) : le reliquat d'échanges pas encore digéré (moins de 6, éventuellement)
      *   est alors digéré quand même, comme dernier chapitre, au lieu d'attendre un 6e échange
@@ -956,7 +953,7 @@ class GameEngine(private val baseDir: File) {
     }
 
     /**
-     * Miroir de build_full_prompt() : texte du prompt complet (mécaniques +
+     * Texte du prompt complet (mécaniques +
      * histoire déjà vécue), pour le bouton "copier le prompt complet" du
      * mode manuel (sans clé Mistral). Chaîne vide si aucune histoire n'est
      * sélectionnée.
@@ -969,7 +966,7 @@ class GameEngine(private val baseDir: File) {
         return "$prompt\n\n$announcement"
     }
 
-    /** Miroir de do_send_full_prompt(). */
+    /** Envoie le prompt complet à l'IA. */
     fun sendFullPrompt(): JSONObject {
         val sess = session ?: return currentSessionJson()
         // Prompt de mécaniques + instructions à l'IA : jamais affiché tel quel dans AiPanel.kt,
@@ -978,7 +975,7 @@ class GameEngine(private val baseDir: File) {
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
-    /** Miroir de do_send_ai_message() : envoie le lancer en attente (s'il y en a un) + un texte libre optionnel. */
+    /** Envoie le lancer en attente (s'il y en a un) + un texte libre optionnel. */
     fun sendAiMessage(text: String = ""): JSONObject {
         val sess = session ?: return currentSessionJson()
         val pending = sess.pendingRoll()
@@ -999,7 +996,7 @@ class GameEngine(private val baseDir: File) {
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
-    /** Miroir de do_reset_ai_conversation() : réinitialise TOUTE la partie (reset_story_to_origin), pas seulement la conversation IA. */
+    /** Réinitialise TOUTE la partie (reset_story_to_origin), pas seulement la conversation IA. */
     fun resetAiConversation(): JSONObject {
         resetStoryToOrigin()
         return currentSessionJson()
@@ -1031,20 +1028,12 @@ class GameEngine(private val baseDir: File) {
     }
 
     // ------------------------------------------------------------------
-    // Configuration Mistral (miroir de load_app_config/save_app_config/
-    // get_mistral_key/set_mistral_key/get_mistral_model/set_mistral_model/
-    // get_config_screen_state — app_config.json)
+    // Configuration Mistral (clé et modèle — app_config.json)
     // ------------------------------------------------------------------
 
     private val appConfigFile = File(baseDir, "app_config.json")
-    // Aligné sur MistralClient.DEFAULT_MODEL plutôt que dupliqué en dur :
-    // avant ce correctif, cette constante valait "mistral-small-latest",
-    // un identifiant absent de MistralClient.MODEL_CHOICES (qui liste
-    // "mistral-small-2603" comme modèle recommandé/par défaut) — une
-    // première installation sans app_config.json récupérait donc un modèle
-    // qui ne correspondait à aucune entrée de la liste déroulante de
-    // ConfigureKeyScreen. En pointant vers la même constante que le client,
-    // les deux fichiers ne peuvent plus diverger.
+    // Même constante que le client, pour rester aligné sur la liste de modèles
+    // proposée dans ConfigureKeyScreen.
     private val defaultMistralModel = MistralClient.DEFAULT_MODEL
 
     private fun loadAppConfig(): JSONObject {
@@ -1101,12 +1090,11 @@ class GameEngine(private val baseDir: File) {
     }
 
     // ------------------------------------------------------------------
-    // Export / import (miroir de export_journal/export_identity/
-    // do_import_identity/do_apply_imported_progress)
+    // Export / import (journal, identité, progression)
     // ------------------------------------------------------------------
 
     /**
-     * Miroir de export_journal() : PDF (JournalExporter) si possible, sinon
+     * PDF (JournalExporter) si possible, sinon
      * texte brut (session.storyLogText()) — jamais d'erreur côté joueur.
      * @return (octets, nom de fichier, type MIME), ou triple vide si aucune session active.
      */
@@ -1125,7 +1113,7 @@ class GameEngine(private val baseDir: File) {
     }
 
     /**
-     * Miroir de export_identity() : le totem de départ (posé par
+     * Exporte l'identité : le totem de départ (posé par
      * switchStory) n'est pas ré-exporté comme "extra" — seuls ceux ajoutés
      * ensuite par le joueur le sont.
      */
@@ -1202,7 +1190,7 @@ class GameEngine(private val baseDir: File) {
         return Triple(data.toString(2).toByteArray(Charsets.UTF_8), "progression_$slug.json", "application/json")
     }
 
-    /** Miroir de do_import_identity() : ne fait qu'analyser/valider le JSON importé, sans rien appliquer. */
+    /** Ne fait qu'analyser/valider le JSON importé, sans rien appliquer. */
     fun importIdentity(rawText: String): JSONObject {
         val parsed = storyRegistry.parseIdentityImport(rawText)
         return JSONObject().apply {
@@ -1245,7 +1233,7 @@ class GameEngine(private val baseDir: File) {
         }
     }
 
-    /** Miroir de do_apply_imported_progress() : restaure quêtes/journal sur la session en cours. */
+    /** Restaure quêtes/journal sur la session en cours. */
     fun applyImportedProgress(sideQuestsJson: JSONArray, nextQuestId: Int, storyLogJson: JSONArray, storySummary: String): JSONObject {
         val sess = session ?: return currentSessionJson()
         sess.importProgress(sideQuests = sideQuestsJson, nextQuestId = nextQuestId, storyLog = storyLogJson, storySummary = storySummary)
@@ -1256,7 +1244,7 @@ class GameEngine(private val baseDir: File) {
     // Énergie totémique
     // ------------------------------------------------------------------
 
-    /** Miroir de do_use_totem_energy(), narration IA comprise. */
+    /** Dépense l'énergie d'un totem, narration IA comprise. */
     fun useTotemEnergy(key: String, text: String = ""): JSONObject {
         val sess = session ?: return currentSessionJson().apply {
             put("spent", false)
@@ -1267,9 +1255,8 @@ class GameEngine(private val baseDir: File) {
         if (spent) {
             if (key == "patte" || key == "baguette") {
                 // TOTEMS_BY_KEY (histoires codées en dur) est toujours vide
-                // dans l'appli actuelle : comme en Python, le libellé
-                // retombe donc sur la clé elle-même plutôt que sur le
-                // totem personnalisé homonyme.
+                // dans l'appli actuelle : le libellé retombe donc sur la
+                // clé elle-même plutôt que sur le totem personnalisé homonyme.
                 val label = key
                 sess.secondSouffle(note = "Relance ($label)")
                 effectText = "\uD83D\uDD04 $label ! Le dernier lancer de réussite est annulé et relancé à l'instant."
@@ -1420,7 +1407,7 @@ class GameEngine(private val baseDir: File) {
         })
         state.put("next_id", nextId + 1)
 
-        // Ne garde que les 30 derniers lancers, comme en Python (state["history"][-30:]).
+        // Ne garde que les 30 derniers lancers.
         val trimmed = JSONArray()
         val start = maxOf(0, history.length() - 30)
         for (i in start until history.length()) trimmed.put(history.get(i))

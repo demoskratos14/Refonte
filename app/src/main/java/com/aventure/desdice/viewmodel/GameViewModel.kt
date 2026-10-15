@@ -17,8 +17,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 // NB : passe de ViewModel à AndroidViewModel — il faut le répertoire de
-// l'appli (getApplication().filesDir) pour construire GameEngine, comme
-// init_app_dir() le faisait côté Python avec context.getFilesDir(). Si le
+// l'appli (getApplication().filesDir) pour construire GameEngine. Si le
 // ViewModel est obtenu via viewModel() (Compose) sans factory explicite,
 // la factory par défaut sait déjà instancier un AndroidViewModel ; sinon,
 // utilise ViewModelProvider.AndroidViewModelFactory.getInstance(application).
@@ -43,14 +42,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val currentStorySlug = _currentStorySlug.asStateFlow()
 
     // Etat de la session de jeu en cours (JSONObject construit nativement
-    // par GameEngine.sessionToJson(), miroir exact de l'ancien
-    // session_to_dict() Python).
+    // par GameEngine.sessionToJson()).
     private val _sessionState = MutableStateFlow<JSONObject?>(null)
     val sessionState = _sessionState.asStateFlow()
 
-    // Les 6 faces du de du destin (cle/emoji/label/desc). Contrairement a
-    // l'ancienne version (get_fate_faces() via Chaquopy), FATE_FACES est
-    // directement accessible cote Kotlin (DiceSession.kt) -- plus besoin
+    // Les 6 faces du de du destin (cle/emoji/label/desc). FATE_FACES est
+    // directement accessible cote Kotlin (DiceSession.kt) -- pas besoin
     // d'appel asynchrone ni de StateFlow separe pour cette donnee statique.
     val fateFaces: List<com.aventure.desdice.FateFace> = FATE_FACES
 
@@ -124,10 +121,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         totemImageBytes: ByteArray,
         totemImageFilename: String
     ) {
-        // bgImageExt n'est plus utilise : l'image de fond est de toute
-        // facon toujours reencodee en JPEG par StoryRegistry.createCustomStory()
-        // (comme en Python, voir stories.py) -- conserve uniquement pour ne
-        // pas casser les appelants existants (CreateStoryScreen.kt).
+        // bgImageExt est ignore : l'image de fond est toujours reencodee en
+        // JPEG par StoryRegistry.createCustomStory().
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
                 engine.createStory(
@@ -150,10 +145,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * Variante suspendue de createStory() : CreateStoryScreen a besoin
      * d'attendre la création (et la publication de sessionState) avant de
      * naviguer vers l'écran de jeu, contrairement à la version
-     * fire-and-forget ci-dessus. Ne prend plus bgImageExt (jamais utilisé
-     * côté GameEngine, l'image de fond étant toujours réencodée en JPEG
-     * par StoryRegistry) ni protagonistNames en position fixe : cette liste
-     * est optionnelle (un ou plusieurs héros), comme côté GameEngine.createStory().
+     * fire-and-forget ci-dessus. Ne prend pas bgImageExt (inutile : l'image de fond
+     * est toujours réencodée en JPEG par StoryRegistry). protagonistNames est
+     * optionnel (un ou plusieurs héros), comme dans GameEngine.createStory().
      */
     suspend fun createStoryAwait(
         title: String,
@@ -245,7 +239,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleAllowedFate(key: String) = runEngine { engine.toggleAllowedFate(key) }
     fun resetAllowedFate() = runEngine { engine.resetAllowedFate() }
 
-    /** Miroir de do_use_totem_energy (narration IA pas encore branchée — voir GameEngine.useTotemEnergy). */
+    /** Dépense l'énergie d'un totem (voir GameEngine.useTotemEnergy). */
     fun useTotemEnergy(key: String) = runEngine { engine.useTotemEnergy(key) }
 
     /** Variante suspendue de useTotemEnergy() : publie sessionState comme la

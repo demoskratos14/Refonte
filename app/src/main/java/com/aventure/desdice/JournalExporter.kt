@@ -1,13 +1,10 @@
 // JournalExporter.kt
-// Portage Kotlin de journal_export.py.
+// Export du journal de l'histoire en PDF.
 //
-// Contrairement à Python (dépendance optionnelle fpdf2, avec repli sur du
-// texte brut si absente), Android fournit nativement
-// android.graphics.pdf.PdfDocument depuis l'API 19 : la génération PDF est
-// donc TOUJOURS disponible ici, pas d'équivalent de fpdf_available().
-// GameEngine.exportJournal() garde malgré tout le même repli texte brut
-// que le Python, pour le cas où story_log est vide (voir generateJournalPdf
-// qui renvoie null dans ce cas, comme generate_journal_pdf côté Python).
+// Android fournit nativement android.graphics.pdf.PdfDocument depuis l'API 19 :
+// la génération PDF est donc toujours disponible.
+// GameEngine.exportJournal() garde un repli texte brut pour le cas où
+// story_log est vide (generateJournalPdf renvoie alors null).
 
 package com.aventure.desdice
 
@@ -19,7 +16,7 @@ import java.io.ByteArrayOutputStream
 
 object JournalExporter {
 
-    // A4 en points (72 dpi), comme FPDF(format="A4").
+    // A4 en points (72 dpi).
     private const val PAGE_WIDTH = 595
     private const val PAGE_HEIGHT = 842
     private const val MARGIN = 40f

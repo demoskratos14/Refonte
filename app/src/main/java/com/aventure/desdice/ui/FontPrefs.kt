@@ -108,11 +108,9 @@ class FontPrefs private constructor(private val appContext: Context) {
     )
 
     // ------------------------------------------------------------------
-    // Compatibilité avec l'ancienne API à plat (utilisée ailleurs dans le projet avant
-    // l'introduction de title/body/reply). Ne stocke rien de nouveau : délègue directement
-    // aux instances ci-dessus, mêmes clés SharedPreferences qu'avant pour body/title/reply
-    // couleur+taille -> aucune perte de réglage déjà enregistré par un utilisateur.
-    // Préférer title/body/reply directement dans le nouveau code.
+    // API à plat (couleur/taille/police du texte, des titres et des réponses IA).
+    // Ne stocke rien de plus : délègue directement aux instances title/body/reply
+    // ci-dessus.
     // ------------------------------------------------------------------
     @Deprecated("Utiliser body.fontFile", ReplaceWith("body.fontFile"))
     val bodyFontFile: String? get() = body.fontFile
@@ -166,14 +164,13 @@ class FontPrefs private constructor(private val appContext: Context) {
         const val MIN_REPLY_SIZE_SP = 12f
         const val MAX_REPLY_SIZE_SP = 24f
 
-        // Couleurs prédéfinies : remplacées par une roue chromatique (Réglages > Écriture,
-        // ColorWheelPicker dans SettingsScreen.kt) -- plus de liste fixe à proposer ici.
+        // Les couleurs se choisissent avec une roue chromatique (Réglages > Écriture,
+        // ColorWheelPicker dans SettingsScreen.kt).
 
         private const val PREFS_NAME = "app_font_prefs"
 
-        // Mêmes clés qu'avant la refonte pour la police du texte/titres et pour la
-        // couleur/taille des réponses IA : les réglages déjà enregistrés par un utilisateur
-        // sont conservés tels quels après mise à jour de l'appli.
+        // Clés SharedPreferences : à ne pas renommer, sous peine de perdre les
+        // réglages déjà enregistrés.
         private const val KEY_TITLE_FONT = "title_font_file"
         private const val KEY_TITLE_COLOR = "title_color_argb"
         private const val KEY_TITLE_SIZE = "title_size_sp"

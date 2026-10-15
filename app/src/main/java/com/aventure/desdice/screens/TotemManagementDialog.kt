@@ -50,11 +50,10 @@ private data class CustomTotem(
 )
 
 /**
- * Equivalent Compose du formulaire "totems ajoutes en cours de partie"
- * de dice_web.py (do_add_custom_totem/do_remove_custom_totem).
+ * Formulaire Compose des "totems ajoutes en cours de partie".
  *
- * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
- * n'appelle plus Python/Chaquopy. GameViewModel.addCustomTotem() et
+ * Relie au moteur Kotlin (GameEngine, via GameViewModel).
+ * GameViewModel.addCustomTotem() et
  * .removeCustomTotem() mettent a jour sessionState elles-memes ; ce
  * composable se contente de lire sessionState et de reagir a ses
  * changements (voir refreshFromSessionState()).
@@ -86,8 +85,8 @@ fun TotemManagementDialog(
     // Se redeclenche a chaque mise a jour de sessionState -- y compris
     // celles provoquees par addCustomTotem()/removeCustomTotem() plus bas,
     // qui l'ecrivent elles-memes une fois l'action terminee cote moteur.
-    // C'est ce qui fait retomber "saving" a false : il n'y a plus de
-    // resultat synchrone a attendre comme avec l'ancien pont Chaquopy.
+    // C'est ce qui fait retomber "saving" a false : il n'y a pas de
+    // resultat synchrone a attendre.
     LaunchedEffect(sessionState) {
         val custom = sessionState?.optJSONArray("custom_totems")
         val list = mutableListOf<CustomTotem>()

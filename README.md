@@ -16,29 +16,21 @@ d'aide** expliquent, écran par écran, comment s'en servir.
 
 ## Historique : pourquoi cette architecture
 
-1. Au départ, un script Python lancé dans Pydroid 3 qui ouvrait un
-   navigateur externe (`127.0.0.1:5001`).
-2. Puis une première appli Android qui démarrait un serveur Flask interne et
-   l'affichait dans une `WebView` (`dice_web.py`, `android_bridge.py`).
-3. Refonte complète (2026) : plus de serveur, plus de navigateur, plus de
-   HTML : chaque écran est un composable Compose. `flask`, `dice_web.py` et
-   `android_bridge.py` n'existent plus. Le moteur de jeu restait en Python
-   (`game_api.py`), appelé depuis Kotlin via Chaquopy.
-4. **Portage complet du moteur de Python vers Kotlin.** `dice_engine.py`,
-   `stories.py`, `mistral_client.py`, `image_utils.py` et `journal_export.py`
-   ont été réécrits en Kotlin pur (`DiceSession.kt`, `StoryRegistry.kt`,
-   `GameEngine.kt`, `ImageUtils.kt`, `MistralClient.kt`,
-   `JournalExporter.kt`).
-5. **Migration terminée** : tous les écrans (`MainGameScreen.kt` et les
+1. L'appli a d'abord été une page web affichée dans une `WebView`. Elle a
+   ensuite fait l'objet d'une refonte complète (2026) : plus de HTML, chaque
+   écran est un composable Compose.
+2. Le moteur de jeu est écrit en **Kotlin pur** (`DiceSession.kt`,
+   `StoryRegistry.kt`, `GameEngine.kt`, `ImageUtils.kt`, `MistralClient.kt`,
+   `JournalExporter.kt`). Tous les écrans (`MainGameScreen.kt` et les
    composables qu'il appelle, `ClassicDiceScreen.kt`, `ConfigureKeyScreen.kt`,
-   `CreateStoryScreen.kt`, `StorySelectorScreen.kt`) passent désormais
-   uniquement par `GameViewModel`/`GameEngine`. Le dossier `python/`, Chaquopy
-   et les dépendances `pillow`/`fpdf2` ont été retirés du projet.
-6. **Écran Réglages** : choix des polices (texte, titres, réponses de l'IA),
+   `CreateStoryScreen.kt`, `StorySelectorScreen.kt`) passent uniquement par
+   `GameViewModel`/`GameEngine`. Le projet n'a aucune dépendance native ni
+   interpréteur embarqué.
+3. **Écran Réglages** : choix des polices (texte, titres, réponses de l'IA),
    des images de fond des pages, de l'icône de l'application, des sons et du
    public visé, sans passer par le moteur de jeu (voir la section
    « Réglages » plus bas).
-7. **Boutons d'aide** : un petit bouton rond ouvre une fenêtre d'explication
+4. **Boutons d'aide** : un petit bouton rond ouvre une fenêtre d'explication
    propre à l'écran où l'on se trouve (voir « Aides intégrées » plus bas).
 
 ## Comment Kotlin et le moteur de jeu communiquent
@@ -57,7 +49,7 @@ d'aide** expliquent, écran par écran, comment s'en servir.
   une méthode par action (`roll`, `setPipSymbol`, `useTotemEnergy`,
   `sendAiMessage`, `createStory`, `exportJournal`…), chacune renvoyant (ou
   mettant à jour) l'état de session complet sous forme de `JSONObject`
-  (`sessionToJson()`, miroir de l'ancien `session_to_dict()` Python).
+  (`sessionToJson()`).
   `GameViewModel` expose une méthode par action, qui appelle `GameEngine`
   puis range le résultat dans `GameViewModel.sessionState` (un `StateFlow`) ;
   tous les écrans se redessinent à partir de lui.

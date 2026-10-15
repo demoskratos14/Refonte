@@ -112,7 +112,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-// --- Palette de l'ancienne version web (dice_web.py) -------------------
+// --- Palette "papier BD" -------------------
 private val Ink = Color(0xFF14161A)
 private val Paper = Color(0xFFFBF3E1)
 private val Red = Color(0xFFE0263C)
@@ -132,7 +132,7 @@ private val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
 // Duree du lancer (millisecondes).
 internal const val SpinDurationMs = 1800
 
-// Meme table que PIP_POSITIONS (dice_web.py) : (ligne, colonne) dans une grille 3x3.
+// Position des points de chaque face : (ligne, colonne) dans une grille 3x3.
 private val PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
     1 to listOf(2 to 2),
     2 to listOf(1 to 1, 3 to 3),
@@ -160,7 +160,7 @@ internal data class FateFace(val emoji: String, val label: String)
  */
 internal class PipGlyph(val image: ImageBitmap?, val emoji: TextLayoutResult?)
 
-/** Taille (dp) d'un symbole sur une face portant `count` points (comme l'ancienne page de jeu). */
+/** Taille (dp) d'un symbole sur une face portant `count` points. */
 internal fun pipGlyphSizeDp(count: Int): Int = when (count) {
     1 -> 96
     2 -> 38
@@ -195,7 +195,7 @@ private fun parseHistory(result: JSONObject): List<ClassicRoll> {
  * exactement les des voulus -- d4, classique (d6 a points), d8, d10, d12, d20, un nombre de faces
  * libre, ou le de du destin (facultatif, comme les autres) -- et on les lance tous d'un coup ou
  * un par un (tap sur le de). Independant de toute histoire, pense comme aide-memoire pendant une
- * partie sur table. Habillage repris de render_classic_dice_page (dice_web.py) : fond photo,
+ * partie sur table. Habillage : fond photo,
  * boutons "BD", polices Bangers / Nunito. Les des sont de vrais cubes 3D qui roulent,
  * rebondissent et s'immobilisent sur la face tiree (le resultat est deja tire avant l'animation).
  *
@@ -643,7 +643,7 @@ private fun Modifier.hardShadow(offset: Dp, radius: Dp, color: Color): Modifier 
         )
     }
 
-/** Bloc sans fond ni bordure (la photo reste visible), largeur limitee comme l'ancienne carte. */
+/** Bloc sans fond ni bordure (la photo reste visible), largeur limitee. */
 @Composable
 private fun Section(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(

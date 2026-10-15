@@ -117,7 +117,7 @@ import org.json.JSONObject
 import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------------
-// Palette (celle de l'ancienne version web et des autres ecrans restyles)
+// Palette (commune aux ecrans de l'appli)
 // ---------------------------------------------------------------------
 internal val Ink = Color(0xFF14161A)
 internal val Paper = Color(0xFFFBF3E1)
@@ -171,8 +171,8 @@ private val FATE_OPTIONS = listOf(
  * fond plein ecran (la meme que dans le carrousel de choix), sections sans
  * carte, titres Bangers, boutons "BD".
  *
- * Le titre d'en-tete vient de session_to_dict()["header_title"] (a ajouter
- * dans game_api.py, voir la note qui accompagne ce fichier).
+ * Le titre d'en-tete vient de sessionState["header_title"] (produit par
+ * GameEngine.sessionToJson()).
  */
 @Composable
 fun MainGameScreen(
@@ -194,8 +194,7 @@ fun MainGameScreen(
 
     // Cle Mistral enregistree ou non : determine si la narration automatique est
     // active (panneau de narration) et le libelle du bloc "Continuer l'aventure".
-    // Vient de GameViewModel.configScreenState (deja branche sur GameEngine),
-    // plus d'appel Python direct ici.
+    // Vient de GameViewModel.configScreenState (branche sur GameEngine).
     val configScreenState by viewModel.configScreenState.collectAsState()
     fun refreshKeyState() {
         viewModel.loadConfigScreenState()
@@ -328,7 +327,7 @@ fun MainGameScreen(
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
             SideQuestsList(viewModel = viewModel, hasKey = hasKey)
-            // ContinueSection ne sert plus qu'en mode manuel (sans clé API) : avec une clé, son
+            // ContinueSection ne sert qu'en mode manuel (sans clé API) : avec une clé, son
             // bouton "Envoyer le prompt à l'IA" faisait doublon avec "🚀 Démarrer l'histoire" de
             // GameHeader (même sendFullPrompt()). Sans clé en revanche, ce bouton devient "Copier
             // le prompt complet pour une IA" -- seul moyen de récupérer ce prompt, puisque le
@@ -403,7 +402,7 @@ private fun GameHeader(
             style = bodyStyle(fonts, 15.sp, Color.White.copy(alpha = 0.92f)),
             modifier = Modifier.padding(top = 2.dp)
         )
-        // Equivalent du lien "Changer d'histoire" de l'ancienne page de jeu.
+        // Lien "Changer d'histoire".
         Text(
             text = "\uD83D\uDD01 Changer d'histoire",
             style = bodyStyle(fonts, 14.sp).copy(textDecoration = TextDecoration.Underline),
@@ -412,7 +411,7 @@ private fun GameHeader(
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
-        // Musique : continue de jouer en entrant dans l'histoire (ne se coupe plus toute
+        // Musique : continue de jouer en entrant dans l'histoire (ne se coupe pas toute
         // seule) ; ce lien permet de la couper, la relancer, ou changer de morceau.
         if (MusicPlayer.hasTracks()) {
             val musicContext = LocalContext.current
@@ -507,13 +506,13 @@ fun DiceResultCard(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier,
     // Narration automatique active (cle Mistral enregistree) : un "!" est alors envoye
-    // directement a l'IA, et la note "a copier" n'est plus proposee.
+    // directement a l'IA, et la note "a copier" n'est pas proposee.
     hasKey: Boolean = false
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    // fateFaces n'est plus un etat Python recupere de facon asynchrone : c'est
-    // une simple liste Kotlin statique (FATE_FACES, cf. DiceSession.kt),
-    // exposee telle quelle par GameViewModel -- pas de collectAsState().
+    // fateFaces est une simple liste Kotlin statique (FATE_FACES, cf.
+    // DiceSession.kt), exposee telle quelle par GameViewModel -- pas de
+    // collectAsState().
     val fateFaces = viewModel.fateFaces
     val fonts = rememberAppFonts()
     val scope = rememberCoroutineScope()
@@ -628,7 +627,7 @@ fun DiceResultCard(
         fateFaces.firstOrNull { it.key == key }
             ?.let { FateFace(it.emoji, it.label) }
     }
-    // Comme l'ancienne page : le de qui n'a pas servi au dernier lancer est estompe.
+    // Le de qui n'a pas servi au dernier lancer est estompe.
     val successUsed = lastRec == null || !lastRec.isNull("success")
     val fateUsed = lastRec == null || lastRec.str("fate").isNotEmpty()
     val cubeFateFaces = fateFaces.take(6).map { FateFace(it.emoji, it.label) }
@@ -949,8 +948,8 @@ fun ThreatGauge(
  * barre continue), qui se colore au fur et a mesure -- degrade du vert
  * (1re case) au rouge fonce (derniere, celle du seuil). Chaque case prend
  * une part egale de la largeur disponible (Modifier.weight(1f)) : la jauge
- * reste donc pleine largeur quel que soit THREAT_THRESHOLD, plus large et
- * plus lisible que l'ancienne barre fine de 12dp.
+ * reste donc pleine largeur quel que soit THREAT_THRESHOLD, plus lisible
+ * qu'une barre fine.
  */
 @Composable
 private fun ThreatGaugeCells(
@@ -1303,7 +1302,7 @@ fun TotemGaugesRow(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 items(symbols.toList()) { (key, symbol) ->
-                    // Comme l'ancienne page : icone cliquable seulement si une fiche existe.
+                    // Icone cliquable seulement si une fiche existe.
                     val hasInfo = sessionState?.optJSONObject("totem_info")?.has(key) == true
                     TotemGaugeItem(
                         symbol = symbol,
@@ -1317,7 +1316,7 @@ fun TotemGaugesRow(
         }
 
         // Affiches en dehors du "if (isLoading)" : sinon le message pose juste
-        // avant la fin du chargement disparaissait aussitot.
+        // avant la fin du chargement disparaitrait aussitot.
         error?.let {
             Text(
                 text = it,
@@ -1438,7 +1437,7 @@ fun SideQuestsList(
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
 
-    // Seulement les quetes OUVERTES (comme session.open_side_quests() dans l'ancienne page) :
+    // Seulement les quetes OUVERTES (openSideQuests()) :
     // une quete terminee ou commencee disparait de la liste.
     LaunchedEffect(sessionState) {
         sideQuests = buildList {
@@ -1454,7 +1453,7 @@ fun SideQuestsList(
 
     // "Commencer" : la demande de quete part a l'IA (le lancer "?" en attente est ajoute
     // automatiquement par sendAiMessage()), puis la quete est retiree de la liste -- il
-    // n'y a donc plus de bouton "Terminer". Si l'IA renvoie une erreur, la quete est
+    // n'y a donc pas de bouton "Terminer". Si l'IA renvoie une erreur, la quete est
     // conservee pour pouvoir reessayer.
     fun startQuest(quest: JSONObject) {
         val request = questRequestText(quest.optString("kind"))
@@ -1577,7 +1576,7 @@ fun HistoryList(
     modifier: Modifier = Modifier
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
-    // Simple liste Kotlin statique, pas un etat Python -- voir DiceResultCard.
+    // Simple liste Kotlin statique -- voir DiceResultCard.
     val fateFaces = viewModel.fateFaces
     val fonts = rememberAppFonts()
 
@@ -2070,9 +2069,8 @@ internal fun loadTotemBitmap(context: Context, imageName: String): ImageBitmap? 
 }
 
 /**
- * Icone d'un symbole/totem. `image` (game_api.all_symbols) est un NOM DE FICHIER stocke
- * dans <filesDir>/totem_images/ (le dossier de travail Python est filesDir) -- pas du
- * base64. Priorite comme dans l'ancienne page (render_pip_symbol) : image > emoji >
+ * Icone d'un symbole/totem. `image` (voir allSymbols()) est un NOM DE FICHIER stocke
+ * dans <filesDir>/totem_images/ -- pas du base64. Priorite : image > emoji >
  * texte de repli.
  */
 @Composable

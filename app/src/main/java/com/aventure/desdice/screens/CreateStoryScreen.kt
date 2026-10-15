@@ -103,15 +103,14 @@ private val ScrimBottom = Color(0x73000000)
 private const val BgAspect = 1062f / 699f // hauteur / largeur
 
 /**
- * Equivalent Compose de render_create_story_page (dice_web.py). Reconnecte
- * a GameViewModel (createStoryAwait/addCustomTotemAwait/
- * applyImportedProgress/importIdentity, toutes suspendues) : plus aucun
- * appel a Python/Chaquopy. On utilise les variantes suspendues (plutot que
+ * Ecran de creation d'histoire. Relie a GameViewModel (createStoryAwait/
+ * addCustomTotemAwait/applyImportedProgress/importIdentity, toutes
+ * suspendues). On utilise les variantes suspendues (plutot que
  * les versions fire-and-forget de GameViewModel) car on a besoin
  * d'attendre la fin de chaque etape avant la suivante, et la fin de tout
  * avant de naviguer (onCreated) ; GameViewModel publie lui-meme
- * sessionState a chaque etape, donc plus besoin de suivre une session
- * "latest" a la main comme du temps de l'appel direct a game_api.
+ * sessionState a chaque etape, donc pas besoin de suivre une session
+ * "latest" a la main.
  *
  * Inclut le bloc "importer une identite exportee" (viewModel.importIdentity,
  * qui analyse sans rien appliquer) : une image importee (bg ou totem) est
@@ -301,9 +300,8 @@ fun CreateStoryScreen(
                 // L'image explicitement choisie (bgUri) est toujours
                 // prioritaire sur celle d'un import -- coherent avec le
                 // fait que la choisir efface deja importedBgBytes plus haut.
-                // bgExt n'est plus necessaire : GameEngine.createStory ne
-                // le prend plus en parametre (l'image de fond est de toute
-                // facon toujours reencodee en JPEG par StoryRegistry).
+                // L'image de fond est toujours reencodee en JPEG par StoryRegistry :
+                // pas besoin d'en transmettre l'extension.
                 val bgBytes = bg?.let { uriBytes(it) } ?: importedBg!!
                 val totemBytes = totemUri?.let { uriBytes(it) }
                     ?: importedTotemBytes ?: ByteArray(0)
@@ -318,8 +316,7 @@ fun CreateStoryScreen(
                 // moyen d'attendre sa fin) : on a besoin de savoir que la
                 // creation est terminee avant de naviguer (onCreated).
                 // GameEngine garde la session courante en interne, donc pas
-                // besoin de recuperer/repasser un JSON de session a la main
-                // comme du temps de l'appel direct a game_api.
+                // besoin de recuperer/repasser un JSON de session a la main.
                 viewModel.createStoryAwait(
                     title = title,
                     subtitle = subtitle,
@@ -880,7 +877,7 @@ private fun ComicTextField(
     }
 }
 
-/** Reproduit .btn / .btn.secondary de l'ancien CSS : fond plat, bordure
+/** Bouton "BD" : fond plat, bordure
  * epaisse, "ombre" facon BD (rectangle decale, pas de flou). */
 @Composable
 private fun ComicButton(

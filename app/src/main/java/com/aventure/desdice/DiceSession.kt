@@ -1,7 +1,7 @@
 // DiceSession.kt
-// Portage Kotlin de dice_engine.py — ÉTAPE 1 + ÉTAPE 2
+// Moteur de dés et de session : état d'une partie, lancers, sauvegarde.
 //
-// Ce que ce fichier couvre déjà (étape 1 : cœur des lancers) :
+// Cœur des lancers :
 //   - constantes, libellés, faces du destin, combos narratifs
 //   - rollSuccess / rollFate / rollBoth / secondSouffle / undoLast / clearHistory / resetAll
 //   - save() / load() avec EXACTEMENT les mêmes clés JSON que dice_state_<slug>.json
@@ -9,8 +9,7 @@
 //   - la plomberie interne nécessaire aux lancers (jauge totem, jauge de menace,
 //     choix des pips, pool du destin, création de quête secondaire)
 //
-// Ce que ce fichier couvre en plus (étape 2 : gestion complète, miroir exact de
-// dice_engine.py) :
+// Gestion complète de la partie :
 //   - symboles/totems : toggleEnabledSymbol, setPipSymbol, setPipMode,
 //     addCustomTotem, removeCustomTotem, allSymbols(), spendTotemEnergy
 //   - contraintes de tirage : toggleAllowedValue/resetAllowedValues,
@@ -25,28 +24,24 @@
 //     applyStoryDigest, markLastRollAsSent, pendingRoll, aiMessagesToSend
 //   - import d'identité : importProgress
 //
-// Ce qui reste pour l'ÉTAPE 3 (hors de cette classe) :
-//   - StoryRegistry côté Kotlin : peupler PIP_SYMBOLS selon l'histoire active
-//     et fournir le bon saveFile (dice_state_<slug>.json) par histoire
-//   - GameViewModel : orchestration UI <-> DiceSession, équivalent des routes
-//     do_* de dice_web.py
-//   - Portage de mistral_client.py (appel réseau à l'IA narratrice via Chaquopy
-//     ou HTTP direct), journal_export.py, image_utils.py
+// Hors de cette classe :
+//   - StoryRegistry : peuple PIP_SYMBOLS selon l'histoire active et fournit le
+//     bon saveFile (dice_state_<slug>.json) par histoire
+//   - GameEngine / GameViewModel : orchestration UI <-> DiceSession
+//   - MistralClient (appel réseau à l'IA narratrice), JournalExporter, ImageUtils
 //
-// NB save file : dans dice_engine.py, SAVE_FILE = "dice_state.json" est une constante
-// globale, mais dans l'appli réelle chaque histoire a son propre fichier
-// (dice_state_<slug>.json), vraisemblablement fixé par StoryRegistry/dice_web.py
-// (non visible dans dice_engine.py). En attendant l'étape 3, saveFile est un
-// paramètre du constructeur — GameViewModel le pointera vers le bon fichier par histoire.
+// NB save file : chaque histoire a son propre fichier (dice_state_<slug>.json) ;
+// saveFile est donc un paramètre du constructeur, fourni par GameEngine selon
+// l'histoire active.
 
-package com.aventure.desdice // TODO: remplacer par le vrai nom de package de l'appli
+package com.aventure.desdice
 
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 // ------------------------------------------------------------------------
-// Constantes (miroir exact de dice_engine.py)
+// Constantes
 // ------------------------------------------------------------------------
 
 const val TOTEM_ENERGY_THRESHOLD = 15
@@ -99,7 +94,7 @@ val FATE_FACES: List<FateFace> = listOf(
 val FATE_BY_KEY: Map<String, FateFace> = FATE_FACES.associateBy { it.key }
 
 // Combos narratifs (dé de réussite, dé du destin) -> note, UNIQUEMENT pour
-// roll_both et les valeurs extrêmes (1 et 6). Miroir exact de COMBO_NOTES.
+// roll_both et les valeurs extrêmes (1 et 6)..
 val COMBO_NOTES: Map<Pair<Int, String>, String> = mapOf(
     (1 to "coeur") to "Malgré l'échec, un allié providentiel intervient juste à temps pour éviter le pire.",
     (1 to "question") to "L'échec ouvre malgré tout une piste inattendue à explorer plus tard.",
@@ -137,15 +132,15 @@ fun normalizeStoryLength(raw: String?): String {
 /**
  * Symboles de pips de base pour l'histoire ACTIVE. Volontairement une
  * MutableMap au niveau module (jamais réassignée, seulement vidée + remplie
- * via clear()+putAll()), miroir exact du dict PIP_SYMBOLS en Python : peuplée
- * par StoryRegistry côté Kotlin (étape 3) quand on change d'histoire, pour
+ * via clear()+putAll()) : peuplée par GameEngine à partir de
+ * StoryRegistry quand on change d'histoire, pour
  * que toute référence existante voie toujours le contenu à jour.
  */
 data class PipSymbolInfo(val emoji: String, val label: String)
 val PIP_SYMBOLS: MutableMap<String, PipSymbolInfo> = mutableMapOf()
 const val DEFAULT_PIP_SYMBOL = ""
 
-/** Symbole fusionné (base ou totem ajouté), miroir du dict renvoyé par all_symbols() en Python. */
+/** Symbole fusionné (base ou totem ajouté), tel que renvoyé par allSymbols(). */
 data class SymbolInfo(
     val emoji: String,
     val label: String,
@@ -337,7 +332,7 @@ class DiceSession(private var saveFile: File) {
     var customTotems: MutableList<CustomTotem> = mutableListOf()
         private set
 
-    // Au moins une valeur/un symbole toujours actif (garanti par les toggle_* de l'étape 2).
+    // Au moins une valeur/un symbole toujours actif (garanti par toggleAllowedValue/toggleAllowedFate).
     var allowedSuccessValues: MutableList<Int> = mutableListOf(1, 2, 3, 4, 5, 6)
     var allowedFateKeys: MutableList<String> = FATE_FACES.map { it.key }.toMutableList()
 
@@ -417,7 +412,7 @@ class DiceSession(private var saveFile: File) {
         saveFile.writeText(data.toString(2))
     }
 
-    /** @return true si un fichier existait et a été chargé, false sinon (miroir de dice_engine.load()). */
+    /** @return true si un fichier existait et a été chargé, false sinon. */
     fun load(): Boolean {
         if (!saveFile.exists()) return false
         val data = JSONObject(saveFile.readText())
@@ -432,7 +427,7 @@ class DiceSession(private var saveFile: File) {
 
         // Les totems ajoutés par le joueur sont chargés AVANT enabledSymbols et
         // totemEnergy, car ces deux-là dépendent de allSymbolKeys() (base + ajoutés)
-        // pour ne pas les perdre au filtrage — même ordre que dice_engine.load().
+        // pour ne pas les perdre au filtrage.
         val rawCustom = data.optJSONArray("custom_totems") ?: JSONArray()
         customTotems = mutableListOf()
         for (i in 0 until rawCustom.length()) {
@@ -492,7 +487,7 @@ class DiceSession(private var saveFile: File) {
         return true
     }
 
-    // ---------- totems : lecture seule nécessaire aux lancers (gestion complète = étape 2) ----------
+    // ---------- totems : lecture seule nécessaire aux lancers (la gestion complète est plus bas) ----------
 
     /** Ensemble de toutes les clés de symboles valides : celles de base (PIP_SYMBOLS) + totems ajoutés. */
     fun allSymbolKeys(): Set<String> = PIP_SYMBOLS.keys + customTotems.map { it.key }.toSet()
@@ -508,8 +503,7 @@ class DiceSession(private var saveFile: File) {
      * Détermine le symbole utilisé pour chaque pip d'une face, selon pipMode.
      * Le nombre de pips vaut toujours `value` (1 à 6). Si aucun symbole n'est
      * encore disponible, on renvoie pipSymbol (potentiellement vide) sans tirage,
-     * pour ne jamais planter sur une liste vide — miroir de _resolve_pip_choice.
-     */
+     * pour ne jamais planter sur une liste vide.     */
     private fun resolvePipChoice(value: Int): List<String> {
         val pool = enabledSymbols.ifEmpty { allSymbolKeys().toList() }
         if (pool.isEmpty()) return List(value) { pipSymbol }
@@ -728,7 +722,7 @@ class DiceSession(private var saveFile: File) {
 
     /**
      * Relance immédiate (pouvoir "Second Souffle" d'un totem, identifié par sa
-     * clé exacte "patte" ou "baguette" côté appelant — étape 2/GameViewModel) :
+     * clé exacte "patte" ou "baguette" côté appelant) :
      * retire le dernier lancer de réussite (ou mixte) de l'historique et
      * relance immédiatement le dé de réussite à sa place.
      */
@@ -819,14 +813,14 @@ class DiceSession(private var saveFile: File) {
     }
 
     // ------------------------------------------------------------------------
-    // ÉTAPE 2 — gestion des symboles / totems / contraintes de tirage
+    // Gestion des symboles / totems / contraintes de tirage
     // ------------------------------------------------------------------------
 
     /**
      * Fusionne les symboles de base et les totems ajoutés par le joueur en un
      * seul Map {clé -> SymbolInfo}, utilisé partout où l'appli doit afficher ou
      * proposer TOUS les symboles disponibles (choix du pip, jauges totémiques,
-     * contexte envoyé à l'IA...). Miroir exact de all_symbols().
+     * contexte envoyé à l'IA...)..
      */
     fun allSymbols(): Map<String, SymbolInfo> {
         val merged = LinkedHashMap<String, SymbolInfo>()
@@ -838,7 +832,7 @@ class DiceSession(private var saveFile: File) {
         }
         for (t in customTotems) {
             merged[t.key] = SymbolInfo(
-                emoji = t.emoji.ifEmpty { "\uD83D\uDC3E" }, // 🐾, miroir de "\U0001F43E"
+                emoji = t.emoji.ifEmpty { "\uD83D\uDC3E" }, // 🐾
                 label = t.label,
                 image = t.image,
                 powers = t.powers,
@@ -867,7 +861,7 @@ class DiceSession(private var saveFile: File) {
     /**
      * Ajoute un nouveau totem/allié en cours de partie : nouvelle entrée dans le
      * sélecteur de symboles, nouvelle jauge d'énergie (à 0), actif par défaut.
-     * Renvoie la clé attribuée, ou null si le nom est vide. Miroir de add_custom_totem.
+     * Renvoie la clé attribuée, ou null si le nom est vide..
      */
     fun addCustomTotem(
         label: String,
@@ -895,7 +889,7 @@ class DiceSession(private var saveFile: File) {
     /**
      * Retire un totem ajouté par le joueur (jauge et image comprises — le
      * fichier image lui-même doit être supprimé côté appelant). Sans effet sur
-     * les symboles de base (PIP_SYMBOLS). Miroir de remove_custom_totem.
+     * les symboles de base (PIP_SYMBOLS)..
      */
     fun removeCustomTotem(key: String): Boolean {
         val before = customTotems.size
@@ -949,7 +943,7 @@ class DiceSession(private var saveFile: File) {
      * Active le mode "aléatoire" ou "mixte". Réactive au passage toutes les
      * constellations (l'utilisateur peut ensuite en décocher). Si le mode
      * demandé est déjà actif, un second appel le désactive et revient au choix
-     * d'une constellation simple. Miroir de set_pip_mode.
+     * d'une constellation simple..
      */
     fun setPipMode(mode: String): Boolean {
         if (mode !in setOf("random", "mixed")) return false
@@ -1013,7 +1007,7 @@ class DiceSession(private var saveFile: File) {
     }
 
     // ------------------------------------------------------------------------
-    // ÉTAPE 2 — journal de l'histoire
+    // Journal de l'histoire
     // ------------------------------------------------------------------------
 
     /**
@@ -1044,7 +1038,7 @@ class DiceSession(private var saveFile: File) {
     }
 
     // ------------------------------------------------------------------------
-    // ÉTAPE 2 — narration automatique (IA)
+    // Narration automatique (IA)
     // ------------------------------------------------------------------------
 
     /**
@@ -1075,7 +1069,7 @@ class DiceSession(private var saveFile: File) {
         save()
     }
 
-    /** aiConversation sans le message "system" initial (s'il existe). Miroir de _rest_conversation. */
+    /** aiConversation sans le message "system" initial (s'il existe). */
     private fun restConversation(): List<AiMessage> {
         return if (aiConversation.isNotEmpty() && aiConversation[0].role == "system") {
             aiConversation.drop(1)
@@ -1087,7 +1081,7 @@ class DiceSession(private var saveFile: File) {
     /**
      * Messages (hors message system) pas encore intégrés à une "digestion"
      * (chapitre de journal + résumé long terme mis à jour, produits en un seul
-     * appel IA). Miroir de pending_digest_messages.
+     * appel IA)..
      */
     fun pendingDigestMessages(): List<AiMessage> = restConversation().drop(lastJournalIndex)
 
@@ -1148,7 +1142,7 @@ class DiceSession(private var saveFile: File) {
     }
 
     // ------------------------------------------------------------------------
-    // ÉTAPE 2 — import d'identité (quêtes + journal)
+    // Import d'identité (quêtes + journal)
     // ------------------------------------------------------------------------
 
     /**
@@ -1156,7 +1150,7 @@ class DiceSession(private var saveFile: File) {
      * avec la même validation que load(), pour ne jamais injecter de données
      * malformées dans la session en cours. Chaque paramètre est optionnel et
      * laisse la session inchangée sur ce point si absent (null) ; ne touche
-     * jamais aux totems, aux dés ou à la menace. Miroir de import_progress.
+     * jamais aux totems, aux dés ou à la menace..
      */
     fun importProgress(
         sideQuests: JSONArray? = null,

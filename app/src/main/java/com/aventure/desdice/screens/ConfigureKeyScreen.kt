@@ -67,8 +67,7 @@ import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
 
-// Palette recopiee des variables CSS de l'ancienne page HTML
-// (render_configure_key_page, dice_web.py) -- gardee identique aux
+// Palette "papier BD", gardee identique aux
 // autres ecrans restyles (StorySelectorScreen) pour que l'appli reste
 // visuellement coherente d'un ecran a l'autre.
 private val Ink = Color(0xFF14161A)
@@ -78,17 +77,15 @@ private val DangerRed = Color(0xFF8A1020)
 private val PageBg = Color(0xFF1B140C)
 private val KeyStatusBg = Color(0xFFFFF8EA)
 private val LineColor = Color(0x4DFFFFFF) // trait clair, visible sur la photo
-// Ombre portee des textes poses directement sur l'image (plus de carte papier).
+// Ombre portee des textes poses directement sur l'image (sans carte).
 private val TextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 private val ErrorOnPhoto = Color(0xFFFFC9C9)
 
 /**
- * Equivalent Compose de render_configure_key_page (dice_web.py), restyle
- * dans le theme "papier BD" de l'ancienne page HTML (meme palette, memes
- * polices Bangers/Nunito que StorySelectorScreen). Repose sur
+ * Ecran de configuration de la cle Mistral, dans le theme "papier BD" (meme
+ * palette, memes polices Bangers/Nunito que StorySelectorScreen). Repose sur
  * GameViewModel.configScreenState / setMistralKeyAwait / clearMistralKeyAwait /
- * setMistralModelAwait (portage Kotlin pur, ex game_api.get_config_screen_state
- * et set_mistral_key/clear_mistral_key/set_mistral_model).
+ * setMistralModelAwait.
  *
  * L'image de fond (bg_key_page.jpg, a placer dans res/raw/) est affichee
  * en plein ecran (Crop, calee en haut) derriere le contenu : le haut de
@@ -128,8 +125,7 @@ fun ConfigureKeyScreen(
     var saving by remember { mutableStateOf(false) }
     var keyInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    // Equivalent du toggleKeyForm() JS de l'ancienne page : le formulaire
-    // de changement de cle reste replie tant qu'une cle est deja active.
+    // Le formulaire de changement de cle reste replie tant qu'une cle est deja active.
     var showChangeForm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.loadConfigScreenState() }
@@ -248,7 +244,7 @@ fun ConfigureKeyScreen(
                 }
             }
 
-            // --- Contenu pose directement sur l'image (plus de carte papier) ---
+            // --- Contenu pose directement sur l'image ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -491,7 +487,7 @@ private fun NoKeyBlock(
     }
 }
 
-/** Reproduit .btn / .btn.secondary / .btn.danger de l'ancien CSS : fond
+/** Bouton "BD" (normal, secondaire ou danger) : fond
  * plat, bordure epaisse, "ombre" facon BD (rectangle decale, pas de flou). */
 @Composable
 private fun ComicButton(

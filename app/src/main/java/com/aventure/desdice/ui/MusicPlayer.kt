@@ -28,7 +28,7 @@ import com.aventure.desdice.R
  *   - un morceau tiré au hasard démarre au lancement de l'appli (MusicHost) ;
  *   - à la fin d'un morceau, un autre est tiré au hasard (jamais le même deux fois de
  *     suite s'il y en a plusieurs) ;
- *   - continue de jouer en entrant dans une histoire (ne se coupe plus toute seule) ;
+ *   - continue de jouer en entrant dans une histoire (ne se coupe pas toute seule) ;
  *     un lien dans l'en-tête de la page de jeu permet de la couper, la relancer, ou
  *     changer de morceau ;
  *   - quand l'appli passe en arrière-plan, la musique continue BACKGROUND_GRACE_MS

@@ -59,15 +59,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Panneau de narration IA (equivalent Compose de render_ai_panel_html dans
- * dice_web.py). Affiche la conversation (session.ai_conversation, sans le
+ * Panneau de narration IA Affiche la conversation (session.ai_conversation, sans le
  * premier message "system"), un champ de texte libre, un bouton pour ecouter
  * le dernier message de l'IA (SpeechManager), et un bouton de
  * reinitialisation (qui, cote moteur, remet TOUTE l'histoire a zero --
  * d'ou la confirmation avant de l'executer).
  *
  * Le bouton "Demarrer l'histoire" (envoi du prompt complet quand la
- * conversation est encore vide) ne vit plus ici : il est affiche par
+ * conversation est encore vide) est affiche par
  * MainGameScreen.kt, juste sous "Changer d'histoire", et disparait des
  * qu'un message existe deja.
  *
@@ -87,8 +86,8 @@ import kotlinx.coroutines.launch
  * du dernier message ; le joueur garde toujours le champ de saisie pour répondre
  * librement au lieu d'en choisir une.
  *
- * Reconnecte au moteur Kotlin (GameEngine, via GameViewModel) : ce fichier
- * n'appelle plus Python/Chaquopy. GameViewModel.sendFullPrompt(),
+ * Relie au moteur Kotlin (GameEngine, via GameViewModel).
+ * GameViewModel.sendFullPrompt(),
  * .sendAiMessage() et .resetAiConversation() ecrivent elles-memes le
  * resultat dans sessionState (y compris le champ "ai_error" en cas
  * d'echec cote IA) ; ce composable se contente de reagir aux changements
@@ -99,14 +98,11 @@ import kotlinx.coroutines.launch
  * si ta classe SpeechManager expose une signature differente. Peut etre
  * null (bouton "Ecouter" alors masque), comme dans MainGameScreen.kt.
  *
- * hasKey / onConfigureKey reprennent le role qu'ils avaient dans l'ancienne
- * NarrationSection (GameExtras.kt, desormais remplacee par ce fichier) :
- * sans cle Mistral enregistree, le panneau de conversation est masque au
+ * hasKey / onConfigureKey : sans cle Mistral enregistree, le panneau de conversation est masque au
  * profit d'un message + bouton vers l'ecran de configuration (le mode
  * manuel reste possible via ContinueSection, qui permet de copier le
- * prompt complet). Retirer la cle se fait desormais uniquement depuis
- * cet ecran de configuration (ConfigureKeyScreen) -- plus de bouton pour
- * ca ici.
+ * prompt complet). Retirer la cle se fait uniquement depuis
+ * l'ecran de configuration (ConfigureKeyScreen).
  */
 /** Un message affiché dans le panneau ; `choices` n'est renseigné que pour le dernier message assistant. */
 private data class ChatEntry(
@@ -424,8 +420,8 @@ fun AiPanel(
 
         if (messages.isEmpty() && !isLoading) {
             // Le bouton pour demarrer/relancer un chapitre (envoi du prompt
-            // complet) vit desormais dans MainGameScreen.kt, juste sous
-            // "Changer d'histoire" -- il n'est donc plus duplique ici.
+            // complet) est dans MainGameScreen.kt, juste sous
+            // "Changer d'histoire" -- il n'est donc pas duplique ici.
             Text(
                 text = "Aucun échange pour l'instant.",
                 style = MaterialTheme.typography.bodyMedium.merge(replyStyle),

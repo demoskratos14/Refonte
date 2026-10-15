@@ -11,7 +11,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <!-- Plus de filtre LAUNCHER ici : c'est l'alias actif (voir plus bas) qui porte
+        <!-- Pas de filtre LAUNCHER ici : c'est l'alias actif (voir plus bas) qui porte
              l'icone du lanceur. Le choix se fait dans Reglages > page "Icone". -->
         <activity
             android:name=".MainActivity"

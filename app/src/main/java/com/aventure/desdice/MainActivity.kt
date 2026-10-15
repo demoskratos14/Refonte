@@ -33,10 +33,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Plus de demarrage Python/init_app_dir ici : GameEngine (construit
-        // par GameViewModel) recoit directement context.filesDir, comme le
-        // README l'indique ("il n'y a plus de repertoire de travail a
-        // fixer au demarrage").
+        // GameEngine (construit par GameViewModel) recoit directement
+        // context.filesDir : il n'y a pas de repertoire de travail a fixer
+        // au demarrage.
         speechManager = SpeechManager(this)
 
         setContent {
@@ -77,13 +76,7 @@ class MainActivity : ComponentActivity() {
  *    le bouton retour du telephone ferme chacun de ces ecrans secondaires ;
  * 3) MainGameScreen des qu'une histoire est choisie. Son lien "Changer
  *    d'histoire" (ou le bouton retour du telephone) rouvre le carrousel
- *    SANS modifier l'histoire active : retour = on revient a la partie,
- *    comme dans l'ancienne version (dice_web.py, change_story).
- *
- * A completer plus tard : bouton "changer d'histoire" depuis
- * MainGameScreen (repasser currentStorySlug a null cote ViewModel ou
- * ajouter un etat de nav dedie). AiPanel est deja integre a
- * MainGameScreen (voir AiPanel.kt) -- rien a brancher ici de ce cote.
+ *    SANS modifier l'histoire active : retour = on revient a la partie.
  */
 @Composable
 fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
@@ -159,7 +152,7 @@ fun AppNavigation(viewModel: GameViewModel, speechManager: SpeechManager) {
             )
         }
         else -> {
-            // Comme l'ancien piege du bouton retour : retour = choix d'histoire.
+            // Retour = choix d'histoire.
             BackHandler { showStorySelector = true }
             MainGameScreen(
                 viewModel = viewModel,

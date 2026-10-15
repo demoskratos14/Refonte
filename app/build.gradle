@@ -14,12 +14,9 @@ android {
         versionCode 1
         versionName "1.0"
 
-        // Ce filtrage d'ABI n'a plus de raison technique imperative
-        // maintenant que Chaquopy (qui n'embarque des binaires Python que
-        // pour certaines ABI) est retire -- garde ici par simple continuite
-        // avec la config precedente (couvre appareils recents + emulateurs).
-        // Tu peux elargir/retirer ce bloc si tu veux couvrir armeabi-v7a/x86
-        // (vieux appareils 32 bits), ce n'est plus bloquant pour personne.
+        // Filtrage d'ABI : couvre les appareils 64 bits recents + emulateurs.
+        // Tu peux elargir/retirer ce bloc pour couvrir armeabi-v7a/x86
+        // (vieux appareils 32 bits).
         ndk {
             abiFilters "arm64-v8a", "x86_64"
         }
@@ -48,19 +45,9 @@ android {
         compose true
     }
 
-    // ATTENTION -- a verifier selon la version de Kotlin de ton projet
-    // (voir build.gradle RACINE, pas celui-ci, pour "org.jetbrains.kotlin"
-    // ou "kotlin_version") :
-    //   - Kotlin 1.9.x (le plus probable ici, pas de signe d'un passage a
-    //     Kotlin 2.0 dans les fichiers fournis) -> composeOptions ci-dessous
-    //     est la bonne approche, garde-le tel quel.
-    //   - Kotlin 2.0+ -> le compilateur Compose n'est plus configure par
-    //     composeOptions/kotlinCompilerExtensionVersion mais par un plugin
-    //     Gradle DEDIE : ajoute `id 'org.jetbrains.kotlin.plugin.compose'`
-    //     dans le bloc plugins ci-dessus (meme version que le plugin
-    //     Kotlin) et SUPPRIME tout le bloc composeOptions suivant, sinon
-    //     le build echoue ("this Kotlin version is deprecated for
-    //     Compose").
+    // Compilateur Compose, pour Kotlin 1.9.x (voir build.gradle racine).
+    // Avec Kotlin 2.0+, il faut a la place le plugin
+    // `org.jetbrains.kotlin.plugin.compose` et supprimer ce bloc.
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
@@ -86,12 +73,7 @@ android {
 
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
-    // NOTE : plus strictement necessaire cote code (MainActivity.kt est
-    // maintenant une ComponentActivity Compose pure, plus une appli
-    // WebView) -- laisse en place par prudence, retire-le seulement apres
-    // avoir verifie qu'AndroidManifest.xml / vos themes.xml ne reference
-    // pas un theme "Theme.AppCompat.*" (auquel cas il faudrait d'abord
-    // migrer vers un theme Material3/Compose).
+    // Necessaire pour le theme "Theme.AppCompat.*" declare dans AndroidManifest.xml.
     implementation 'androidx.appcompat:appcompat:1.7.0'
 
     // --- Compose ---

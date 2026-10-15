@@ -1,10 +1,8 @@
 // ImageUtils.kt
-// Portage Kotlin de image_utils.py.
+// Utilitaires d'images (redimensionnement, flou, réencodage).
 //
-// Différence avec Pillow côté Python : Android décode/encode toujours
-// nativement (BitmapFactory / Bitmap.compress), donc pas d'équivalent de
-// _PIL_AVAILABLE ici — ces fonctions sont toujours disponibles. Le flou
-// gaussien de Pillow (ImageFilter.GaussianBlur) n'a pas d'équivalent
+// Android décode/encode nativement (BitmapFactory / Bitmap.compress), donc ces
+// fonctions sont toujours disponibles. Un flou gaussien n'a pas d'équivalent
 // natif simple sur Android (RenderScript est déprécié) : boxBlur()
 // ci-dessous approxime un flou gaussien par plusieurs passes de flou de
 // boîte (technique "stack blur" classique), appliqué sur une version
@@ -50,7 +48,7 @@ object ImageUtils {
     }
 
     /**
-     * Miroir de _letterbox_to_portrait() : convertit une image trop
+     * Convertit une image trop
      * "large" (paysage, ou proche du carré) en portrait en ajoutant du
      * remplissage FLOU en haut/bas — jamais en recadrant les côtés — pour
      * ne perdre aucun élément de la composition d'origine. Une image déjà

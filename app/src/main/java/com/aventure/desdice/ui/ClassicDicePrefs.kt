@@ -27,8 +27,8 @@ class ClassicDicePrefs private constructor(context: Context) {
                 .filter { isValid(it) }
                 .take(MAX_DICE)
         }
-        // Première ouverture depuis cette version : on reprend l'ancien choix (dé de réussite +
-        // dé du destin), pour que la page ressemble d'abord à ce qu'elle était.
+        // Aucune liste enregistrée : on reprend l'ancien réglage à un seul dé (dé de réussite +
+        // dé du destin), s'il existe.
         val legacyFaces = prefs.getInt(KEY_LEGACY_FACES, DEFAULT_FACES).coerceIn(MIN_FACES, MAX_FACES)
         return listOf(legacyFaces, FATE_DIE)
     }

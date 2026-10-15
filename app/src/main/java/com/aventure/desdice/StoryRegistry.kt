@@ -1,24 +1,18 @@
 // StoryRegistry.kt
-// Portage Kotlin de stories.py (registre des histoires) — ÉTAPE 3, partie 1.
-//
-// game_api.py n'existe plus qu'en Python de référence : il n'y a plus de
-// dice_web.py séparé, sa logique a été absorbée dans game_api.py (confirmé
-// côté appli). Ce fichier couvre stories.py dans son intégralité, à
-// l'identique (mêmes clés JSON dans custom_stories.json, pour rester
-// compatible avec des histoires déjà créées/exportées) :
+// Registre des histoires. Les clés JSON de custom_stories.json restent
+// stables, pour rester compatible avec des histoires déjà créées/exportées :
 //   - slugification des titres, CRUD des histoires personnalisées
 //     (createCustomStory / deleteCustomStory / isCustomStory)
 //   - reconstruction d'une StoryEntry à partir des métadonnées (buildStoryEntry)
 //   - listing (allStories / allStoryOrder)
 //   - export/import d'identité (exportStoryIdentity / parseIdentityImport)
 //
-// STORIES / STORY_ORDER restent volontairement vides : comme en Python, il
-// n'y a plus d'histoire codée en dur, tout passe par le mécanisme personnalisé
-// (voir le commentaire en tête de stories.py).
+// STORIES / STORY_ORDER restent volontairement vides : il n'y a pas d'histoire
+// codée en dur, tout passe par le mécanisme personnalisé.
 //
 // Ce que ce fichier NE couvre PAS (délibérément — c'est le rôle du
-// GameViewModel, étape 3 partie 2, pas de StoryRegistry) :
-//   - switch_story() de game_api.py : bascule PIP_SYMBOLS/DEFAULT_PIP_SYMBOL
+// GameEngine / GameViewModel, pas de StoryRegistry) :
+//   - switchStory() de GameEngine : bascule PIP_SYMBOLS/DEFAULT_PIP_SYMBOL
 //     (objets top-level de DiceSession.kt), choisit le bon fichier de
 //     sauvegarde, instancie DiceSession et pose le totem de départ au tout
 //     premier lancement — orchestration qui touche à la fois StoryRegistry
@@ -37,17 +31,14 @@
 //           )
 //           if (key != null) session.setPipSymbol(key)
 //       }
-//   - list_stories() / index() / select_story() / do_delete_story() /
-//     do_create_story() / do_apply_imported_progress() de game_api.py : ce
-//     sont de simples wrappers qui combinent StoryRegistry + DiceSession +
-//     sauvegarde de l'image de totem (_save_totem_image, qui vit côté
-//     ImageUtils/totem_images — pas propre à une histoire) → GameViewModel.
+//   - listStories / selectStory / deleteStory / createStory /
+//     applyImportedProgress de GameEngine : de simples wrappers qui
+//     combinent StoryRegistry + DiceSession + sauvegarde de l'image de totem
+//     (saveTotemImageBytes, qui vit côté ImageUtils/totem_images — pas propre
+//     à une histoire).
 //
-// NB image_utils : stories.py appelle image_utils.resize_bg_bytes() avant
-// d'écrire l'image de fond sur le disque. ImageUtils.kt étant déjà préparé
-// côté appli, createCustomStory() ci-dessous appelle
-// ImageUtils.resizeBgBytes(bytes): ByteArray — à ajuster si sa signature
-// réelle diffère.
+// NB : createCustomStory() appelle ImageUtils.resizeBgBytes(bytes): ByteArray
+// avant d'écrire l'image de fond sur le disque.
 
 package com.aventure.desdice
 
@@ -57,17 +48,15 @@ import org.json.JSONObject
 import java.io.File
 
 // ------------------------------------------------------------------------
-// Registre des histoires codées en dur — volontairement vide (voir
-// stories.py). Toute histoire passe par createCustomStory() / buildStoryEntry().
+// Registre des histoires codées en dur — volontairement vide.
+// Toute histoire passe par createCustomStory() / buildStoryEntry().
 // ------------------------------------------------------------------------
 
 val STORIES: Map<String, StoryEntry> = emptyMap()
 val STORY_ORDER: List<String> = emptyList()
 
-// Conservée pour mémoire (miroir de ALLOWED_BG_IMAGE_EXTS) : dans
-// stories.py comme ici, l'image de fond est toujours réencodée en JPEG par
-// resize_bg_bytes/ImageUtils, donc cette liste n'est pas réellement utilisée
-// pour filtrer l'extension.
+// L'image de fond est toujours réencodée en JPEG par ImageUtils.resizeBgBytes :
+// cette liste n'est donc pas utilisée pour filtrer l'extension.
 val ALLOWED_BG_IMAGE_EXTS: Set<String> = setOf("jpg", "jpeg", "png", "webp", "gif")
 
 // ------------------------------------------------------------------------
@@ -139,7 +128,7 @@ data class StoryMeta(
         put("moral_goal", moralGoal)
     }
     companion object {
-        /** null si "slug" est absent/vide — miroir du filtre de _load_custom_meta(). */
+        /** null si "slug" est absent/vide. */
         fun fromJson(o: JSONObject): StoryMeta? {
             val slug = o.optString("slug", "")
             if (slug.isEmpty()) return null
@@ -171,9 +160,9 @@ data class DefaultTotem(
 )
 
 /**
- * Entrée d'histoire prête à l'affichage/à l'usage — miroir exact du dict
- * renvoyé par _build_story_entry() (histoires personnalisées) ou par une
- * entrée codée en dur de STORIES (toujours vide ici, voir plus haut).
+ * Entrée d'histoire prête à l'affichage/à l'usage, construite par
+ * buildStoryEntry() (histoires personnalisées) ou par une entrée codée en
+ * dur de STORIES (toujours vide ici, voir plus haut).
  */
 data class StoryEntry(
     val slug: String,
@@ -236,17 +225,15 @@ data class StoryIdentityImport(
 
 /**
  * baseDir doit être le même répertoire que celui utilisé pour les fichiers
- * dice_state_<slug>.json (côté Python : context.getFilesDir(), après le
- * chdir fait par init_app_dir()). custom_stories.json, custom_story_bg/ et
- * totem_images/ sont tous des sous-chemins de baseDir, comme en Python
- * (chemins relatifs) — même schéma, transposé en chemins absolus explicites.
+ * dice_state_<slug>.json (context.filesDir). custom_stories.json,
+ * custom_story_bg/ et totem_images/ sont tous des sous-chemins de baseDir.
  */
 class StoryRegistry(private val baseDir: File) {
 
     private val customStoriesFile = File(baseDir, "custom_stories.json")
     private val customStoryBgDir = File(baseDir, "custom_story_bg")
-    // Pas géré par ce fichier (voir image_utils/game_api._save_totem_image
-    // côté Python) : StoryRegistry ne fait ici que LIRE dedans, pour l'export
+    // Pas géré par ce fichier (voir GameEngine.saveTotemImageBytes) :
+    // StoryRegistry ne fait ici que LIRE dedans, pour l'export
     // d'identité — l'écriture d'une nouvelle image de totem reste au ViewModel.
     private val totemImagesDir = File(baseDir, "totem_images")
 
@@ -289,9 +276,9 @@ class StoryRegistry(private val baseDir: File) {
 
     /**
      * Crée une nouvelle histoire : enregistre son image de fond sur le
-     * disque (via ImageUtils.resizeBgBytes — toujours réencodée en JPEG,
-     * comme en Python) et ajoute une entrée dans custom_stories.json.
-     * Renvoie le slug attribué. Miroir de create_custom_story().
+     * disque (via ImageUtils.resizeBgBytes — toujours réencodée en JPEG)
+     * et ajoute une entrée dans custom_stories.json.
+     * Renvoie le slug attribué.
      */
     fun createCustomStory(
         title: String,
@@ -339,8 +326,7 @@ class StoryRegistry(private val baseDir: File) {
      * Supprime définitivement une histoire personnalisée : son entrée dans
      * custom_stories.json, son image de fond, sa sauvegarde de partie
      * (dice_state_<slug>.json) et l'image de son totem de départ le cas
-     * échéant. Sans effet (renvoie false) si le slug est inconnu. Miroir de
-     * delete_custom_story().
+     * échéant. Sans effet (renvoie false) si le slug est inconnu..
      */
     fun deleteCustomStory(slug: String): Boolean {
         val metaList = loadCustomMeta()
@@ -374,8 +360,7 @@ class StoryRegistry(private val baseDir: File) {
     /**
      * Reconstruit une StoryEntry à partir des métadonnées d'une histoire
      * personnalisée — l'image de fond est relue et réencodée en base64 à
-     * chaque appel (jamais mise en cache), comme en Python. Miroir de
-     * _build_story_entry().
+     * chaque appel (jamais mise en cache).
      */
     fun buildStoryEntry(meta: StoryMeta): StoryEntry {
         val bgB64 = meta.bgImageFile?.let { readB64(File(customStoryBgDir, it)) } ?: ""
@@ -410,7 +395,7 @@ class StoryRegistry(private val baseDir: File) {
     /**
      * Fusionne STORIES (registre codé en dur, vide) et les histoires
      * créées/réimportées par le joueur. À utiliser partout où l'app a
-     * besoin de lister/retrouver une histoire. Miroir de all_stories().
+     * besoin de lister/retrouver une histoire..
      */
     fun allStories(): Map<String, StoryEntry> {
         val merged = LinkedHashMap<String, StoryEntry>(STORIES)
@@ -431,7 +416,7 @@ class StoryRegistry(private val baseDir: File) {
      * parseIdentityImport(). Renvoie null si slug est inconnu. extraTotems /
      * sideQuests / storyLog viennent de la session en cours (StoryRegistry
      * ne connaît que les métadonnées figées de l'histoire) — à assembler côté
-     * GameViewModel avant l'appel. Miroir de export_story_identity().
+     * GameViewModel avant l'appel..
      */
     fun exportStoryIdentity(
         slug: String,
@@ -471,7 +456,7 @@ class StoryRegistry(private val baseDir: File) {
      * Inverse d'exportStoryIdentity() : relit le JSON collé par le joueur et
      * renvoie un résultat aux champs vides plutôt que de lever une exception
      * en cas de JSON invalide/incomplet — l'appelant n'a pas à se soucier du
-     * cas d'erreur. Miroir de parse_identity_import().
+     * cas d'erreur..
      */
     fun parseIdentityImport(rawText: String): StoryIdentityImport {
         val data: JSONObject = try {

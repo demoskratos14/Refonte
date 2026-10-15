@@ -2,4 +2,7 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_original_bg" />
     <foreground android:drawable="@drawable/ic_original_fg" />
+    <!-- Icône thématique (Android 13+) : silhouette dérivée de l'illustration,
+         que le système teinte selon le thème de l'utilisateur. -->
+    <monochrome android:drawable="@drawable/ic_original_mono" />
 </adaptive-icon>

@@ -68,8 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Ecran de choix d'histoire, reproduit d'apres render_story_selector_page
- * (dice_web.py) : carrousel plein ecran (une page par histoire + une
+ * Ecran de choix d'histoire : carrousel plein ecran (une page par histoire + une
  * derniere page "Nouvelle histoire"), image de fond en "cover", degrade
  * sombre en bas, titre / sous-titre / "Toucher pour commencer", pastilles
  * de pagination, et en haut : de classique (a gauche), titre de la page

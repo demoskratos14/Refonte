@@ -48,17 +48,15 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /*
- * Blocs de l'ancienne page de jeu (dice_web.py, index()), portes vers le moteur
- * Kotlin (GameEngine, via GameViewModel) :
+ * Blocs de la page de jeu, relies au moteur Kotlin (GameEngine, via
+ * GameViewModel) :
  *   - Note "a copier pour signaler a l'IA"                  -> NarratorNoteBox
  *   - Demarrer / relancer un chapitre, ou copier le prompt  -> ContinueSection
  *   - Journal de l'histoire (ajout, lecture, export)        -> JournalSection
  *
- * La narration automatique (render_ai_panel_html -> NarrationSection) et la
- * gestion des totems ajoutes en cours de partie (TotemManagerDialog) ont ete
- * deplacees dans leurs propres fichiers lors du portage : voir AiPanel.kt et
- * TotemManagementDialog.kt (com.aventure.desdice.screens). MainGameScreen.kt
- * appelle desormais ceux-la, pas les composables de ce fichier.
+ * La narration automatique (AiPanel) et la gestion des totems ajoutes en
+ * cours de partie (TotemManagementDialog) vivent dans leurs propres fichiers :
+ * voir AiPanel.kt et TotemManagementDialog.kt (com.aventure.desdice.screens).
  *
  * Meme habillage que MainGameScreen.kt (dont on reutilise les briques : Section,
  * ComicButton, styles de texte...).
@@ -69,7 +67,7 @@ import org.json.JSONObject
 // Note "a copier pour me le signaler" (evenements ? / !)
 // =====================================================================
 
-/** Meme logique que narrator_note_for_record() (game_api.py). */
+/** Note a copier pour signaler un lancer a l'IA narratrice. */
 internal fun narratorNoteFor(record: JSONObject?, fateFaces: List<FateFace>): String {
     if (record == null) return ""
     val fate = record.str("fate")
@@ -275,7 +273,7 @@ fun JournalSection(
 
         // Saisie manuelle : masquee quand l'API (clé Mistral) est active,
         // puisque c'est alors elle qui ecrit le journal automatiquement
-        // (voir game_api.maybe_update_story_digest). Lecture et export
+        // (voir GameEngine.maybeUpdateStoryDigest). Lecture et export
         // restent toujours utiles, donc toujours affiches plus bas.
         if (!hasKey) {
             ComicTextField(
@@ -392,7 +390,7 @@ private fun rememberFileSaver(): (ByteArray, String) -> Unit {
     val context = LocalContext.current
     var pending by remember { mutableStateOf<PendingSave?>(null) }
 
-    // "*/*" : le fichier peut etre un .pdf OU un .txt selon la disponibilite de fpdf2.
+    // "*/*" : le fichier peut etre un .pdf OU un .txt (repli texte brut si le journal est vide).
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? ->

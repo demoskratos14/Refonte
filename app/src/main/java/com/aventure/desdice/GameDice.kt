@@ -48,7 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-// Meme table que PIP_POSITIONS (dice_web.py) : (ligne, colonne) dans une grille 3x3.
+// Position des points de chaque face : (ligne, colonne) dans une grille 3x3.
 private val GAME_PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
     1 to listOf(2 to 2),
     2 to listOf(1 to 1, 3 to 3),
@@ -60,8 +60,7 @@ private val GAME_PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
 
 /**
  * Face du de de reussite dans l'ecran de jeu : comme sur la page "Des classiques",
- * mais chaque pip est le SYMBOLE (image ou emoji) du totem tire (pip_choice), comme
- * dans l'ancienne page (render_success_die). Avant le premier lancer : le symbole
+ * mais chaque pip est le SYMBOLE (image ou emoji) du totem tire (pip_choice). Avant le premier lancer : le symbole
  * actif en grand, sinon un eclair.
  */
 @Composable
@@ -168,7 +167,7 @@ internal fun TotemBadgesRow(state: JSONObject?, onTotemClick: (String) -> Unit) 
     }
 }
 
-/** Fiche d'un totem : icone, nom, pouvoirs et capacite speciale (totem-modal de l'ancienne page). */
+/** Fiche d'un totem : icone, nom, pouvoirs et capacite speciale. */
 @Composable
 internal fun TotemInfoDialog(
     totemKey: String,
