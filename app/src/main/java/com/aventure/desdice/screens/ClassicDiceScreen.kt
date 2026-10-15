@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -100,6 +101,7 @@ import com.aventure.desdice.ui.titleSp
 import com.aventure.desdice.ui.SoundPrefs
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.PI
 import kotlin.math.abs
@@ -140,15 +142,14 @@ private val PIP_POSITIONS: Map<Int, List<Pair<Int, Int>>> = mapOf(
     6 to listOf(1 to 1, 1 to 3, 2 to 1, 2 to 3, 3 to 1, 3 to 3)
 )
 
-private data class ClassicRoll(
-    val id: Int,
-    val success: Int?,
-    // Nombre de faces du dé de réussite tiré (6 pour tout lancer enregistré avant l'ajout du
-    // choix du dé : le champ est alors absent de l'historique).
-    val faces: Int,
-    val fateEmoji: String?,
-    val fateLabel: String?
-)
+/** Un dé tiré : `faces` = nombre de faces (0 pour le dé du destin), `value` = nombre obtenu, `fate` = face du destin. */
+private data class DieResult(val faces: Int, val value: Int?, val fate: FateFace?)
+
+/** Un lancer de l'historique : les résultats de tous les dés lancés ensemble, dans l'ordre du plateau. */
+private data class ClassicRoll(val id: Int, val results: List<DieResult>)
+
+/** Dés en train de rouler : par index de plateau, leurs paramètres d'animation (et nombres des faces pour un dé non classique). */
+private class ClassicSpin(val specs: Map<Int, SpinSpec>, val numbers: Map<Int, List<Int>>)
 
 internal data class FateFace(val emoji: String, val label: String)
 
@@ -174,30 +175,32 @@ private fun parseHistory(result: JSONObject): List<ClassicRoll> {
     val list = mutableListOf<ClassicRoll>()
     for (i in 0 until arr.length()) {
         val entry = arr.getJSONObject(i)
-        list.add(
-            ClassicRoll(
-                id = entry.optInt("id"),
-                success = if (entry.isNull("success")) null else entry.optInt("success"),
-                faces = if (entry.isNull("faces")) 6 else entry.optInt("faces", 6),
-                fateEmoji = entry.optString("fate_emoji", "").ifEmpty { null },
-                fateLabel = entry.optString("fate_label", "").ifEmpty { null }
-            )
-        )
+        val rs = entry.optJSONArray("results") ?: JSONArray()
+        val results = mutableListOf<DieResult>()
+        for (j in 0 until rs.length()) {
+            val r = rs.getJSONObject(j)
+            if (r.optString("type") == "fate") {
+                results.add(DieResult(0, null, FateFace(r.optString("fate_emoji", ""), r.optString("fate_label", ""))))
+            } else {
+                results.add(DieResult(r.optInt("faces", 6), r.optInt("value"), null))
+            }
+        }
+        list.add(ClassicRoll(entry.optInt("id"), results))
     }
     return list // du plus ancien au plus recent
 }
 
 /**
- * Page "Des classiques" : le de de reussite (6 faces par defaut, ou d4/d8/d10/d12/d20 ou
- * un nombre de faces libre, voir DiceChoiceSection) et le de du destin,
- * independants de toute histoire, pense comme aide-memoire pendant une
- * partie sur table. Habillage repris de render_classic_dice_page
- * (dice_web.py) : fond photo, boutons "BD", polices Bangers / Nunito.
- * Les des sont de vrais cubes 3D qui roulent, rebondissent et s'immobilisent
- * sur la face tiree (le resultat est deja tire avant l'animation).
+ * Page "Des classiques" : un plateau de des a composer soi-meme (de 0 a 8 des). On ajoute
+ * exactement les des voulus -- d4, classique (d6 a points), d8, d10, d12, d20, un nombre de faces
+ * libre, ou le de du destin (facultatif, comme les autres) -- et on les lance tous d'un coup ou
+ * un par un (tap sur le de). Independant de toute histoire, pense comme aide-memoire pendant une
+ * partie sur table. Habillage repris de render_classic_dice_page (dice_web.py) : fond photo,
+ * boutons "BD", polices Bangers / Nunito. Les des sont de vrais cubes 3D qui roulent,
+ * rebondissent et s'immobilisent sur la face tiree (le resultat est deja tire avant l'animation).
  *
- * S'appuie sur GameViewModel.classicDiceStateAwait / classicDiceRollAwait /
- * classicDiceClearAwait / fateFaces (portage Kotlin pur, ex game_api.py).
+ * S'appuie sur GameViewModel.classicDiceStateAwait / classicDiceRollManyAwait /
+ * classicDiceClearAwait / fateFaces, et sur ClassicDicePrefs.dice pour le plateau.
  *
  * Necessite res/drawable/bg_classic_dice.jpg.
  */
@@ -225,74 +228,93 @@ fun ClassicDiceScreen(
     var rolling by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<ClassicRoll>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
-    // Faces du destin : exposees directement par GameViewModel (FATE_FACES
-    // cote Kotlin, DiceSession.kt) -- plus besoin d'appel asynchrone a
-    // get_fate_faces. On les reduit au type local FateFace (emoji +
-    // libelle), seul necessaire au dessin du cube.
+    // Faces du destin : exposees directement par GameViewModel (FATE_FACES cote Kotlin,
+    // DiceSession.kt). On les reduit au type local FateFace (emoji + libelle), seul necessaire
+    // au dessin du cube.
     val fateFaces = remember(viewModel.fateFaces) {
         viewModel.fateFaces.map { FateFace(it.emoji, it.label) }
     }
     var showClearConfirm by remember { mutableStateOf(false) }
 
-    // Animation de lancer : progression 0 -> 1 partagee par les deux des.
-    var spin by remember { mutableStateOf<SpinState?>(null) }
+    // Animation de lancer : progression 0 -> 1 partagee par tous les des qui roulent.
+    var spin by remember { mutableStateOf<ClassicSpin?>(null) }
     val progress = remember { Animatable(0f) }
+
+    // Dernier resultat affiche a plat sur chaque de du plateau (meme index que dicePrefs.dice).
+    val lastResults = remember {
+        mutableStateListOf<DieResult?>().apply { repeat(dicePrefs.dice.size) { add(null) } }
+    }
 
     fun applyResult(result: JSONObject) {
         history = parseHistory(result).reversed() // plus recent en premier
     }
 
-    fun roll(kind: String) {
+    fun addDie(d: Int) {
         if (rolling) return
+        if (dicePrefs.addDie(d)) lastResults.add(null)
+    }
+
+    fun removeDie(index: Int) {
+        if (rolling) return
+        dicePrefs.removeDieAt(index)
+        if (index in lastResults.indices) lastResults.removeAt(index)
+    }
+
+    // Lance les des du plateau dont l'index est dans `indices` (tous, ou un seul si on tape dessus).
+    fun roll(indices: List<Int>) {
+        if (rolling) return
+        val picked = indices.filter { it in dicePrefs.dice.indices }
+        if (picked.isEmpty()) return
+        val toRoll = picked.map { dicePrefs.dice[it] }
         scope.launch {
             rolling = true
             error = null
             try {
-                // Le lancer est tire et enregistre tout de suite (cote
-                // GameEngine/DiceSession) ; l'animation ne fait que "raconter"
-                // ce resultat, et l'historique n'est mis a jour (et publie
-                // dans le StateFlow du ViewModel) qu'a la fin, pour ne pas
-                // spoiler le suspense -- meme logique que rollAwaitingAnimation()
-                // sur l'ecran de jeu principal.
-                val faces = dicePrefs.successFaces
-                val result = viewModel.classicDiceRollAwait(kind, faces)
-                val newest = parseHistory(result).lastOrNull()
+                // Le lancer est tire et enregistre tout de suite (cote GameEngine) ; l'animation
+                // ne fait que "raconter" ce resultat, et l'historique n'est mis a jour (et publie
+                // dans le StateFlow du ViewModel) qu'a la fin, pour ne pas spoiler le suspense.
+                val result = viewModel.classicDiceRollManyAwait(toRoll)
+                val rolled = parseHistory(result).lastOrNull()?.results.orEmpty() // meme ordre que toRoll
 
-                val successValue = newest?.success
-                val usedFaces = newest?.faces ?: faces
-                var successNumbers: List<Int>? = null
-                val successSpec = if (kind != "fate" && successValue != null) {
-                    if (usedFaces == 6 && successValue in 1..6) {
-                        newSpinSpec(faceIndex = successValue - 1, bounces = 3, timeScale = 1f)
-                    } else {
-                        // Autre dé qu'un d6 : pas de points, le cube porte des nombres. La face
-                        // qui finit vers nous affiche le vrai résultat, les cinq autres des
-                        // nombres tirés au hasard dans la même plage (pour l'illusion pendant qu'il roule).
-                        val finalFace = Random.nextInt(6)
-                        successNumbers = List(6) { i ->
-                            if (i == finalFace) successValue else Random.nextInt(1, usedFaces + 1)
-                        }
-                        newSpinSpec(faceIndex = finalFace, bounces = 3, timeScale = 1f)
-                    }
-                } else null
-
+                val specs = mutableMapOf<Int, SpinSpec>()
+                val numbers = mutableMapOf<Int, List<Int>>()
                 val cubeFaces = fateFaces.take(6)
-                val newestEmoji = newest?.fateEmoji
-                val newestLabel = newest?.fateLabel.orEmpty()
-                val fateIndex = if (kind != "success" && newestEmoji != null && cubeFaces.size == 6) {
-                    cubeFaces.indexOfFirst { it.emoji == newestEmoji && it.label == newestLabel }
-                } else -1
-                val fateSpec = if (fateIndex >= 0) {
-                    newSpinSpec(faceIndex = fateIndex, bounces = 2, timeScale = 0.88f)
-                } else null
+                picked.forEachIndexed { k, slot ->
+                    val r = rolled.getOrNull(k) ?: return@forEachIndexed
+                    val fate = r.fate
+                    val value = r.value
+                    if (fate != null) {
+                        val idx = if (cubeFaces.size == 6) {
+                            cubeFaces.indexOfFirst { it.emoji == fate.emoji && it.label == fate.label }
+                        } else -1
+                        if (idx >= 0) specs[slot] = newSpinSpec(faceIndex = idx, bounces = 2, timeScale = 0.88f)
+                    } else if (value != null) {
+                        if (r.faces == 6 && value in 1..6) {
+                            specs[slot] = newSpinSpec(faceIndex = value - 1, bounces = 3, timeScale = 1f)
+                        } else {
+                            // Autre de qu'un d6 : pas de points, le cube porte des nombres. La face
+                            // qui finit vers nous affiche le vrai resultat, les cinq autres des
+                            // nombres au hasard dans la meme plage (illusion pendant qu'il roule).
+                            val finalFace = Random.nextInt(6)
+                            numbers[slot] = List(6) { i ->
+                                if (i == finalFace) value else Random.nextInt(1, r.faces + 1)
+                            }
+                            specs[slot] = newSpinSpec(faceIndex = finalFace, bounces = 3, timeScale = 1f)
+                        }
+                    }
+                }
 
-                if (successSpec != null || fateSpec != null) {
-                    spin = SpinState(successSpec, fateSpec, successNumbers)
+                if (specs.isNotEmpty()) {
+                    spin = ClassicSpin(specs, numbers)
                     playDiceRollSound()
                     progress.snapTo(0f)
                     progress.animateTo(1f, tween(durationMillis = SpinDurationMs, easing = LinearEasing))
                 }
                 spin = null
+                picked.forEachIndexed { k, slot ->
+                    val r = rolled.getOrNull(k)
+                    if (r != null && slot in lastResults.indices) lastResults[slot] = r
+                }
                 applyResult(result)
                 viewModel.publishClassicDiceState(result)
             } catch (e: Exception) {
@@ -325,19 +347,7 @@ fun ClassicDiceScreen(
         } catch (e: Exception) {
             error = "Erreur : ${e.message}"
         }
-        // Les faces du destin (fateFaces, ci-dessus) viennent directement de
-        // GameViewModel.fateFaces -- plus besoin d'appel asynchrone dedie.
         loading = false
-    }
-
-    // Dernieres valeurs affichees sur les des (meme logique que
-    // _last_classic_dice_values : on remonte l'historique pour chaque de).
-    // Le dernier résultat du dé de réussite n'est montré à plat que s'il a été tiré avec le dé
-    // actuellement choisi (un 4 sur un d6 n'a pas de sens affiché sur un d20) ; sinon "⚡".
-    val lastSuccess = history.firstOrNull { it.success != null && it.faces == dicePrefs.successFaces }?.success
-    val lastFateRoll = history.firstOrNull { it.fateEmoji != null }
-    val lastFate: FateFace? = lastFateRoll?.let { r ->
-        r.fateEmoji?.let { e -> FateFace(e, r.fateLabel.orEmpty()) }
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
@@ -411,37 +421,50 @@ fun ClassicDiceScreen(
 
             val sectionModifier = Modifier.align(Alignment.CenterHorizontally)
 
-            // --- Choix du dé de réussite (nombre de faces) ----------------
+            // --- Section 1 : le plateau de des + bouton "tout lancer" ----
             Section(sectionModifier) {
-                DiceChoiceSection(
-                    prefs = dicePrefs,
-                    enabled = !rolling,
-                    fonts = fonts,
-                    textStyles = textStyles
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-
-            // --- Section 1 : les des + boutons (sans fond : la photo reste visible)
-            Section(sectionModifier) {
-                DiceSection(
-                    successFaces = dicePrefs.successFaces,
-                    success = lastSuccess,
-                    fate = lastFate,
-                    fonts = fonts,
-                    textStyles = textStyles,
+                DiceTray(
+                    dice = dicePrefs.dice,
+                    lastResults = lastResults,
+                    fateFaces = fateFaces.take(6),
                     spin = spin,
                     progress = progress,
-                    cubeFateFaces = fateFaces.take(6),
                     rolling = rolling,
-                    onRollSuccess = { roll("success") },
-                    onRollFate = { roll("fate") },
-                    onRollBoth = { roll("both") }
+                    fonts = fonts,
+                    textStyles = textStyles,
+                    onRollOne = { roll(listOf(it)) },
+                    onRemove = { removeDie(it) }
+                )
+                if (dicePrefs.dice.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    val n = dicePrefs.dice.size
+                    ComicButton(
+                        text = if (n == 1) "⚡ Lancer le dé" else "⚡ Lancer les $n dés",
+                        onClick = { roll(dicePrefs.dice.indices.toList()) },
+                        background = Red,
+                        contentColor = Color.White,
+                        fonts = fonts,
+                        textStyles = textStyles,
+                        enabled = !rolling,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            // --- Section 2 : ajouter un de au plateau ---------------------
+            Section(sectionModifier) {
+                AddDieSection(
+                    count = dicePrefs.dice.size,
+                    enabled = !rolling,
+                    fonts = fonts,
+                    textStyles = textStyles,
+                    onAdd = { addDie(it) }
                 )
             }
             Spacer(Modifier.height(12.dp))
 
-            // --- Section 2 : historique ----------------------------------
+            // --- Section 3 : historique ----------------------------------
             Section(sectionModifier) {
                 Text(
                     text = "Historique",
@@ -476,11 +499,14 @@ fun ClassicDiceScreen(
                             .verticalScroll(rememberScrollState())
                     ) {
                         history.forEachIndexed { index, roll ->
-                            val parts = mutableListOf<String>()
-                            if (roll.success != null) {
-                                parts.add(if (roll.faces == 6) "Dé classique=${roll.success}" else "d${roll.faces}=${roll.success}")
+                            val parts = roll.results.map { r ->
+                                val fate = r.fate
+                                when {
+                                    fate != null -> "Destin=${fate.emoji} ${fate.label}"
+                                    r.faces == 6 -> "Dé classique=${r.value}"
+                                    else -> "d${r.faces}=${r.value}"
+                                }
                             }
-                            if (roll.fateEmoji != null) parts.add("Destin=${roll.fateEmoji} ${roll.fateLabel.orEmpty()}")
                             Text(
                                 text = "#${roll.id} — " + parts.joinToString(" | "),
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -673,141 +699,221 @@ private fun ComicButton(
 }
 
 /**
- * Les deux des cote a cote s'il y a la place, sinon l'un sous l'autre.
- * Un de "en train de rouler" est remplace par le cube 3D (TumblingDie),
- * l'autre reste a plat avec sa derniere valeur.
- *
- * Plus de boutons texte sous les des : chaque de est desormais cliquable
- * directement (roll("success")/roll("fate")), et un bouton rond "⚡" pose
- * entre les deux declenche roll("both"), a la place de l'ancien gros
- * bouton "Lancer les deux dés" sous la section.
+ * Le plateau : tous les des choisis, a plat (derniere valeur tiree) ou en train de rouler en 3D
+ * (TumblingDie). Chaque de se lance seul d'un tap, et se retire avec la petite croix.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DiceSection(
-    successFaces: Int,
-    success: Int?,
-    fate: FateFace?,
+private fun DiceTray(
+    dice: List<Int>,
+    lastResults: List<DieResult?>,
+    fateFaces: List<FateFace>,
+    spin: ClassicSpin?,
+    progress: Animatable<Float, AnimationVector1D>,
+    rolling: Boolean,
     fonts: AppFonts,
     textStyles: AppTextStyles,
-    spin: SpinState?,
-    progress: Animatable<Float, AnimationVector1D>,
-    cubeFateFaces: List<FateFace>,
-    rolling: Boolean,
-    onRollSuccess: () -> Unit,
-    onRollFate: () -> Unit,
-    onRollBoth: () -> Unit
+    onRollOne: (Int) -> Unit,
+    onRemove: (Int) -> Unit
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val fullDieSize = 150.dp
-        val centerButtonSize = 56.dp
-        val gap = 12.dp
-
-        // Cote a cote, le bouton rond central a besoin de sa propre place
-        // en plus des deux des : si la largeur ne suffit pas a les
-        // ecarter suffisamment a taille pleine, on retrecit legerement les
-        // deux des (jamais en dessous de 100dp) plutot que de les faire
-        // se chevaucher ou deborder.
-        val rowDieSize = remember(maxWidth) {
-            val required = fullDieSize * 2 + centerButtonSize + gap * 2
-            if (maxWidth >= required) {
-                fullDieSize
-            } else {
-                val available = (maxWidth - centerButtonSize - gap * 2).coerceAtLeast(0.dp)
-                (available / 2).coerceIn(100.dp, fullDieSize)
+    if (dice.isEmpty()) {
+        Text(
+            text = "Aucun dé pour l'instant : ajoute-en un ci-dessous.",
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+            style = TextStyle(
+                fontFamily = fonts.body,
+                fontSize = textStyles.bodySp(15f),
+                color = textStyles.bodyColor ?: Color.White,
+                shadow = TextShadow
+            )
+        )
+        return
+    }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        dice.forEachIndexed { index, d ->
+            val isFate = d == ClassicDicePrefs.FATE_DIE
+            val rotation = if (index % 2 == 0) -1f else 1f
+            val background = if (isFate) FateDieBackground else Color.White
+            val last = lastResults.getOrNull(index)
+            val spec = spin?.specs?.get(index)
+            val caption = when {
+                isFate -> "Dé du destin"
+                d == 6 -> "Dé classique"
+                else -> "Dé à $d faces"
             }
-        }
-
-        val successDie: @Composable (Dp) -> Unit = { dieSize ->
-            DieWithCaption(if (successFaces == 6) "Dé classique" else "Dé à $successFaces faces", fonts, textStyles) {
-                val spec = spin?.success
-                if (spec != null) {
-                    Box(Modifier.size(dieSize).graphicsLayer { rotationZ = -1f }) {
-                        TumblingDie(
-                            spec, progress, null, fonts, textStyles, Color.White,
-                            faceNumbers = spin?.successNumbers
-                        )
-                    }
-                } else {
-                    DieBox(
-                        rotation = -1f,
-                        background = Color.White,
-                        size = dieSize,
-                        onClick = onRollSuccess,
-                        enabled = !rolling
-                    ) {
-                        if (successFaces == 6) SuccessDieFace(success) else NumberDieFace(success, fonts)
+            Box {
+                DieWithCaption(caption, fonts, textStyles) {
+                    if (spec != null) {
+                        Box(Modifier.size(150.dp).graphicsLayer { rotationZ = rotation }) {
+                            TumblingDie(
+                                spec, progress,
+                                if (isFate) fateFaces else null,
+                                fonts, textStyles, background,
+                                faceNumbers = spin?.numbers?.get(index)
+                            )
+                        }
+                    } else {
+                        DieBox(
+                            rotation = rotation,
+                            background = background,
+                            size = 150.dp,
+                            onClick = { onRollOne(index) },
+                            enabled = !rolling
+                        ) {
+                            when {
+                                isFate -> FateDieFace(last?.fate, fonts, textStyles)
+                                d == 6 -> SuccessDieFace(last?.value)
+                                else -> NumberDieFace(last?.value, fonts)
+                            }
+                        }
                     }
                 }
-            }
-        }
-        val fateDie: @Composable (Dp) -> Unit = { dieSize ->
-            DieWithCaption("Dé du destin", fonts, textStyles) {
-                val spec = spin?.fate
-                if (spec != null) {
-                    Box(Modifier.size(dieSize).graphicsLayer { rotationZ = 1f }) {
-                        TumblingDie(spec, progress, cubeFateFaces, fonts, textStyles, FateDieBackground)
-                    }
-                } else {
-                    DieBox(
-                        rotation = 1f,
-                        background = FateDieBackground,
-                        size = dieSize,
-                        onClick = onRollFate,
-                        enabled = !rolling
-                    ) { FateDieFace(fate, fonts, textStyles) }
+                if (!rolling) {
+                    RemoveBadge(
+                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-8).dp),
+                        onClick = { onRemove(index) }
+                    )
                 }
-            }
-        }
-        if (maxWidth >= 316.dp) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally)
-            ) {
-                successDie(rowDieSize)
-                RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = onRollBoth)
-                fateDie(rowDieSize)
-            }
-        } else {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(gap)
-            ) {
-                successDie(fullDieSize)
-                RollBothButton(size = centerButtonSize, enabled = !rolling, onClick = onRollBoth)
-                fateDie(fullDieSize)
             }
         }
     }
+    Spacer(Modifier.height(10.dp))
+    Text(
+        text = "Touche un dé pour le lancer seul, ✕ pour le retirer.",
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+        style = TextStyle(
+            fontFamily = fonts.body,
+            fontSize = textStyles.bodySp(13f),
+            color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.9f),
+            shadow = TextShadow
+        )
+    )
 }
 
-/** Bouton rond "⚡" (lancer les deux dés a la fois), pose entre les deux des -- meme habillage "BD" (ombre/bordure) que ComicButton, en cercle. */
+/** Petite pastille ronde "✕" posee sur le coin d'un de pour le retirer du plateau. */
 @Composable
-private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+private fun RemoveBadge(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier = Modifier
-            .size(size)
-            .alpha(if (enabled) 1f else 0.6f)
-            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
-            .hardShadow(if (pressed) 1.dp else 3.dp, size / 2, Ink)
-            .background(Red, CircleShape)
-            .border(3.dp, Ink, CircleShape)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = enabled,
-                onClick = onClick
-            )
-            .semantics { contentDescription = "Lancer les deux dés" },
+        modifier = modifier
+            .size(32.dp)
+            .background(Color.White, CircleShape)
+            .border(2.dp, Ink, CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Retirer ce dé" },
         contentAlignment = Alignment.Center
     ) {
+        Text(text = "✕", style = TextStyle(fontSize = 14.sp, color = DangerText))
+    }
+}
+
+/**
+ * Ajout d'un de au plateau : des courants en un tap (d4, classique a 6 faces, d8, d10, d12, d20),
+ * le de du destin, ou "Autre" pour un nombre de faces libre (2 a 999). Chaque tap ajoute un de
+ * (on peut donc en mettre plusieurs du meme type), jusqu'a ClassicDicePrefs.MAX_DICE.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddDieSection(
+    count: Int,
+    enabled: Boolean,
+    fonts: AppFonts,
+    textStyles: AppTextStyles,
+    onAdd: (Int) -> Unit
+) {
+    val canAdd = enabled && count < ClassicDicePrefs.MAX_DICE
+    var customMode by remember { mutableStateOf(false) }
+    var customText by remember { mutableStateOf("") }
+
+    Text(
+        text = "Ajouter un dé ($count/${ClassicDicePrefs.MAX_DICE})",
+        style = TextStyle(
+            fontFamily = fonts.bodyBold,
+            fontSize = textStyles.bodySp(16f),
+            color = textStyles.bodyColor ?: Color.White,
+            shadow = TextShadow
+        )
+    )
+    Spacer(Modifier.height(8.dp))
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        ClassicDicePrefs.COMMON_FACES.forEach { n ->
+            FaceChip(
+                label = if (n == 6) "Classique" else "d$n",
+                selected = false,
+                enabled = canAdd,
+                fonts = fonts,
+                textStyles = textStyles
+            ) { onAdd(n) }
+        }
+        FaceChip(
+            label = "🔮 Destin",
+            selected = false,
+            enabled = canAdd,
+            fonts = fonts,
+            textStyles = textStyles
+        ) { onAdd(ClassicDicePrefs.FATE_DIE) }
+        FaceChip(
+            label = "Autre",
+            selected = customMode,
+            enabled = enabled,
+            fonts = fonts,
+            textStyles = textStyles
+        ) { customMode = !customMode }
+    }
+    if (customMode) {
+        Spacer(Modifier.height(10.dp))
+        val customValue = customText.toIntOrNull()
+        val customValid = customValue != null &&
+            customValue in ClassicDicePrefs.MIN_FACES..ClassicDicePrefs.MAX_FACES
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CustomFacesField(
+                text = customText,
+                enabled = enabled,
+                fonts = fonts,
+                textStyles = textStyles
+            ) { typed -> customText = typed.filter { it.isDigit() }.take(3) }
+            Text(
+                text = "faces",
+                style = TextStyle(
+                    fontFamily = fonts.body,
+                    fontSize = textStyles.bodySp(14f),
+                    color = textStyles.bodyColor ?: Color.White,
+                    shadow = TextShadow
+                )
+            )
+            ComicButton(
+                text = "Ajouter",
+                onClick = {
+                    if (customValid && customValue != null) {
+                        onAdd(customValue)
+                        customText = ""
+                    }
+                },
+                background = Red,
+                contentColor = Color.White,
+                fonts = fonts,
+                textStyles = textStyles,
+                enabled = canAdd && customValid
+            )
+        }
+        Spacer(Modifier.height(6.dp))
         Text(
-            text = "⚡",
-            textAlign = TextAlign.Center,
-            style = TextStyle(fontSize = (size.value * 0.42f).sp, color = Color.White)
+            text = "De ${ClassicDicePrefs.MIN_FACES} à ${ClassicDicePrefs.MAX_FACES} faces.",
+            style = TextStyle(
+                fontFamily = fonts.body,
+                fontSize = textStyles.bodySp(13f),
+                color = textStyles.bodyColor ?: Color.White,
+                shadow = TextShadow
+            )
         )
     }
 }
@@ -911,89 +1017,6 @@ private fun NumberDieFace(value: Int?, fonts: AppFonts) {
             textAlign = TextAlign.Center,
             style = TextStyle(fontFamily = fonts.display, fontSize = size, color = Ink)
         )
-    }
-}
-
-/**
- * Choix du dé de réussite : dés courants en un tap (d4, classique à 6 faces, d8, d10, d12, d20)
- * ou "Autre" pour saisir soi-même un nombre de faces (2 à 999). Le choix est mémorisé
- * (ClassicDicePrefs) ; un dé à 6 faces garde les points, tout autre dé affiche un nombre.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun DiceChoiceSection(
-    prefs: ClassicDicePrefs,
-    enabled: Boolean,
-    fonts: AppFonts,
-    textStyles: AppTextStyles
-) {
-    val current = prefs.successFaces
-    var customMode by remember { mutableStateOf(current !in ClassicDicePrefs.COMMON_FACES) }
-    var customText by remember { mutableStateOf(if (customMode) current.toString() else "") }
-
-    Text(
-        text = "Dé de réussite",
-        style = TextStyle(
-            fontFamily = fonts.bodyBold,
-            fontSize = textStyles.bodySp(16f),
-            color = textStyles.bodyColor ?: Color.White,
-            shadow = TextShadow
-        )
-    )
-    Spacer(Modifier.height(8.dp))
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        ClassicDicePrefs.COMMON_FACES.forEach { n ->
-            FaceChip(
-                label = if (n == 6) "Classique" else "d$n",
-                selected = !customMode && current == n,
-                enabled = enabled,
-                fonts = fonts,
-                textStyles = textStyles
-            ) {
-                customMode = false
-                prefs.changeSuccessFaces(n)
-            }
-        }
-        FaceChip(
-            label = "Autre",
-            selected = customMode,
-            enabled = enabled,
-            fonts = fonts,
-            textStyles = textStyles
-        ) {
-            customMode = true
-            if (customText.isEmpty()) customText = current.toString()
-        }
-    }
-    if (customMode) {
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CustomFacesField(
-                text = customText,
-                enabled = enabled,
-                fonts = fonts,
-                textStyles = textStyles
-            ) { typed ->
-                val digits = typed.filter { it.isDigit() }.take(3)
-                customText = digits
-                digits.toIntOrNull()
-                    ?.takeIf { it in ClassicDicePrefs.MIN_FACES..ClassicDicePrefs.MAX_FACES }
-                    ?.let { prefs.changeSuccessFaces(it) }
-            }
-            Text(
-                text = "faces (de ${ClassicDicePrefs.MIN_FACES} à ${ClassicDicePrefs.MAX_FACES})",
-                style = TextStyle(
-                    fontFamily = fonts.body,
-                    fontSize = textStyles.bodySp(14f),
-                    color = textStyles.bodyColor ?: Color.White,
-                    shadow = TextShadow
-                )
-            )
-        }
     }
 }
 
