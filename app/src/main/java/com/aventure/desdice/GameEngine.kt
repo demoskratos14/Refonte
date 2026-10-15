@@ -32,10 +32,10 @@
 
 package com.aventure.desdice
 
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.Base64
 import java.util.UUID
 import kotlin.random.Random
 
@@ -242,7 +242,7 @@ class GameEngine(private val baseDir: File) {
         val file = File(File(baseDir, "totem_images"), filename)
         if (!file.exists()) return ""
         return try {
-            Base64.getEncoder().encodeToString(file.readBytes())
+            Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
         } catch (e: Exception) {
             ""
         }

@@ -51,10 +51,10 @@
 
 package com.aventure.desdice
 
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.Base64
 
 // ------------------------------------------------------------------------
 // Registre des histoires codées en dur — volontairement vide (voir
@@ -282,7 +282,7 @@ class StoryRegistry(private val baseDir: File) {
 
     private fun readB64(file: File): String {
         if (!file.exists()) return ""
-        return Base64.getEncoder().encodeToString(file.readBytes())
+        return Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
     }
 
     // ---------- CRUD histoires personnalisées ----------
