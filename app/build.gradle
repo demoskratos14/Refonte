@@ -90,13 +90,13 @@ dependencies {
 
     // Chargement d'images (AsyncImage) : histoires (StorySelectorScreen),
     // images de fond/totem choisies dans CreateStoryScreen/TotemManagementDialog.
-    implementation 'io.coil-kt:coil-compose:2.6.0'
+    implementation 'io.coil-kt:coil-compose:2.7.0'
 
     // --- Tests unitaires (dossier app/src/test, lances avec : gradle testDebugUnitTest) ---
     testImplementation 'junit:junit:4.13.2'
     // Vraie implementation d'org.json : sur la JVM de test, android.jar ne contient que des
     // "stubs" qui plantent ("not mocked") des qu'on appelle JSONObject.
-    testImplementation 'org.json:json:20240303'
+    testImplementation 'org.json:json:20260814'
 }
 
 // Nom des .apk generes : "Dés d'Aventure-debug.apk", "Dés d'Aventure-release.apk"...

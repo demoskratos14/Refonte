@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 
 /**
  * Public visé par l'appli : filles, garçons, ou les deux. Choisi au tout premier
@@ -44,7 +45,7 @@ class AudiencePrefs private constructor(context: Context) {
 
     fun updateAudience(value: Audience) {
         audience = value
-        prefs.edit().putString(KEY_AUDIENCE, value.prefValue).apply()
+        prefs.edit { putString(KEY_AUDIENCE, value.prefValue) }
     }
 
     companion object {

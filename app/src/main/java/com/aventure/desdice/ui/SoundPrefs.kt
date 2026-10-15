@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.aventure.desdice.R
+import androidx.core.content.edit
 
 /**
  * Réglages du bruit des dés (Réglages > page « Sons »), mémorisés dans les
@@ -42,12 +43,12 @@ class SoundPrefs private constructor(context: Context) {
 
     fun changeMusicVolume(value: Float) {
         musicVolume = value.coerceIn(0f, 1f)
-        prefs.edit().putFloat(KEY_MUSIC_VOLUME, musicVolume).apply()
+        prefs.edit { putFloat(KEY_MUSIC_VOLUME, musicVolume) }
     }
 
     fun changeMusicMuted(muted: Boolean) {
         musicMuted = muted
-        prefs.edit().putBoolean(KEY_MUSIC_MUTED, muted).apply()
+        prefs.edit { putBoolean(KEY_MUSIC_MUTED, muted) }
     }
 
     /** Volume à appliquer au lecteur : 0 si le son est coupé, sinon le volume choisi. */
@@ -56,12 +57,12 @@ class SoundPrefs private constructor(context: Context) {
 
     fun setVolume(value: Float) {
         diceVolume = value.coerceIn(0f, 1f)
-        prefs.edit().putFloat(KEY_VOLUME, diceVolume).apply()
+        prefs.edit { putFloat(KEY_VOLUME, diceVolume) }
     }
 
     fun setMuted(muted: Boolean) {
         diceMuted = muted
-        prefs.edit().putBoolean(KEY_MUTED, muted).apply()
+        prefs.edit { putBoolean(KEY_MUTED, muted) }
     }
 
     // ------------------------------------------------------------------
@@ -81,7 +82,7 @@ class SoundPrefs private constructor(context: Context) {
 
     fun setTrackEnabled(name: String, enabled: Boolean) {
         disabledMusicTracks = if (enabled) disabledMusicTracks - name else disabledMusicTracks + name
-        prefs.edit().putStringSet(KEY_DISABLED_TRACKS, disabledMusicTracks).apply()
+        prefs.edit { putStringSet(KEY_DISABLED_TRACKS, disabledMusicTracks) }
     }
 
     companion object {

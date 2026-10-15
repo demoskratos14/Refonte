@@ -2,6 +2,7 @@ package com.aventure.desdice.ui
 
 import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
+import androidx.core.content.edit
 
 /**
  * Plateau de dés de la page « Dés classiques » : la liste des dés que l'on veut lancer, dans
@@ -34,7 +35,7 @@ class ClassicDicePrefs private constructor(context: Context) {
     }
 
     private fun save() {
-        prefs.edit().putString(KEY_DICE, dice.joinToString(",")).apply()
+        prefs.edit { putString(KEY_DICE, dice.joinToString(",")) }
     }
 
     private fun isValid(d: Int) = d == FATE_DIE || d in MIN_FACES..MAX_FACES

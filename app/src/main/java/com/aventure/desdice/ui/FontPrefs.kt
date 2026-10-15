@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
+import androidx.core.content.edit
 
 /** Une police trouvée dans assets/fonts : nom de fichier + libellé lisible. */
 data class FontOption(val file: String, val label: String)
@@ -56,21 +57,21 @@ class TextStyleChoice internal constructor(
 
     fun setFont(file: String?) {
         fontFile = file
-        prefs.edit().apply {
+        prefs.edit {
             if (file == null) remove(keyFont) else putString(keyFont, file)
-        }.apply()
+        }
     }
 
     fun setColor(newColor: Color?) {
         colorArgb = newColor?.let { it.toArgb() and 0x00FFFFFF or (0xFF shl 24) }
-        prefs.edit().apply {
+        prefs.edit {
             if (newColor == null) remove(keyColor) else putInt(keyColor, colorArgb!!)
-        }.apply()
+        }
     }
 
     fun setSize(sp: Float) {
         sizeSp = sp.coerceIn(minSizeSp, maxSizeSp)
-        prefs.edit().putFloat(keySize, sizeSp).apply()
+        prefs.edit { putFloat(keySize, sizeSp) }
     }
 
     private companion object {
