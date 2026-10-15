@@ -65,6 +65,18 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
+    // --- Lint : produit un rapport (HTML + XML) sans jamais bloquer le build ---
+    // Rapports : app/build/reports/lint-results-debug.html (et .xml).
+    // Passe abortOnError a true le jour ou tu voudras que le build echoue sur une erreur lint.
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        warningsAsErrors false
+        htmlReport true
+        xmlReport true
+        textReport false
+    }
+
     packagingOptions {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -104,6 +116,12 @@ dependencies {
     // Chargement d'images (AsyncImage) : histoires (StorySelectorScreen),
     // images de fond/totem choisies dans CreateStoryScreen/TotemManagementDialog.
     implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    // --- Tests unitaires (dossier app/src/test, lances avec : gradle testDebugUnitTest) ---
+    testImplementation 'junit:junit:4.13.2'
+    // Vraie implementation d'org.json : sur la JVM de test, android.jar ne contient que des
+    // "stubs" qui plantent ("not mocked") des qu'on appelle JSONObject.
+    testImplementation 'org.json:json:20240303'
 }
 
 // Renomme le fichier .apk genere (au lieu de "app-debug.apk").
