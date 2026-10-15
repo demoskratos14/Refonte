@@ -53,9 +53,95 @@ jobs:
       - name: Construire l'APK (debug)
         run: gradle assembleDebug --stacktrace
 
+      # L'APK est publié tout de suite : un test qui échoue plus bas rend le
+      # workflow rouge, mais ne t'empêche pas de récupérer l'APK.
       - name: Publier l'APK
         uses: actions/upload-artifact@v4
         with:
           name: "Dés d'Aventure"
           path: "app/build/outputs/apk/debug/Dés d'Aventure-debug.apk"
           if-no-files-found: error
+
+      # Tests unitaires (app/src/test) : s'exécutent sur la machine de build,
+      # sans émulateur. Un test en échec fait échouer cette étape.
+      - name: Lancer les tests unitaires
+        run: gradle testDebugUnitTest --stacktrace
+
+      # Lint : analyse statique. Configuré (app/build.gradle) pour ne jamais
+      # bloquer : il produit seulement un rapport. "if: always()" = il tourne
+      # même si les tests ont échoué, pour avoir les deux rapports.
+      - name: Lancer le lint
+        if: always()
+        run: gradle lintDebug --stacktrace
+
+      # Petit résumé lisible directement sur la page du workflow
+      # (onglet "Summary"), sans avoir à télécharger les rapports.
+      - name: Résumé tests + lint
+        if: always()
+        shell: python
+        run: |
+          import glob, os
+          import xml.etree.ElementTree as ET
+
+          lines = ["## Résultats", ""]
+
+          tests = failures = errors = skipped = 0
+          failed = []
+          for f in glob.glob("app/build/test-results/testDebugUnitTest/*.xml"):
+              root = ET.parse(f).getroot()
+              tests += int(root.get("tests", 0))
+              failures += int(root.get("failures", 0))
+              errors += int(root.get("errors", 0))
+              skipped += int(root.get("skipped", 0))
+              for case in root.iter("testcase"):
+                  if case.find("failure") is not None or case.find("error") is not None:
+                      failed.append(f"{case.get('classname')}.{case.get('name')}")
+          if tests:
+              ok = tests - failures - errors - skipped
+              lines.append(f"**Tests** : {ok}/{tests} réussis, {failures + errors} en échec, {skipped} ignorés")
+              lines += [f"- ❌ `{name}`" for name in failed]
+          else:
+              lines.append("**Tests** : aucun résultat trouvé (l'étape a-t-elle échoué avant de tourner ?)")
+          lines.append("")
+
+          lint_file = "app/build/reports/lint-results-debug.xml"
+          if os.path.exists(lint_file):
+              counts = {}
+              top = []
+              for issue in ET.parse(lint_file).getroot().iter("issue"):
+                  sev = issue.get("severity", "?")
+                  counts[sev] = counts.get(sev, 0) + 1
+                  if sev in ("Fatal", "Error"):
+                      loc = issue.find("location")
+                      where = (loc.get("file", "") + ":" + loc.get("line", "?")) if loc is not None else ""
+                      top.append(f"- `{issue.get('id')}` {where} : {issue.get('message')}")
+              total = sum(counts.values())
+              detail = ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) or "aucun problème"
+              lines.append(f"**Lint** : {total} problème(s) — {detail}")
+              lines += top[:20]
+          else:
+              lines.append("**Lint** : aucun rapport trouvé")
+          lines += ["", "Rapports complets (HTML) : artefacts « Rapport de tests » et « Rapport lint » ci-dessous."]
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("\n".join(lines) + "\n")
+
+      - name: Publier le rapport de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "Rapport de tests"
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/test-results/testDebugUnitTest
+          if-no-files-found: warn
+
+      - name: Publier le rapport lint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "Rapport lint"
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn
