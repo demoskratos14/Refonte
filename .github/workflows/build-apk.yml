@@ -21,16 +21,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Chaquopy a besoin d'un Python 3.11 present sur la machine qui
-      # compile, uniquement pour telecharger les paquets Python (ici
-      # "flask") pendant le build -- ce n'est PAS le Python qui tourne
-      # ensuite sur le telephone (celui-la, Chaquopy l'embarque lui-meme
-      # dans l'APK). Sans cette etape : "Couldn't find Python 3.11".
-      - name: Installer Python 3.11 (pour Chaquopy, pas pour l'appli)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Préparer le SDK Android
         uses: android-actions/setup-android@v3
         with:
@@ -78,7 +68,7 @@ jobs:
       # (onglet "Summary"), sans avoir à télécharger les rapports.
       - name: Résumé tests + lint
         if: always()
-        shell: python
+        shell: python3 {0}
         run: |
           import glob, os
           import xml.etree.ElementTree as ET
