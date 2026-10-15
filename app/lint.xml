@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Réglages du lint (lu automatiquement : app/lint.xml). Ici, uniquement des FAUX POSITIFS connus. -->
+<lint>
+    <!-- Musiques res/raw/music_*.ogg : MusicPlayer les détecte par leur nom (préfixe "music_"),
+         le lint ne voit donc pas qu'elles sont utilisées. -->
+    <issue id="UnusedResources">
+        <ignore regexp="R\.raw\.music_" />
+    </issue>
+
+    <!-- Icônes filles / garçons / duo : les premiers plans (_fg) sont volontairement identiques,
+         seul le fond (_bg) change d'une variante à l'autre. -->
+    <issue id="IconDuplicates">
+        <ignore regexp="ic_alt\d_(filles|garcons|duo)_fg" />
+    </issue>
+    <!-- Icônes de lanceur ic_alt<N>_<filles|garcons|duo> (6 icônes x 3 variantes x 5 densités = 90 PNG
+         dans mipmap-*dpi, repli pour Android 7 et moins) : l'illustration remplit tout le carré
+         volontairement, c'est le dessin voulu. -->
+    <issue id="IconLauncherShape" severity="ignore" />
+</lint>
