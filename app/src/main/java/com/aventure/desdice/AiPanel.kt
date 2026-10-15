@@ -184,9 +184,9 @@ private fun extractChoices(content: String): Pair<String, List<String>> {
 fun AiPanel(
     viewModel: GameViewModel,
     hasKey: Boolean,
+    modifier: Modifier = Modifier,
     onConfigureKey: (() -> Unit)? = null,
-    speechManager: SpeechManager? = null,
-    modifier: Modifier = Modifier
+    speechManager: SpeechManager? = null
 ) {
     val listState = rememberLazyListState()
     val context = LocalContext.current
