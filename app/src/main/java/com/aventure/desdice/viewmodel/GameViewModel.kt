@@ -312,6 +312,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun classicDiceRollAwait(kind: String, faces: Int = 6): JSONObject =
         withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceRoll(kind, faces) } }
 
+    /** Comme classicDiceRollAwait(), mais pour une liste de dés au choix (0 = dé du destin, sinon nombre de faces). */
+    suspend fun classicDiceRollManyAwait(dice: List<Int>): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.classicDiceRollMany(dice) } }
+
     /** À appeler une fois l'animation terminée, pour publier le résultat
      * calculé par classicDiceRollAwait(). */
     fun publishClassicDiceState(result: JSONObject) {
