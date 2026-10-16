@@ -1,0 +1,64 @@
+name: Nettoyer les artefacts
+
+# Lancement manuel : onglet Actions > "Nettoyer les artefacts" > Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      garder:
+        description: "Nombre de derniers runs du build à conserver"
+        default: "20"
+      simulation:
+        description: "Simulation (true = n'efface rien, affiche seulement)"
+        default: "false"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  nettoyer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supprimer les artefacts des anciens runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GARDER: ${{ inputs.garder }}
+          SIMULATION: ${{ inputs.simulation }}
+        run: |
+          set -euo pipefail
+
+          # 1. Les N derniers runs du workflow de build : on garde leurs artefacts
+          gh run list -R "$REPO" --workflow build-apk.yml --limit "$GARDER" \
+            --json databaseId --jq '.[].databaseId' > keep.txt
+
+          if [ ! -s keep.txt ]; then
+            echo "Aucun run trouvé pour build-apk.yml : arrêt par sécurité, rien n'est supprimé."
+            exit 1
+          fi
+          echo "Runs conservés ($(wc -l < keep.txt)) :"
+          cat keep.txt
+
+          # 2. Tous les artefacts du dépôt : id, run d'origine, nom
+          gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | [.id, .workflow_run.id, .name] | @tsv' > all.tsv
+
+          supprimes=0
+          gardes=0
+          while IFS=$'\t' read -r id run name; do
+            if grep -qx "$run" keep.txt; then
+              gardes=$((gardes + 1))
+              continue
+            fi
+            if [ "$SIMULATION" = "true" ]; then
+              echo "[simulation] supprimerait l'artefact $id ($name, run $run)"
+            else
+              gh api -X DELETE "repos/$REPO/actions/artifacts/$id" > /dev/null
+              echo "supprimé : $id ($name, run $run)"
+            fi
+            supprimes=$((supprimes + 1))
+          done < all.tsv
+
+          echo "----"
+          echo "Artefacts gardés : $gardes"
+          echo "Artefacts supprimés (ou à supprimer en simulation) : $supprimes"
