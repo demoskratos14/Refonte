@@ -1,0 +1,69 @@
+name: Nettoyer les anciens runs
+
+# Lancement manuel : onglet Actions > "Nettoyer les anciens runs" > Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      garder:
+        description: "Nombre de derniers runs à conserver"
+        default: "20"
+      workflow:
+        description: "Fichier du workflow de build (vide = tous les workflows du dépôt)"
+        default: "build-apk.yml"
+      simulation:
+        description: "Simulation (true = n'efface rien, affiche seulement)"
+        default: "true"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  nettoyer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supprimer les anciens runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GARDER: ${{ inputs.garder }}
+          WORKFLOW: ${{ inputs.workflow }}
+          SIMULATION: ${{ inputs.simulation }}
+          RUN_COURANT: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          filtre=()
+          if [ -n "$WORKFLOW" ]; then filtre=(--workflow "$WORKFLOW"); fi
+
+          # Runs du plus récent au plus ancien (1000 max par appel)
+          gh run list -R "$REPO" "${filtre[@]}" --limit 1000 \
+            --json databaseId,status > runs.json
+
+          total=$(jq length runs.json)
+          if [ "$total" -eq 0 ]; then
+            echo "Aucun run trouvé : arrêt par sécurité, rien n'est supprimé."
+            exit 1
+          fi
+          echo "Runs trouvés : $total, on garde les $GARDER plus récents."
+
+          # On saute les N plus récents, on ne touche qu'aux runs terminés
+          # et jamais au run en cours de ce nettoyage.
+          jq -r --argjson n "$GARDER" --arg courant "$RUN_COURANT" \
+            '.[$n:] | .[] | select(.status == "completed") | select((.databaseId|tostring) != $courant) | .databaseId' \
+            runs.json > a_supprimer.txt
+
+          supprimes=0
+          while read -r id; do
+            if [ "$SIMULATION" = "true" ]; then
+              echo "[simulation] supprimerait le run $id"
+            else
+              gh run delete "$id" -R "$REPO" > /dev/null
+              echo "supprimé : run $id"
+            fi
+            supprimes=$((supprimes + 1))
+          done < a_supprimer.txt
+
+          echo "----"
+          echo "Runs gardés : $GARDER"
+          echo "Runs supprimés (ou à supprimer en simulation) : $supprimes"
