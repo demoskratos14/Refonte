@@ -1,7 +1,5 @@
 plugins {
     id 'com.android.application'
-    // Kotlin est integre a AGP 9 (plus de plugin 'org.jetbrains.kotlin.android').
-    // Plugin du compilateur Compose (Kotlin 2.x) : version fixee dans build.gradle racine.
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
@@ -12,7 +10,7 @@ android {
     defaultConfig {
         applicationId "com.aventure.desdice.histoiresmultiples"
         minSdk 24
-        targetSdk 37
+        targetSdk 34
         versionCode 1
         versionName "1.0"
 
@@ -62,6 +60,13 @@ android {
     }
 }
 
+// Kotlin est integre a AGP 9 (pas de plugin kotlin-android).
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 dependencies {
     implementation 'androidx.core:core-ktx:1.19.1'
     // Necessaire pour le theme "Theme.AppCompat.*" declare dans AndroidManifest.xml.
@@ -85,23 +90,19 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.13.0'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.11.0'
-    // LocalLifecycleOwner (MusicPlayer.kt) vit maintenant ici.
-    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
 
     // Chargement d'images (AsyncImage) : histoires (StorySelectorScreen),
     // images de fond/totem choisies dans CreateStoryScreen/TotemManagementDialog.
-    implementation 'io.coil-kt:coil-compose:2.7.0'
+    implementation 'io.coil-kt:coil-compose:2.6.0'
 
     // --- Tests unitaires (dossier app/src/test, lances avec : gradle testDebugUnitTest) ---
     testImplementation 'junit:junit:4.13.2'
     // Vraie implementation d'org.json : sur la JVM de test, android.jar ne contient que des
     // "stubs" qui plantent ("not mocked") des qu'on appelle JSONObject.
-    testImplementation 'org.json:json:20260814'
+    testImplementation 'org.json:json:20240303'
 }
 
-// Nom des .apk generes : "Dés d'Aventure-debug.apk", "Dés d'Aventure-release.apk"...
-// (android.applicationVariants/outputFileName n'existent plus dans AGP 9 ;
-// AGP prend le prefixe du nom de fichier dans base.archivesName.)
+// Nom du fichier .apk genere : "Dés d'Aventure-debug.apk" (au lieu de "app-debug.apk").
 base {
     archivesName = "Dés d'Aventure"
 }

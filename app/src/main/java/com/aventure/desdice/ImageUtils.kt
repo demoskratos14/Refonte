@@ -18,8 +18,6 @@ import java.io.ByteArrayOutputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import androidx.core.graphics.createBitmap
-import androidx.core.graphics.scale
 
 object ImageUtils {
 
@@ -46,7 +44,7 @@ object ImageUtils {
         val ratio = maxDimension / max(w, h).toFloat()
         val newW = max(1, (w * ratio).roundToInt())
         val newH = max(1, (h * ratio).roundToInt())
-        return bitmap.scale(newW, newH)
+        return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
     }
 
     /**
@@ -82,14 +80,14 @@ object ImageUtils {
             bgW = canvasW
             bgH = max(1, (bgW / ratio).roundToInt())
         }
-        val scaledBg = source.scale(bgW, bgH)
+        val scaledBg = Bitmap.createScaledBitmap(source, bgW, bgH, true)
         val cropLeft = ((bgW - canvasW) / 2).coerceIn(0, bgW - 1)
         val cropTop = ((bgH - canvasH) / 2).coerceIn(0, bgH - 1)
         val cropW = (bgW - cropLeft).coerceAtMost(canvasW).coerceAtLeast(1)
         val cropH = (bgH - cropTop).coerceAtMost(canvasH).coerceAtLeast(1)
         var background = Bitmap.createBitmap(scaledBg, cropLeft, cropTop, cropW, cropH)
         if (cropW != canvasW || cropH != canvasH) {
-            background = background.scale(canvasW, canvasH)
+            background = Bitmap.createScaledBitmap(background, canvasW, canvasH, true)
         }
 
         // Flou sur une version réduite (perf mobile), puis remise à l'échelle.
@@ -97,16 +95,16 @@ object ImageUtils {
         val blurred = if (workingScale < 1f) {
             val smallW = max(1, (background.width * workingScale).roundToInt())
             val smallH = max(1, (background.height * workingScale).roundToInt())
-            val small = background.scale(smallW, smallH)
+            val small = Bitmap.createScaledBitmap(background, smallW, smallH, true)
             val smallBlurred = boxBlur(small, max(1, (blurRadius * workingScale).roundToInt()))
-            smallBlurred.scale(background.width, background.height)
+            Bitmap.createScaledBitmap(smallBlurred, background.width, background.height, true)
         } else {
             boxBlur(background, blurRadius)
         }
 
         // Premier plan : l'image d'origine ENTIÈRE, non recadrée, centrée
         // verticalement par-dessus le fond flouté.
-        val canvasBitmap = createBitmap(canvasW, canvasH)
+        val canvasBitmap = Bitmap.createBitmap(canvasW, canvasH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(canvasBitmap)
         canvas.drawBitmap(blurred, 0f, 0f, null)
         val pasteY = (canvasH - h) / 2f
@@ -125,7 +123,7 @@ object ImageUtils {
             boxBlurPass(pixels, w, h, radius, horizontal = true)
             boxBlurPass(pixels, w, h, radius, horizontal = false)
         }
-        val result = createBitmap(w, h)
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         result.setPixels(pixels, 0, w, 0, 0, w, h)
         return result
     }

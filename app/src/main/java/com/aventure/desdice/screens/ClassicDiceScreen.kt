@@ -1,6 +1,5 @@
 package com.aventure.desdice.screens
 
-import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.SoundPool
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -112,7 +111,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
-import androidx.compose.runtime.mutableIntStateOf
 
 // --- Palette "papier BD" -------------------
 private val Ink = Color(0xFF14161A)
@@ -617,7 +615,7 @@ private fun rememberDiceRollSound(): () -> Unit {
             )
             .build()
     }
-    var soundId by remember { mutableIntStateOf(0) }
+    var soundId by remember { mutableStateOf(0) }
     DisposableEffect(Unit) {
         soundId = soundPool.load(context, R.raw.dice_roll, 1)
         onDispose { soundPool.release() }
@@ -674,7 +672,7 @@ private fun ComicButton(
     Box(
         modifier = modifier
             .alpha(if (enabled) 1f else 0.6f)
-            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
             .hardShadow(if (pressed) 1.dp else 3.dp, 10.dp, Ink)
             .background(background, shape)
             .border(3.dp, Ink, shape)
@@ -1266,8 +1264,6 @@ internal fun TumblingDie(
     }
 }
 
-// save()/restore() volontaire : Canvas.withMatrix { } rendrait les appels DrawScope ambigus (drawRoundRect, rotate...).
-@SuppressLint("UseKtx")
 @OptIn(ExperimentalTextApi::class)
 private fun DrawScope.drawTumblingCube(
     spec: SpinSpec,

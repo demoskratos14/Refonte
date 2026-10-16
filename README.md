@@ -518,13 +518,13 @@ Seul l'APK **debug** est produit (pas de signature de release configurée).
 
 | Élément | Version |
 |---|---|
-| Android Gradle Plugin | 9.4.0 |
-| Kotlin (intégré à AGP 9, fixé dans `build.gradle`) | 2.4.20 |
-| Compilateur Compose (plugin `org.jetbrains.kotlin.plugin.compose`) | 2.4.20 |
+| Android Gradle Plugin | 9.4.0 (Kotlin intégré) |
+| Kotlin | 2.4.10 |
+| Plugin du compilateur Compose | 2.4.10 (même version que Kotlin) |
 | Compose BOM | 2026.09.00 |
 | Gradle (dans le workflow) | 9.6.0 |
 | JDK | 17 |
-| minSdk / targetSdk / compileSdk | 24 / 37 / 37 |
+| minSdk / targetSdk / compileSdk | 24 / 34 / 37 |
 | ABI | arm64-v8a, x86_64 |
 
 Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
@@ -548,4 +548,4 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 
 Ouvrir le dossier avec *Open*. Comme le projet n'a pas de wrapper Gradle,
 Android Studio utilisera le Gradle installé, ou proposera d'en générer un
-(`gradle wrapper --gradle-version 8.7`).
+(`gradle wrapper --gradle-version 9.6.0`).

@@ -77,7 +77,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
-import androidx.compose.runtime.mutableIntStateOf
 
 // Palette et reglages identiques aux autres ecrans restyles (Des classiques,
 // Cle API) pour que l'appli reste coherente d'une page a l'autre.
@@ -179,7 +178,7 @@ fun CreateStoryScreen(
     // do_apply_imported_progress.
     var importedExtraTotems by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var importedSideQuests by remember { mutableStateOf<JSONArray?>(null) }
-    var importedNextQuestId by remember { mutableIntStateOf(1) }
+    var importedNextQuestId by remember { mutableStateOf(1) }
     var importedStoryLog by remember { mutableStateOf<JSONArray?>(null) }
     var importedStorySummary by remember { mutableStateOf("") }
 

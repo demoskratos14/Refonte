@@ -115,8 +115,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.unit.IntOffset
 
 // ---------------------------------------------------------------------
 // Palette (commune aux ecrans de l'appli)
@@ -254,7 +252,7 @@ fun MainGameScreen(
     // Position (dans le contenu defilant) du haut du panneau de narration IA,
     // mise a jour a chaque changement de mise en page via onGloballyPositioned
     // sur le Box qui l'entoure plus bas.
-    var aiPanelOffset by remember { mutableIntStateOf(0) }
+    var aiPanelOffset by remember { mutableStateOf(0) }
     val scrollState = rememberScrollState()
 
     LaunchedEffect(lastAssistantMessage) {
@@ -849,7 +847,7 @@ private fun rememberDiceRollSound(): () -> Unit {
             )
             .build()
     }
-    var soundId by remember { mutableIntStateOf(0) }
+    var soundId by remember { mutableStateOf(0) }
     DisposableEffect(Unit) {
         soundId = soundPool.load(context, R.raw.dice_roll, 1)
         onDispose { soundPool.release() }
@@ -892,7 +890,7 @@ private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(size)
             .alpha(if (enabled) 1f else 0.6f)
-            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
             .hardShadow(if (pressed) 1.dp else 3.dp, size / 2, Ink)
             .background(Red, CircleShape)
             .border(3.dp, Ink, CircleShape)
@@ -1988,7 +1986,7 @@ internal fun ComicButton(
     Box(
         modifier = modifier
             .alpha(if (enabled) 1f else 0.5f)
-            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
+            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
             .then(if (hasFill) Modifier.hardShadow(if (pressed) 1.dp else 3.dp, 10.dp, Ink) else Modifier)
             .background(fill, shape)
             .border(if (compact) 2.dp else 3.dp, Ink, shape)
