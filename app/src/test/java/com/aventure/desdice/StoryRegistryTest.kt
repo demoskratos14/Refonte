@@ -142,6 +142,42 @@ class StoryRegistryTest {
         assertEquals(listOf("Léa", "Tom"), strings(json.getJSONArray("protagonist_names")))
     }
 
+    // ---- ordre ----
+
+    @Test
+    fun moveCustomStory_movesTowardsEnd_andPersists() {
+        writeMetas(meta("a"), meta("b"), meta("c"))
+        assertTrue(registry.moveCustomStory("a", 1))
+        assertEquals(listOf("b", "a", "c"), registry.allStoryOrder())
+        // L'ordre est bien écrit sur le disque : un nouveau registre le relit.
+        assertEquals(listOf("b", "a", "c"), StoryRegistry(dir).allStoryOrder())
+    }
+
+    @Test
+    fun moveCustomStory_movesTowardsStart() {
+        writeMetas(meta("a"), meta("b"), meta("c"))
+        assertTrue(registry.moveCustomStory("c", -1))
+        assertEquals(listOf("a", "c", "b"), registry.allStoryOrder())
+    }
+
+    @Test
+    fun moveCustomStory_refusesOutOfRangeAndUnknown_andChangesNothing() {
+        writeMetas(meta("a"), meta("b"))
+        assertFalse(registry.moveCustomStory("a", -1))
+        assertFalse(registry.moveCustomStory("b", 1))
+        assertFalse(registry.moveCustomStory("a", 0))
+        assertFalse(registry.moveCustomStory("inconnue", 1))
+        assertEquals(listOf("a", "b"), registry.allStoryOrder())
+    }
+
+    @Test
+    fun moveCustomStory_keepsAllStoryData() {
+        val original = meta("b", totemImageFilename = "t.png")
+        writeMetas(meta("a"), original)
+        assertTrue(registry.moveCustomStory("b", -1))
+        assertEquals(original, StoryMeta.fromJson(JSONArray(File(dir, "custom_stories.json").readText()).getJSONObject(0)))
+    }
+
     // ---- lecture ----
 
     @Test
