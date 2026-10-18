@@ -403,7 +403,7 @@ voulu de l'écran.
 
 | Fichier / dossier | Contenu |
 |---|---|
-| `app_config.json` | clé Mistral et modèle choisi (commun à toutes les histoires) |
+| `app_config.json` | modèle choisi et clé Mistral **chiffrée** (Android Keystore, champ `mistral_api_key_enc`), communs à toutes les histoires. Exclu des sauvegardes Android (`res/xml/data_extraction_rules.xml`, `backup_rules.xml`) : après une restauration sur un autre téléphone, la clé est à ressaisir. Une ancienne clé en clair est chiffrée automatiquement au premier lancement. |
 | `dice_state_<slug>.json` | la partie de chaque histoire (dont la longueur `story_length` et l'état des quêtes secondaires) |
 | `custom_stories.json`, `custom_story_bg/` | histoires personnalisées et leurs images de fond |
 | `totem_images/` | images des totems ajoutés |
@@ -423,6 +423,8 @@ Les chemins Kotlin ci-dessous sont déduits des noms de packages.
 ```
 DesDeAventure/
 ├── .github/workflows/build-apk.yml   # construit l'APK automatiquement
+├── .github/dependabot.yml            # propositions de mises à jour
+├── gradle/libs.versions.toml         # versions des bibliothèques
 ├── build.gradle                      # plugins Android / Kotlin (racine)
 ├── settings.gradle
 ├── gradle.properties
@@ -527,8 +529,14 @@ Seul l'APK **debug** est produit (pas de signature de release configurée).
 | minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
 | ABI | arm64-v8a, x86_64 |
 
-Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
-`gradle-wrapper.jar` n'est nécessaire dans le dépôt.
+Les versions des bibliothèques sont dans `gradle/libs.versions.toml` (celles d'AGP et de
+Kotlin restent dans le `build.gradle` racine). Dependabot (`.github/dependabot.yml`) propose
+les mises à jour chaque mois sous forme de pull requests, testées par le workflow Build APK.
+
+**Gradle wrapper (optionnel)** : le workflow « Générer le Gradle wrapper » (lancement manuel)
+crée `gradlew` et `gradle/wrapper/` et les enregistre dans le dépôt. Tant qu'il n'a pas été
+lancé, le workflow Build APK installe lui-même Gradle 9.6.0 ; ensuite il utilise le wrapper,
+et la version de Gradle est celle de `gradle/wrapper/gradle-wrapper.properties`.
 
 ### Identifiants
 
@@ -538,7 +546,7 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 ## En cas d'échec du build
 
 1. Ouvrir l'étape en erreur dans l'onglet Actions et lire le message exact.
-2. Si Kotlin passe un jour à **2.0 ou plus**, le compilateur Compose se configure autrement : ajouter le plugin `org.jetbrains.kotlin.plugin.compose` et **supprimer** le bloc `composeOptions` de `app/build.gradle`.
+2. Une nouvelle version de l'Android Gradle Plugin peut exiger un Gradle plus récent : vérifier la version indiquée dans `build-apk.yml` (ou dans `gradle-wrapper.properties` si le wrapper existe). Le plugin Kotlin et le plugin du compilateur Compose doivent toujours avoir la même version.
 3. Ne pas retirer `androidx.appcompat` : le thème du manifeste (`Theme.AppCompat.Light.NoActionBar`) en dépend.
 4. `Unresolved reference: toBitmap` dans `SettingsScreen.kt` : ajouter la dépendance `androidx.core:core-ktx` (elle sert à dessiner la miniature de l'icône d'origine).
 5. `Unresolved reference: R.drawable.icon_preview_…`, `R.drawable.ic_help`, `R.raw.dice_roll` ou `R.raw.bg_settings` : une ressource d'icône, de fond ou de son manque ou est mal nommée (noms en minuscules, sans espace ni tiret). Un fichier `music_…` manquant n'est pas une erreur : la musique est juste absente.
@@ -546,6 +554,6 @@ Le workflow appelle `gradle` directement (pas de `gradlew`), donc aucun
 
 ## Ouvrir le projet dans Android Studio (optionnel)
 
-Ouvrir le dossier avec *Open*. Comme le projet n'a pas de wrapper Gradle,
-Android Studio utilisera le Gradle installé, ou proposera d'en générer un
-(`gradle wrapper --gradle-version 9.6.0`).
+Ouvrir le dossier avec *Open*. Sans wrapper Gradle dans le dépôt, Android Studio utilise le
+Gradle installé (lancer d'abord le workflow « Générer le Gradle wrapper », puis récupérer
+le dépôt, pour avoir la même version qu'en CI).
