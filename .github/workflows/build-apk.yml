@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+  # Les pull requests (dont celles de Dependabot) sont construites et testées avant d'être fusionnées.
+  pull_request:
+    branches: [ main ]
   workflow_dispatch: {}
 
 permissions:
