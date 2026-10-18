@@ -448,6 +448,7 @@ DesDeAventure/
         │   ├── ClassicDiceEngine.kt  # dés classiques (« Des classiques »), délégué par GameEngine
         │   ├── MistralConfig.kt      # clé API (chiffrée) et modèle Mistral, délégué par GameEngine
         │   ├── StoryTransfer.kt      # exports (journal, identité, progression) et import, délégué par GameEngine
+        │   ├── PromptBuilder.kt      # textes envoyés à l'IA (mécaniques, rappels, prompt complet, kickoff)
         │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
         │   ├── MistralClient.kt      # client API Mistral
         │   ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
