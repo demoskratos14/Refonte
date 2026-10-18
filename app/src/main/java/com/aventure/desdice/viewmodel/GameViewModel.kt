@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aventure.desdice.FATE_FACES
 import com.aventure.desdice.GameEngine
+import com.aventure.desdice.KeystoreSecretCipher
 import com.aventure.desdice.model.Story
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,7 @@ import org.json.JSONObject
 // utilise ViewModelProvider.AndroidViewModelFactory.getInstance(application).
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val engine = GameEngine(getApplication<Application>().filesDir)
+    private val engine = GameEngine(getApplication<Application>().filesDir, KeystoreSecretCipher())
 
     private val _stories = MutableStateFlow<List<Story>>(emptyList())
     val stories = _stories.asStateFlow()
