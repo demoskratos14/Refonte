@@ -39,7 +39,7 @@ jobs:
       # Si le dépôt contient le wrapper (voir le workflow "Générer le Gradle wrapper"), c'est lui
       # qui fixe la version de Gradle. Sinon, on installe la version ci-dessous.
       - name: Préparer Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ hashFiles('gradlew') == '' && '9.6.0' || '' }}
 

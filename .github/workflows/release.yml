@@ -37,7 +37,7 @@ jobs:
           packages: "platform-tools"
 
       - name: Préparer Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ hashFiles('gradlew') == '' && '9.6.0' || '' }}
 
