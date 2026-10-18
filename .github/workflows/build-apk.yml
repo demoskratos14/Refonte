@@ -55,7 +55,7 @@ jobs:
       # L'APK est publié tout de suite : un test qui échoue plus bas rend le
       # workflow rouge, mais ne t'empêche pas de récupérer l'APK.
       - name: Publier l'APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "Dés d'Aventure"
           path: "app/build/outputs/apk/debug/*.apk"
@@ -127,7 +127,7 @@ jobs:
 
       - name: Publier le rapport de tests
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "Rapport de tests"
           path: |
@@ -137,7 +137,7 @@ jobs:
 
       - name: Publier le rapport lint
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: "Rapport lint"
           path: |
