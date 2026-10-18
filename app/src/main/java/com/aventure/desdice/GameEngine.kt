@@ -13,9 +13,10 @@
 //   - totems ajoutés en cours de partie (avec image, via ImageUtils) :
 //     addCustomTotem/removeCustomTotem, énergie totémique : useTotemEnergy
 //   - journal : addStoryEntry, completeSideQuest
-//   - narration IA (via MistralClient) : buildMechanicsContext/
-//     buildFullPrompt/buildAiKickoffMessage, maybeUpdateStoryDigest,
-//     runAiNarrator, doSendAiMessage/doSendFullPrompt/doResetAiConversation
+//   - narration IA (via MistralClient) : maybeUpdateStoryDigest, runAiNarrator,
+//     sendAiMessage/sendFullPrompt/resetAiConversation ; les textes envoyés à
+//     l'IA (buildMechanicsContext/buildFullPrompt/buildAiKickoffMessage...)
+//     sont construits dans PromptBuilder.kt
 //   - configuration Mistral : getConfigScreenState, get/setMistralKey,
 //     get/setMistralModel (simple délégation à MistralConfig.kt)
 //   - export/import : exportJournal (via JournalExporter), exportIdentity/
@@ -410,380 +411,16 @@ class GameEngine(
     }
 
     // ------------------------------------------------------------------
-    // Narration IA (contexte de mécaniques, prompt complet, message de
-    // démarrage, digest du journal, appel à l'IA)
+    // Narration IA (digest du journal, appel à l'IA) ; les textes envoyés à l'IA
+    // (contexte de mécaniques, prompt complet, message de démarrage) sont construits
+    // dans PromptBuilder.kt
     // ------------------------------------------------------------------
 
-    private val successCompact: Map<Int, String> = mapOf(
-        1 to "Échec critique, rattrapable (jamais la fin de l'histoire)",
-        2 to "Échec ou réussite très dure",
-        3 to "Réussite partielle",
-        4 to "Bonne réussite",
-        5 to "Très bonne réussite",
-        6 to "Réussite héroïque"
-    )
-
-    private val fateCompact: Map<String, String> = mapOf(
-        "coeur" to "allié/protection : un ami ou héros intervient, guérison, lien renforcé, ou miracle",
-        "question" to "quête secondaire débloquée (nouvel ami ou nouvel objet/totem), à faire quand on veut",
-        "soleil" to "bénédiction : énergie positive, pouvoir renforcé/stabilisé, protection, amélioration durable",
-        "etoile" to "chance exceptionnelle : opportunité rare, découverte précieuse, ou récompense spéciale",
-        "exclamation" to "aide arrive : une connaissance, ou un animal lié à un totem, intervient",
-        "spirale" to "chaos/transformation : effet imprévisible, mutation, ou conséquence inattendue"
-    )
-
-    /** "Alix" / "Alix et Nao" / "Alix, Nao et Théo" -- vide -> "le joueur". */
-    private fun joinProtagonistNames(names: List<String>): String {
-        val n = names.map { it.trim() }.filter { it.isNotEmpty() }
-        return when (n.size) {
-            0 -> "le joueur"
-            1 -> n[0]
-            else -> n.dropLast(1).joinToString(", ") + " et " + n.last()
-        }
-    }
-
-    /**
-     * Consigne d'adressage à donner à l'IA : "tu" pour un seul héros ; pour plusieurs, un mélange
-     * de vouvoiement collectif (action commune) et de tutoiement par prénom (action ou choix
-     * distinct d'un héros) -- en particulier au moment des choix et des lancers de dés, où
-     * chaque héros doit pouvoir agir et lancer les dés indépendamment des autres.
-     */
-    private fun protagonistAddressing(names: List<String>): String {
-        val n = names.map { it.trim() }.filter { it.isNotEmpty() }
-        return when (n.size) {
-            0 -> "tu t'adresses toujours au joueur en 'tu'."
-            1 -> "tu t'adresses toujours à ${n[0]} en 'tu'."
-            else -> "les héros de cette histoire sont ${joinProtagonistNames(n)} : utilise le " +
-                "vouvoiement collectif (\"vous\") quand leur action est commune, et bascule sur le " +
-                "tutoiement en t'adressant par le prénom de chacun (\"${n[0]}, tu...\") dès qu'un " +
-                "héros agit ou choisit séparément des autres -- en particulier au moment des choix " +
-                "et des lancers de dés, où chaque héros doit pouvoir faire son propre choix et son " +
-                "propre lancer, indépendamment des autres : demande à chacun son lancer à tour de rôle, " +
-                "et quand tu proposes des actions sous forme de lignes OPTION:, commence chacune par le " +
-                "prénom du héros concerné (par exemple \"OPTION: ${n[0]} ouvre la porte\")."
-        }
-    }
-
-    private fun buildMechanicsContext(sess: DiceSession, story: StoryEntry?, autoMode: Boolean): String {
-        val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
-        val lines = mutableListOf<String>()
-        lines += "=== CONTEXTE IA NARRATRICE ==="
-        lines += if (autoMode) {
-            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée à " +
-                "$protagonistRef. Mécaniques ci-dessous ; l'histoire se poursuit directement dans " +
-                "cette conversation, événement par événement."
-        } else {
-            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée à " +
-                "$protagonistRef. Mécaniques ci-dessous, puis l'histoire déjà vécue."
-        }
-        lines += ""
-        lines += "DÉ DE RÉUSSITE (1-6, jamais de fin d'histoire même sur un 1, toujours moyen de se rattraper) :"
-        lines += (1..6).joinToString(" | ") { v -> "$v=${successCompact[v]}" }
-        lines += ""
-        val storyLen = normalizeStoryLength(story?.storyLength ?: "long")
-        val questionRule = when (storyLen) {
-            LENGTH_SHORT -> "le ? déclenche un ÉVÉNEMENT SOUDAIN inattendu dans la scène en cours, " +
-                "jamais une quête annexe"
-            LENGTH_LONG -> "le ? ne retombe pas tant qu'une quête secondaire n'est pas terminée, une seule " +
-                "à la fois ; cette quête, COURTE, se lance automatiquement à la fin du chapitre"
-            else -> "le ? ne retombe pas tant qu'une quête secondaire ouverte n'est pas terminée, une seule " +
-                "active à la fois ; elle se construit en parallèle de l'histoire principale"
-        }
-        val questionCompact = when (storyLen) {
-            LENGTH_SHORT -> "événement soudain et inattendu dans la scène en cours, à gérer immédiatement (pas de quête annexe)"
-            LENGTH_LONG -> "quête secondaire courte (nouvel ami ou nouvel objet/totem), lancée automatiquement à la fin du chapitre"
-            else -> "quête secondaire (nouvel ami ou nouvel objet/totem) construite en parallèle de l'histoire principale"
-        }
-        lines += "DÉ DU DESTIN (6 symboles ; $questionRule) :"
-        lines += FATE_FACES.joinToString(" | ") { f ->
-            "${f.emoji}${f.label}=${if (f.key == "question") questionCompact else fateCompact[f.key]}"
-        }
-        lines += ""
-        lines += "TOTEMS/ALLIÉS (symbole choisi sur le dé de réussite) :"
-        for (t in sess.customTotems) {
-            val icon = t.emoji.ifEmpty { "\uD83D\uDC3E" }
-            val powersTxt = if (t.powers.isNotEmpty()) t.powers.joinToString(", ") else "(pouvoirs non précisés)"
-            val specialTxt = if (t.special.isNotEmpty()) " — spé: ${t.special}" else ""
-            lines += "$icon${t.label}: $powersTxt$specialTxt"
-        }
-        val fixedAlliesLine = story?.fixedAlliesLine ?: ""
-        if (fixedAlliesLine.isNotEmpty()) lines += fixedAlliesLine
-        if (sess.customTotems.isEmpty()) lines += "(aucun pour l'instant -- tout reste à découvrir en jouant)"
-        lines += "Jauge par totem/allié : +score obtenu (symbole unique) ou +1/symbole (mélange) à " +
-            "chaque lancer concerné -> pleine à $TOTEM_ENERGY_THRESHOLD points, alors utilisable " +
-            "(capacité ou aide correspondante)."
-        lines += ""
-        lines += "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. À $THREAT_THRESHOLD points, " +
-            "complication secondaire inattendue puis retombe à 0."
-        lines += ""
-        lines += "RÈGLE ABSOLUE SUR LES JAUGES : les jauges (totems, alliés, menace) sont calculées et " +
-            "tenues à jour UNIQUEMENT par l'application, à partir des lancers réels du joueur. Tu ne " +
-            "les modifies JAMAIS : tu n'ajoutes ni ne retires aucun point, tu n'annonces aucun nouveau " +
-            "niveau (pas de « ta jauge passe à... », pas de « +2 » pour un totem), et tu ne déduis pas " +
-            "de points d'un lancer. Le niveau actuel de chaque jauge t'est fourni à chaque message : " +
-            "sers-t'en seulement pour la narration (une jauge pleine = le pouvoir est utilisable)."
-        lines += ""
-        lines += buildStoryLengthInstructions(story)
-        if (!autoMode) {
-            // Mode manuel : buildFullPrompt()/buildFullPromptText() recalcule
-            // tout ce texte à chaque clic sur "copier le prompt", donc un
-            // compte à jour ici reste toujours exact. En mode auto, ce même
-            // calcul existe (buildStoryProgressNote), mais est ajouté à part
-            // dans runAiNarrator à CHAQUE appel API, jamais ici : ce texte-ci
-            // n'est écrit qu'UNE SEULE fois dans le message "system" figé de
-            // la conversation (voir plus bas), un compte à rebours y serait
-            // juste devenu faux dès l'échange suivant.
-            buildStoryProgressNote(sess, story)?.let {
-                lines += ""
-                lines += it
-            }
-        }
-        for (paragraph in story?.loreParagraphs ?: emptyList()) {
-            lines += ""
-            lines += paragraph
-        }
-        val moralGoal = story?.moralGoal?.trim().orEmpty()
-        if (moralGoal.isNotEmpty()) {
-            lines += ""
-            lines += "OBJECTIF MORAL DU RÉCIT (en plus de l'univers ci-dessus, qui reste la trame " +
-                "de l'histoire -- ne le remplace jamais) : fais vivre, à travers les situations, " +
-                "les personnages et les choix proposés au joueur, la notion suivante : " +
-                "\"$moralGoal\". Ne transforme jamais ça en leçon de morale explicite ni en discours " +
-                "moralisateur adressé au joueur -- l'objectif se ressent dans le déroulement de " +
-                "l'histoire, jamais énoncé tel quel."
-        }
-        lines += ""
-        lines += "TON DU RÉCIT : l'histoire s'adresse à un enfant -- écris de manière vivante et " +
-            "chaleureuse, et parsème régulièrement tes paragraphes de quelques emojis/petites icônes " +
-            "pertinentes (\u2728\uD83C\uDF1F\uD83D\uDC3E etc.) pour illustrer les événements et " +
-            "égayer le texte. Reste sobre : quelques emojis bien placés par paragraphe suffisent, " +
-            "jamais un amoncellement d'icônes qui alourdirait la réponse pour rien."
-        lines += ""
-        lines += if (autoMode) {
-            "ATTENDU DE TOI : histoire collaborative et immersive intégrant directement les " +
-                "événements de jeu que je te transmets (lancers de dés, pouvoirs utilisés, quêtes...) ; " +
-                "à chaque action/incertitude tu me demandes explicitement de lancer le dé de réussite, " +
-                "le dé du destin, ou les deux, et tu attends le résultat suivant avant de continuer ; " +
-                protagonistAddressing(story?.protagonistNames ?: emptyList())
-        } else {
-            "ATTENDU DE TOI : histoire collaborative et immersive intégrant mes lancers ; à chaque " +
-                "action/incertitude tu me demandes de lancer réussite/destin/les deux et attends mon " +
-                "résultat avant de continuer ; si j'utilise une jauge pleine ou qu'un ?/! survient je " +
-                "te colle un petit bloc généré par l'appli pour te le signaler précisément ; à la fin " +
-                "de chaque chapitre tu me donnes un résumé à coller dans l'appli pour garder une trace " +
-                "permanente ; " + protagonistAddressing(story?.protagonistNames ?: emptyList())
-        }
-        if (autoMode) {
-            lines += ""
-            lines += "PROPOSITIONS D'ACTIONS CLIQUABLES : quand cela a du sens (pas systématiquement " +
-                "-- seulement quand plusieurs suites raisonnables se présentent), termine ta réponse " +
-                "par 2 à 4 lignes, chacune au format EXACT 'OPTION: <action très courte>' (quelques " +
-                "mots, sans numérotation ni ponctuation finale), une par ligne, rien d'autre après. " +
-                "L'application les transforme en boutons cliquables pour le joueur. Il garde toujours " +
-                "la possibilité de répondre librement au lieu d'en choisir une -- ne l'oblige jamais à " +
-                "s'y limiter -- et n'utilise ce format QUE pour proposer des actions, jamais pour autre " +
-                "chose."
-            lines += ""
-            lines += "FIN DÉFINITIVE DE L'HISTOIRE : quand tu écris la toute dernière réponse de cette " +
-                "histoire -- celle qui clôt vraiment l'aventure, pas simplement la fin d'un chapitre " +
-                "parmi d'autres -- termine ce message par la balise exacte $storyEndedTag, seule sur " +
-                "sa propre ligne, juste après le texte de conclusion. Ne l'utilise que pour cette toute " +
-                "dernière réponse, jamais avant."
-        }
-        return lines.joinToString("\n")
-    }
-
-    /**
-     * Explication du format choisi (StoryEntry.storyLength) -- texte fixe,
-     * ne dépend PAS du nombre d'échanges déjà écoulés (voir
-     * buildStoryProgressNote() pour le compte à jour, séparé). Intégrée une
-     * seule fois dans le message "system" en mode auto (figé pour le reste
-     * de la conversation), recalculée à chaque clic "copier le prompt" en
-     * mode manuel -- dans les deux cas ce texte reste identique du début à
-     * la fin de l'histoire, donc aucun souci de fraîcheur ici.
-     */
-    private fun buildStoryLengthInstructions(story: StoryEntry?): String {
-        return when (story?.storyLength ?: "long") {
-            "short" -> "FORMAT DE L'HISTOIRE : COURT -- une dizaine d'échanges au total. " +
-                "Construis une histoire complète qui se conclut naturellement aux alentours du " +
-                "dixième échange : ni bâclée avant, ni étirée artificiellement après. Amorce le " +
-                "dénouement dès que tu sens qu'on approche de la fin prévue (voir le rappel de " +
-                "progression ci-dessous, mis à jour à chaque échange)."
-            "medium" -> "FORMAT DE L'HISTOIRE : MOYEN -- entre 20 et 30 échanges au total. " +
-                "Construis une histoire complète qui se conclut naturellement dans cette " +
-                "fourchette : ni bâclée avant, ni étirée artificiellement après. Amorce le " +
-                "dénouement dès que tu sens qu'on approche de la fin prévue (voir le rappel de " +
-                "progression ci-dessous, mis à jour à chaque échange)."
-            else -> "FORMAT DE L'HISTOIRE : LONG, en CHAPITRES, sans limite totale d'échanges. " +
-                "Chaque chapitre doit poser une vraie problématique puis la résoudre avant sa " +
-                "fin -- jamais une coupure arbitraire en plein milieu de l'action. Dès qu'un " +
-                "chapitre se termine (problématique résolue), tu t'arrêtes : propose une vraie " +
-                "conclusion de chapitre, puis demande explicitement au joueur s'il souhaite " +
-                "commencer le chapitre suivant. Tu n'enchaînes JAMAIS automatiquement sur un " +
-                "nouveau chapitre tant qu'il n'a pas répondu positivement à cette question."
-        }
-    }
-
-    /**
-     * Rappel de progression COURT et A JOUR, distinct du texte fixe
-     * ci-dessus : compte les échanges déjà narrés dans sess.aiConversation
-     * (même principe de comptage que maybeUpdateStoryDigest(), qui sait
-     * déjà repérer des paquets de 6 messages pour le digest journal --
-     * ici, pas de seuil déclencheur, juste une information transmise à
-     * chaque appel). Renvoie null pour le format "long" : les chapitres
-     * n'ont pas de compte à rebours numérique à suivre, la consigne fixe
-     * ci-dessus suffit.
-     *
-     * IMPORTANT (voir buildMechanicsContext) : ce texte ne doit JAMAIS être
-     * écrit une fois pour toutes dans sess.aiConversation (donc jamais via
-     * sess.addAiMessage) -- en mode auto il est recalculé et rajouté à part
-     * à CHAQUE appel API par runAiNarrator(), sans être sauvegardé, pour
-     * rester exact d'un échange à l'autre.
-     */
-    private fun buildStoryProgressNote(sess: DiceSession, story: StoryEntry?): String? {
-        val exchangeCount = sess.aiConversation.count { it.role == "assistant" }
-        return when (story?.storyLength ?: "long") {
-            "short" -> "RAPPEL DE PROGRESSION (ne mentionne jamais ce rappel technique au joueur) : " +
-                "$exchangeCount échange(s) narré(s) jusqu'ici, sur une dizaine visée au total."
-            "medium" -> "RAPPEL DE PROGRESSION (ne mentionne jamais ce rappel technique au joueur) : " +
-                "$exchangeCount échange(s) narré(s) jusqu'ici, sur 20 à 30 visés au total."
-            else -> null
-        }
-    }
-
-    /**
-     * Rappel COURT et A JOUR de l'état réel des jauges (menace + énergie de
-     * chaque totem/allié), distinct du texte fixe de buildMechanicsContext()
-     * qui ne décrit que la RÈGLE. Sans ce rappel, l'IA n'a aucune valeur
-     * chiffrée à sa disposition et finit par inventer où en sont les jauges.
-     * Recalculé à CHAQUE appel API, jamais figé dans sess.aiConversation
-     * (même principe que buildStoryProgressNote/buildPendingQuestNote).
-     */
-    /**
-     * Pouvoirs ACTUELS des totems/alliés, renvoyés à chaque appel : le joueur peut les faire
-     * évoluer après leur création, alors que la description initiale reste figée dans le
-     * tout premier message de la conversation. Ce rappel a donc priorité.
-     */
-    private fun buildTotemPowersNote(sess: DiceSession): String {
-        val described = sess.customTotems.filter { it.powers.isNotEmpty() || it.special.isNotEmpty() }
-        if (described.isEmpty()) return ""
-        val lines = described.joinToString(" | ") { t ->
-            val powers = if (t.powers.isEmpty()) "" else t.powers.joinToString(", ")
-            val special = if (t.special.isEmpty()) "" else " ; capacité spéciale : ${t.special}"
-            "${t.label.ifEmpty { t.key }} -> $powers$special"
-        }
-        return " POUVOIRS ACTUELS DES TOTEMS (à jour, ils priment sur toute description donnée " +
-            "plus tôt, car le joueur peut les faire évoluer) : $lines."
-    }
-
-    private fun buildGaugeStateNote(sess: DiceSession): String {
-        val totemLines = if (sess.customTotems.isEmpty()) {
-            "aucun totem/allié pour l'instant"
-        } else {
-            sess.customTotems.joinToString(" | ") { t ->
-                val energy = sess.totemEnergy[t.key] ?: 0
-                val label = t.label.ifEmpty { t.key }
-                "$label: $energy/$TOTEM_ENERGY_THRESHOLD" +
-                    if (energy >= TOTEM_ENERGY_THRESHOLD) " (PLEINE, utilisable)" else ""
-            }
-        }
-        return "ÉTAT ACTUEL DES JAUGES (ne mentionne jamais ce rappel technique au joueur -- utilise-le " +
-            "seulement pour savoir où en sont réellement les jauges, ne les invente jamais) : " +
-            "Jauge de menace : ${sess.threatLevel}/$THREAT_THRESHOLD. " +
-            "Jauges totémiques : $totemLines. " +
-            "Ces niveaux sont calculés par l'application : tu n'as PAS le droit de les modifier, d'y " +
-            "ajouter ou d'y retirer des points, ni d'annoncer un nouveau niveau ; ils ne changent " +
-            "qu'après un lancer du joueur." + buildTotemPowersNote(sess)
-    }
-
-    private val questLaunchedTag = "[[QUETE_LANCEE]]"
-    private val storyEndedTag = "[[HISTOIRE_TERMINEE]]"
-    private val chapterEndedTag = "[[FIN_CHAPITRE]]"
-
-    /**
-     * Histoire LONGUE uniquement : rappel recalculé et ajouté à CHAQUE appel API (jamais sauvegardé,
-     * comme buildPendingQuestNote). L'IA signale la conclusion d'un chapitre par une balise que
-     * runAiNarrator() retire du texte avant de l'afficher, et qui déclenche tout de suite le résumé
-     * du journal, quel que soit le nombre d'échanges écoulés depuis le dernier résumé.
-     * Passe par un rappel par appel (et non par le message "system" initial, figé) pour aussi
-     * fonctionner sur les histoires déjà commencées.
-     */
-    private fun buildChapterEndNote(story: StoryEntry?): String? {
-        if (normalizeStoryLength(story?.storyLength ?: "long") != LENGTH_LONG) return null
-        return "RAPPEL TECHNIQUE (ne le mentionne jamais au joueur) : quand tu conclus un chapitre " +
-            "(problématique résolue, message où tu proposes la suite au joueur), termine ce message " +
-            "par la balise exacte $chapterEndedTag, seule sur sa propre ligne, à la toute fin du " +
-            "message. N'utilise cette balise que pour la conclusion d'un chapitre, jamais en cours " +
-            "de chapitre."
-    }
-
-    /**
-     * Histoire LONGUE uniquement : tant qu'une quête secondaire courte attend la fin du chapitre,
-     * rappel recalculé et ajouté à CHAQUE appel API (jamais sauvegardé, comme buildStoryProgressNote).
-     * L'IA lance la quête à la conclusion du chapitre et signale le lancement par une balise, que
-     * runAiNarrator() retire du texte avant de l'afficher et qui fait passer la quête à "ouverte".
-     */
-    private fun buildPendingQuestNote(sess: DiceSession, story: StoryEntry?): String? {
-        if (normalizeStoryLength(story?.storyLength ?: "long") != LENGTH_LONG) return null
-        val quest = sess.pendingSideQuests().firstOrNull() ?: return null
-        val kindTxt = if (quest.kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou un nouveau totem)"
-        return "RAPPEL TECHNIQUE (ne le mentionne jamais au joueur) : une quête secondaire COURTE " +
-            "($kindTxt) attend la fin du chapitre en cours. Ne la développe pas avant. Dès que tu " +
-            "conclus ce chapitre, lance-la tout de suite dans le même message, sans attendre la " +
-            "réponse du joueur : objectif simple et clair, à résoudre en 2 ou 3 échanges, puis " +
-            "reprends le fil principal (ce n'est pas un nouveau chapitre). Termine alors ce message " +
-            "par la balise exacte $questLaunchedTag."
-    }
-
-    private fun buildFullPrompt(sess: DiceSession, story: StoryEntry?): String {
-        val lines = mutableListOf(
-            buildMechanicsContext(sess, story, autoMode = false),
-            "",
-            buildGaugeStateNote(sess),
-            "",
-            "--- HISTOIRE DÉJÀ VÉCUE ---"
-        )
-        val log = sess.storyLogText()
-        lines += log.ifEmpty { "(aucun chapitre enregistré pour l'instant, on commence une aventure toute neuve)" }
-        return lines.joinToString("\n")
-    }
-
-    private fun buildAiKickoffMessage(sess: DiceSession, story: StoryEntry?): String {
-        val lines = mutableListOf(buildMechanicsContext(sess, story, autoMode = true))
-        val log = sess.storyLogText()
-        if (log.isNotEmpty()) {
-            lines += ""
-            lines += "--- HISTOIRE DÉJÀ VÉCUE ---"
-            lines += log
-            lines += ""
-            lines += "Commence maintenant le prochain chapitre de l'histoire, dans la continuité " +
-                "directe de ce qui précède."
-        } else {
-            val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
-            lines += ""
-            lines += "Aucun chapitre n'a encore été joué. Commence maintenant le tout premier " +
-                "chapitre de cette aventure : plante le décor et présente la situation de départ de " +
-                "$protagonistRef, puis demande-moi le premier lancer dès que la situation l'exige."
-        }
-        return lines.joinToString("\n")
-    }
-
-    /** Texte à ajouter pour un "?" (quête débloquée) ou "!" (aide). */
-    private fun narratorNoteForRecord(record: RollRecord?): String {
-        val fateKey = record?.fate ?: return ""
-        // Le "?" est entièrement décrit par describeRecord() (dépend de la longueur d'histoire).
-        if (fateKey != "exclamation") return ""
-        val face = FATE_BY_KEY[fateKey] ?: return ""
-        return "${face.emoji} ${face.label} : ${face.desc}"
-    }
-
-    /** Texte d'événement envoyé à l'IA pour un lancer. */
-    private fun buildAiEventText(sess: DiceSession, record: RollRecord): String {
-        val parts = mutableListOf(sess.describeRecord(record))
-        val note = narratorNoteForRecord(record)
-        if (note.isNotEmpty()) parts += note
-        return parts.joinToString("\n")
-    }
+    // Balises que l'IA ajoute à ses réponses : définies avec les consignes qui les demandent
+    // (PromptBuilder.kt), retirées des réponses plus bas par runAiNarrator().
+    private val questLaunchedTag = PromptBuilder.questLaunchedTag
+    private val storyEndedTag = PromptBuilder.storyEndedTag
+    private val chapterEndedTag = PromptBuilder.chapterEndedTag
 
     /**
      * Envoie eventText à l'IA (en amorçant la conversation avec le message
@@ -814,14 +451,14 @@ class GameEngine(
         val sess = session ?: return null to null
         if (!hasMistralKey() || eventText.isEmpty()) return null to null
         if (sess.aiConversation.isEmpty()) {
-            sess.addAiMessage("system", buildMechanicsContext(sess, currentStory, autoMode = true), visible = false)
+            sess.addAiMessage("system", PromptBuilder.buildMechanicsContext(sess, currentStory, autoMode = true), visible = false)
         }
         // Quête lancée par l'ajout manuel d'un chapitre (addStoryEntry) : consigne transmise une seule fois.
         val announcement = sess.consumeQuestAnnouncement()
         val fullText = if (announcement != null) "$eventText\n$announcement" else eventText
         sess.addAiMessage("user", fullText, visible = visible, displayContent = displayText)
         val messagesToSend = sess.aiMessagesToSend().toMutableList()
-        buildStoryProgressNote(sess, currentStory)?.let { note ->
+        PromptBuilder.buildStoryProgressNote(sess, currentStory)?.let { note ->
             // Juste avant le dernier message (le "user" qu'on vient
             // d'ajouter), pour rester proche de la convention "la
             // conversation envoyée se termine par un message user".
@@ -829,12 +466,12 @@ class GameEngine(
         }
         messagesToSend.add(
             (messagesToSend.size - 1).coerceAtLeast(0),
-            AiMessage("system", buildGaugeStateNote(sess))
+            AiMessage("system", PromptBuilder.buildGaugeStateNote(sess))
         )
-        buildPendingQuestNote(sess, currentStory)?.let { note ->
+        PromptBuilder.buildPendingQuestNote(sess, currentStory)?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
-        buildChapterEndNote(currentStory)?.let { note ->
+        PromptBuilder.buildChapterEndNote(currentStory)?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
         val (text, error) = MistralClient.chat(
@@ -971,7 +608,7 @@ class GameEngine(
      */
     fun buildFullPromptText(): String {
         val sess = session ?: return ""
-        val prompt = buildFullPrompt(sess, currentStory)
+        val prompt = PromptBuilder.buildFullPrompt(sess, currentStory)
         // Quête courte lancée par la fin de chapitre (histoire longue) : consigne jointe une seule fois.
         val announcement = sess.consumeQuestAnnouncement() ?: return prompt
         return "$prompt\n\n$announcement"
@@ -982,7 +619,7 @@ class GameEngine(
         val sess = session ?: return currentSessionJson()
         // Prompt de mécaniques + instructions à l'IA : jamais affiché tel quel dans AiPanel.kt,
         // seule sa réponse (le début du chapitre) doit apparaître au joueur.
-        val (_, aiError) = runAiNarrator(buildAiKickoffMessage(sess, currentStory), visible = false)
+        val (_, aiError) = runAiNarrator(PromptBuilder.buildAiKickoffMessage(sess, currentStory), visible = false)
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
@@ -991,7 +628,7 @@ class GameEngine(
         val sess = session ?: return currentSessionJson()
         val pending = sess.pendingRoll()
         val parts = mutableListOf<String>()
-        if (pending != null) parts += buildAiEventText(sess, pending)
+        if (pending != null) parts += PromptBuilder.buildAiEventText(sess, pending)
         val trimmedText = text.trim()
         if (trimmedText.isNotEmpty()) parts += trimmedText
         val combined = parts.joinToString("\n")
@@ -1142,7 +779,7 @@ class GameEngine(
         if (spent && effectText.isNotEmpty()) {
             val pending = sess.pendingRoll()
             val parts = mutableListOf<String>()
-            if (pending != null) parts += buildAiEventText(sess, pending)
+            if (pending != null) parts += PromptBuilder.buildAiEventText(sess, pending)
             if (text.isNotEmpty()) parts += text
             parts += effectText
             val (_, err) = runAiNarrator(parts.joinToString("\n"))
