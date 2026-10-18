@@ -37,7 +37,17 @@ import java.io.File
 import java.util.UUID
 import kotlin.random.Random
 
-class GameEngine(private val baseDir: File) {
+/** Champ d'app_config.json qui contient la clé API chiffrée. */
+private const val CONFIG_KEY_TOKEN = "mistral_api_key_enc"
+
+/**
+ * @param secretCipher chiffre la clé API Mistral dans app_config.json (KeystoreSecretCipher en
+ *   production ; SecretCipher.None par défaut, pour les tests unitaires).
+ */
+class GameEngine(
+    private val baseDir: File,
+    private val secretCipher: SecretCipher = SecretCipher.None
+) {
 
     private val storyRegistry = StoryRegistry(baseDir)
 
@@ -1036,23 +1046,41 @@ class GameEngine(private val baseDir: File) {
     // proposée dans ConfigureKeyScreen.
     private val defaultMistralModel = MistralClient.DEFAULT_MODEL
 
+    // Le fichier ne contient jamais la clé en clair : seulement son jeton chiffré
+    // (CONFIG_KEY_TOKEN). En mémoire, la config garde la clé déchiffrée sous "mistral_api_key".
+    private fun configOf(key: String, model: String) =
+        JSONObject().apply { put("mistral_api_key", key); put("mistral_model", model) }
+
     private fun loadAppConfig(): JSONObject {
-        if (!appConfigFile.exists()) {
-            return JSONObject().apply { put("mistral_api_key", ""); put("mistral_model", defaultMistralModel) }
-        }
+        if (!appConfigFile.exists()) return configOf("", defaultMistralModel)
         return try {
             val data = JSONObject(appConfigFile.readText())
-            JSONObject().apply {
-                put("mistral_api_key", data.optString("mistral_api_key", ""))
-                put("mistral_model", data.optString("mistral_model", defaultMistralModel).ifEmpty { defaultMistralModel })
+            val model = data.optString("mistral_model", defaultMistralModel).ifEmpty { defaultMistralModel }
+            val token = data.optString(CONFIG_KEY_TOKEN, "")
+            // Ancien format : clé en clair. On la lit puis on la réécrit chiffrée.
+            val legacyKey = data.optString("mistral_api_key", "")
+            if (token.isNotEmpty()) {
+                // Jeton illisible (clé du Keystore perdue) : comme si aucune clé n'était configurée.
+                configOf(secretCipher.decrypt(token).orEmpty(), model)
+            } else {
+                configOf(legacyKey, model).also { config ->
+                    if (legacyKey.isNotEmpty()) {
+                        try { saveAppConfig(config) } catch (e: Exception) { /* réessayé au prochain chargement */ }
+                    }
+                }
             }
         } catch (e: Exception) {
-            JSONObject().apply { put("mistral_api_key", ""); put("mistral_model", defaultMistralModel) }
+            configOf("", defaultMistralModel)
         }
     }
 
     private fun saveAppConfig(config: JSONObject) {
-        appConfigFile.writeText(config.toString(2))
+        val key = config.optString("mistral_api_key", "")
+        val onDisk = JSONObject().apply {
+            put(CONFIG_KEY_TOKEN, if (key.isEmpty()) "" else secretCipher.encrypt(key))
+            put("mistral_model", config.optString("mistral_model", defaultMistralModel))
+        }
+        appConfigFile.writeText(onDisk.toString(2))
     }
 
     fun getMistralKey(): String = loadAppConfig().optString("mistral_api_key", "")
