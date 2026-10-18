@@ -1,0 +1,57 @@
+name: Générer le Gradle wrapper
+
+# Lancement manuel : onglet Actions > "Générer le Gradle wrapper" > Run workflow.
+# Crée gradlew, gradlew.bat et gradle/wrapper/ puis les enregistre dans le dépôt (un commit).
+# Une fois le wrapper présent, le workflow "Build APK" l'utilise à la place du Gradle installé
+# par setup-gradle : la version de Gradle est alors celle de gradle-wrapper.properties.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version de Gradle"
+        default: "9.6.0"
+
+permissions:
+  contents: write
+
+jobs:
+  wrapper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer le JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Préparer le SDK Android
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+
+      - name: Préparer Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ inputs.version }}
+
+      - name: Générer le wrapper
+        env:
+          GRADLE_VERSION: ${{ inputs.version }}
+        run: gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
+
+      - name: Enregistrer dans le dépôt
+        env:
+          GRADLE_VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gradlew gradlew.bat gradle/wrapper
+          if git diff --cached --quiet; then
+            echo "Le wrapper est déjà à jour : rien à enregistrer."
+          else
+            git commit -m "Ajouter le Gradle wrapper $GRADLE_VERSION"
+            git push
+          fi

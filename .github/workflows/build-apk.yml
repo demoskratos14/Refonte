@@ -33,15 +33,24 @@ jobs:
           # Gradle/AGP au moment de la compilation).
           packages: "platform-tools"
 
+      # Si le dépôt contient le wrapper (voir le workflow "Générer le Gradle wrapper"), c'est lui
+      # qui fixe la version de Gradle. Sinon, on installe la version ci-dessous.
       - name: Préparer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.6.0'
+          gradle-version: ${{ hashFiles('gradlew') == '' && '9.6.0' || '' }}
 
-      # On appelle "gradle" directement (et non "./gradlew") pour ne pas
-      # dépendre du binaire gradle-wrapper.jar dans le dépôt.
+      - name: Choisir la commande Gradle
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            echo "GRADLE=./gradlew" >> "$GITHUB_ENV"
+          else
+            echo "GRADLE=gradle" >> "$GITHUB_ENV"
+          fi
+
       - name: Construire l'APK (debug)
-        run: gradle assembleDebug --stacktrace
+        run: $GRADLE assembleDebug --stacktrace
 
       # L'APK est publié tout de suite : un test qui échoue plus bas rend le
       # workflow rouge, mais ne t'empêche pas de récupérer l'APK.
@@ -55,14 +64,14 @@ jobs:
       # Tests unitaires (app/src/test) : s'exécutent sur la machine de build,
       # sans émulateur. Un test en échec fait échouer cette étape.
       - name: Lancer les tests unitaires
-        run: gradle testDebugUnitTest --stacktrace
+        run: $GRADLE testDebugUnitTest --stacktrace
 
       # Lint : analyse statique. Configuré (app/build.gradle) pour ne jamais
       # bloquer : il produit seulement un rapport. "if: always()" = il tourne
       # même si les tests ont échoué, pour avoir les deux rapports.
       - name: Lancer le lint
         if: always()
-        run: gradle lintDebug --stacktrace
+        run: $GRADLE lintDebug --stacktrace
 
       # Petit résumé lisible directement sur la page du workflow
       # (onglet "Summary"), sans avoir à télécharger les rapports.
