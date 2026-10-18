@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ : app_config.json (clé API Mistral chiffrée) n'est ni sauvegardé dans le cloud
+     ni copié vers un nouveau téléphone. Le reste (parties, histoires) l'est toujours. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="app_config.json" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="app_config.json" />
+    </device-transfer>
+</data-extraction-rules>
