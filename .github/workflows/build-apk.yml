@@ -25,7 +25,7 @@ jobs:
           java-version: '17'
 
       - name: Préparer le SDK Android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           # Par defaut, cette action essaie aussi d'installer le paquet
           # "tools" (l'ancien outillage Android historique), que Google a
