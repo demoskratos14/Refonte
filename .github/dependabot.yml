@@ -1,0 +1,24 @@
+# Dependabot propose des mises a jour sous forme de "pull requests" : le workflow Build APK
+# les teste automatiquement (build + tests + lint). Rien n'est applique sans ton accord.
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      # Les bibliotheques androidx (et le BOM Compose) evoluent ensemble.
+      androidx:
+        patterns: ["androidx.*"]
+      # Le plugin Kotlin et le plugin Compose DOIVENT avoir la meme version.
+      kotlin:
+        patterns: ["org.jetbrains.kotlin*"]
+    # Attention : une nouvelle version de l'Android Gradle Plugin (com.android.tools.build:gradle)
+    # exige parfois une version de Gradle plus recente. Si la PR echoue, verifie la version de
+    # Gradle indiquee dans .github/workflows/build-apk.yml (ou celle du wrapper s'il existe).
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
