@@ -29,8 +29,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -191,8 +193,12 @@ fun AiPanel(
     val replyStyle = TextStyle(
         fontFamily = fonts.reply,
         fontSize = fontPrefs.reply.sizeSp.sp,
-        color = fontPrefs.reply.color ?: androidx.compose.ui.graphics.Color.Unspecified
+        color = fontPrefs.reply.color ?: Color.Unspecified
     )
+    // Textes poses directement sur la photo de l'histoire (hors bulles) : blancs par defaut,
+    // sauf si le joueur a choisi sa propre couleur pour les reponses de l'IA.
+    val photoTextColor = fontPrefs.reply.color ?: Color.White
+    val photoStyle = replyStyle.copy(color = photoTextColor)
 
     var messages by remember { mutableStateOf<List<ChatEntry>>(emptyList()) }
     var inputText by remember { mutableStateOf("") }
@@ -345,10 +351,15 @@ fun AiPanel(
             Text(
                 text = "Narration IA",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
             IconButton(onClick = { showResetConfirm = true }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Réinitialiser la conversation IA")
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Réinitialiser la conversation IA",
+                    tint = Color.White
+                )
             }
         }
 
@@ -398,7 +409,7 @@ fun AiPanel(
         }
         backupMessage?.let {
             Spacer(modifier = Modifier.height(6.dp))
-            Text(text = it, style = MaterialTheme.typography.bodySmall)
+            Text(text = it, style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -407,7 +418,7 @@ fun AiPanel(
                 text = "Aucune clé API Mistral configurée pour l'instant — l'histoire ne " +
                     "s'écrit donc pas ici automatiquement (le prompt complet reste copiable " +
                     "plus bas, en mode manuel).",
-                style = MaterialTheme.typography.bodyMedium.merge(replyStyle)
+                style = MaterialTheme.typography.bodyMedium.merge(photoStyle)
             )
             if (onConfigureKey != null) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -424,7 +435,7 @@ fun AiPanel(
             // "Changer d'histoire" -- il n'est donc pas duplique ici.
             Text(
                 text = "Aucun échange pour l'instant.",
-                style = MaterialTheme.typography.bodyMedium.merge(replyStyle),
+                style = MaterialTheme.typography.bodyMedium.merge(photoStyle),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
@@ -504,7 +515,7 @@ fun AiPanel(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = it,
-                color = MaterialTheme.colorScheme.error,
+                color = Color(0xFFFFB4AB), // rouge clair, lisible sur la photo
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -520,9 +531,21 @@ fun AiPanel(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                textStyle = replyStyle,
+                textStyle = photoStyle,
                 placeholder = { Text("Écrire à l'IA narratrice…", style = replyStyle) },
-                enabled = !isLoading
+                enabled = !isLoading,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    disabledTextColor = Color.White.copy(alpha = 0.5f),
+                    cursorColor = Color.White,
+                    focusedBorderColor = Color.White,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                    disabledBorderColor = Color.White.copy(alpha = 0.3f),
+                    focusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                    unfocusedPlaceholderColor = Color.White.copy(alpha = 0.7f),
+                    disabledPlaceholderColor = Color.White.copy(alpha = 0.4f)
+                )
             )
             IconButton(
                 onClick = {
@@ -531,7 +554,12 @@ fun AiPanel(
                 },
                 enabled = !isLoading && inputText.isNotBlank()
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Envoyer")
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Envoyer",
+                    tint = if (!isLoading && inputText.isNotBlank()) Color.White
+                    else Color.White.copy(alpha = 0.4f)
+                )
             }
         }
     }
