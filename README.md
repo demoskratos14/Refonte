@@ -449,6 +449,7 @@ DesDeAventure/
         │   ├── MistralConfig.kt      # clé API (chiffrée) et modèle Mistral, délégué par GameEngine
         │   ├── StoryTransfer.kt      # exports (journal, identité, progression) et import, délégué par GameEngine
         │   ├── PromptBuilder.kt      # textes envoyés à l'IA (mécaniques, rappels, prompt complet, kickoff)
+        │   ├── AiNarrator.kt         # appels à Mistral : narration, nettoyage des balises, digest du journal
         │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
         │   ├── MistralClient.kt      # client API Mistral
         │   ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
