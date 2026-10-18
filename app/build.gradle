@@ -68,39 +68,40 @@ kotlin {
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.19.1'
+    // Versions : gradle/libs.versions.toml
+    implementation libs.androidx.core.ktx
     // Necessaire pour le theme "Theme.AppCompat.*" declare dans AndroidManifest.xml.
-    implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation libs.androidx.appcompat
 
     // --- Compose ---
     // Le BOM (Bill of Materials) fixe une combinaison coherente de
     // versions pour toutes les librairies "androidx.compose.*"
     // ci-dessous : elles n'ont donc pas leur propre numero de version.
-    implementation platform('androidx.compose:compose-bom:2026.09.00')
-    implementation 'androidx.compose.ui:ui'
-    implementation 'androidx.compose.ui:ui-graphics'
-    implementation 'androidx.compose.ui:ui-tooling-preview'
-    debugImplementation 'androidx.compose.ui:ui-tooling'
-    implementation 'androidx.compose.material3:material3'
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.graphics
+    implementation libs.androidx.compose.ui.tooling.preview
+    debugImplementation libs.androidx.compose.ui.tooling
+    implementation libs.androidx.compose.material3
     // Icons.Default.Delete/Add/Refresh/Send/PlayArrow (StorySelectorScreen,
     // AiPanel, TotemManagementDialog) : le set "core" suffirait pour ceux-
     // la, mais "extended" evite toute mauvaise surprise si d'autres icones
     // sont ajoutees plus tard.
-    implementation 'androidx.compose.material:material-icons-extended'
-    implementation 'androidx.activity:activity-compose:1.13.0'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.11.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
+    implementation libs.androidx.compose.material.icons.extended
+    implementation libs.androidx.activity.compose
+    implementation libs.androidx.lifecycle.viewmodel.compose
+    implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.lifecycle.runtime.compose
 
     // Chargement d'images (AsyncImage) : histoires (StorySelectorScreen),
     // images de fond/totem choisies dans CreateStoryScreen/TotemManagementDialog.
-    implementation 'io.coil-kt:coil-compose:2.7.0'
+    implementation libs.coil.compose
 
     // --- Tests unitaires (dossier app/src/test, lances avec : gradle testDebugUnitTest) ---
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation libs.junit
     // Vraie implementation d'org.json : sur la JVM de test, android.jar ne contient que des
     // "stubs" qui plantent ("not mocked") des qu'on appelle JSONObject.
-    testImplementation 'org.json:json:20260814'
+    testImplementation libs.org.json
 }
 
 // Nom du fichier .apk genere : "Dés d'Aventure-debug.apk" (au lieu de "app-debug.apk").
