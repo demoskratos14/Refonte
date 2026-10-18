@@ -9,8 +9,8 @@ buildscript {
         classpath "com.android.tools.build:gradle:9.4.0"
         // Kotlin est integre a AGP 9 ; on fixe ici une version plus recente que celle
         // qu'AGP embarque. Le plugin Compose DOIT avoir exactement la meme version.
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10"
-        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.10"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21"
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.21"
     }
 }
 
