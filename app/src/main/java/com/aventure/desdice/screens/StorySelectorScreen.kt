@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,6 +102,8 @@ fun StorySelectorScreen(
     val fontPrefs = remember(context) { FontPrefs.get(context) }
     val textStyles = rememberAppTextStyles(fonts, fontPrefs)
     var storyToDelete by remember { mutableStateOf<Story?>(null) }
+    // Histoire qu'on vient de déplacer : le carrousel la suit à sa nouvelle place.
+    var followSlug by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = modifier
@@ -114,9 +119,24 @@ fun StorySelectorScreen(
             val pageCount = stories.size + 1
             val pagerState = rememberPagerState(pageCount = { stories.size + 1 })
 
+            // Une fois la liste réordonnée, on revient sur l'histoire déplacée.
+            LaunchedEffect(stories) {
+                val slug = followSlug
+                if (slug != null) {
+                    val index = stories.indexOfFirst { it.slug == slug }
+                    if (index >= 0 && index != pagerState.currentPage) {
+                        pagerState.scrollToPage(index)
+                    }
+                    followSlug = null
+                }
+            }
+
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                // Clé = histoire : la page (et son image déjà décodée) suit l'histoire quand
+                // elle change de place. Un slug ne commence jamais par "_" (voir slugify).
+                key = { page -> stories.getOrNull(page)?.slug ?: "_nouvelle_histoire" }
             ) { page ->
                 val story = stories.getOrNull(page)
                 if (story != null) {
@@ -128,7 +148,13 @@ fun StorySelectorScreen(
                             viewModel.selectStory(story.slug)
                             onStorySelected(story.slug)
                         },
-                        onDeleteClick = { storyToDelete = story }
+                        onDeleteClick = { storyToDelete = story },
+                        canMoveLeft = page > 0,
+                        canMoveRight = page < stories.size - 1,
+                        onMove = { offset ->
+                            followSlug = story.slug
+                            viewModel.moveStory(story.slug, offset)
+                        }
                     )
                 } else {
                     NewStorySlide(fonts = fonts, textStyles = textStyles, onClick = onNewStoryClick)
@@ -354,7 +380,10 @@ private fun StorySlide(
     fonts: AppFonts,
     textStyles: AppTextStyles,
     onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    canMoveLeft: Boolean,
+    canMoveRight: Boolean,
+    onMove: (Int) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -397,6 +426,46 @@ private fun StorySlide(
                 Text(text = "\uD83D\uDDD1\uFE0F", style = TextStyle(fontSize = 20.sp))
             }
         }
+
+        // Ordre des histoires : ← la recule d'une place dans le carrousel, → l'avance.
+        // Hors de la zone cliquable de la page, comme la corbeille.
+        if (story.isCustom && (canMoveLeft || canMoveRight)) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MoveButton(label = "\u2190", enabled = canMoveLeft, onClick = { onMove(-1) })
+                MoveButton(label = "\u2192", enabled = canMoveRight, onClick = { onMove(1) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoveButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(Color(20, 22, 26).copy(alpha = if (enabled) 0.65f else 0.35f))
+            .border(2.dp, Color.White.copy(alpha = if (enabled) 0.55f else 0.2f), CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        // Police du système : la police des titres peut être une police "couleur" qui
+        // dessinerait la flèche avec un contour noir.
+        Text(
+            text = label,
+            style = TextStyle(
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = Color.White.copy(alpha = if (enabled) 1f else 0.35f)
+            )
+        )
     }
 }
 
