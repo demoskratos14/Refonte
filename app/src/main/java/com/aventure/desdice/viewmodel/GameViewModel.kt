@@ -67,26 +67,42 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun loadStories() {
         viewModelScope.launch(Dispatchers.IO) {
             mutex.withLock {
-                val storiesJson = engine.listStories()
-                val storiesArray = storiesJson.getJSONArray("stories")
-                val storiesList = mutableListOf<Story>()
+                publishStories()
+            }
+        }
+    }
 
-                for (i in 0 until storiesArray.length()) {
-                    val storyJson = storiesArray.getJSONObject(i)
-                    storiesList.add(
-                        Story(
-                            slug = storyJson.getString("slug"),
-                            title = storyJson.getString("title"),
-                            subtitle = storyJson.getString("subtitle"),
-                            bgImageB64 = storyJson.getString("bg_image_b64"),
-                            isCustom = storyJson.getBoolean("is_custom")
-                        )
-                    )
+    /** Relit la liste des histoires et la publie. À appeler dans mutex.withLock. */
+    private fun publishStories() {
+        val storiesJson = engine.listStories()
+        val storiesArray = storiesJson.getJSONArray("stories")
+        val storiesList = mutableListOf<Story>()
+
+        for (i in 0 until storiesArray.length()) {
+            val storyJson = storiesArray.getJSONObject(i)
+            storiesList.add(
+                Story(
+                    slug = storyJson.getString("slug"),
+                    title = storyJson.getString("title"),
+                    subtitle = storyJson.getString("subtitle"),
+                    bgImageB64 = storyJson.getString("bg_image_b64"),
+                    isCustom = storyJson.getBoolean("is_custom")
+                )
+            )
+        }
+
+        _stories.value = storiesList
+        _currentStorySlug.value = storiesJson.getString("current_story").takeIf { it.isNotEmpty() }
+        _storiesLoaded.value = true
+    }
+
+    /** Change l'ordre des histoires : offset -1 = vers le début, +1 = vers la fin. */
+    fun moveStory(slug: String, offset: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                if (engine.moveStory(slug, offset)) {
+                    publishStories()
                 }
-
-                _stories.value = storiesList
-                _currentStorySlug.value = storiesJson.getString("current_story").takeIf { it.isNotEmpty() }
-                _storiesLoaded.value = true
             }
         }
     }
