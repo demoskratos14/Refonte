@@ -2,9 +2,12 @@ package com.aventure.desdice
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -33,6 +36,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Affichage bord a bord (obligatoire des targetSdk 35) : les ecrans dessinent sous les
+        // barres systeme, qui sont transparentes avec des icones claires (fonds sombres).
+        // Chaque ecran reserve lui-meme la place des barres (systemBarsPadding & co).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
+
         // GameEngine (construit par GameViewModel) recoit directement
         // context.filesDir : il n'y a pas de repertoire de travail a fixer
         // au demarrage.
@@ -41,7 +52,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             DesDiceTheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    // imePadding : le clavier pousse le contenu au lieu de le recouvrir.
+                    modifier = Modifier.fillMaxSize().imePadding(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val viewModel: GameViewModel = viewModel()
