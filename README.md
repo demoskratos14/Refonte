@@ -445,6 +445,7 @@ DesDeAventure/
         │   ├── DiceSession.kt        # moteur de jeu (dés, jauges, menace, quêtes, session, mécanique du ❓ selon la longueur)
         │   ├── StoryRegistry.kt      # registre des histoires personnalisées
         │   ├── GameEngine.kt         # porte d'entrée unique du moteur Kotlin
+        │   ├── ClassicDiceEngine.kt  # dés classiques (« Des classiques »), délégué par GameEngine
         │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
         │   ├── MistralClient.kt      # client API Mistral
         │   ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
