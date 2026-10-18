@@ -76,6 +76,12 @@ jobs:
         if: always()
         run: $GRADLE lintDebug --stacktrace
 
+      # Vérifie que le build release (R8 activé) compile, sans le signer : une règle R8
+      # manquante ou une dépendance incompatible se voit ici, avant la vraie release.
+      - name: Vérifier le build release (R8, non signé)
+        if: always()
+        run: $GRADLE assembleRelease --stacktrace
+
       # Petit résumé lisible directement sur la page du workflow
       # (onglet "Summary"), sans avoir à télécharger les rapports.
       - name: Résumé tests + lint

@@ -1,0 +1,116 @@
+name: Release signée
+
+# Lancement manuel : onglet Actions > "Release signée" > Run workflow.
+# Produit un APK signé (à installer / partager) et un bundle .aab (pour le Play Store).
+#
+# Secrets à créer une fois : Settings > Secrets and variables > Actions > New repository secret
+#   KEYSTORE_BASE64    le fichier .jks encodé en base64 (voir README ou la conversation)
+#   KEYSTORE_PASSWORD  mot de passe du fichier .jks
+#   KEY_ALIAS          alias de la clé dans le .jks
+#   KEY_PASSWORD       mot de passe de la clé
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Nom de version affiché (ex. 1.0.1)"
+        default: "1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v7
+
+      - name: Installer le JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Préparer le SDK Android
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
+
+      - name: Préparer Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ hashFiles('gradlew') == '' && '9.6.0' || '' }}
+
+      - name: Choisir la commande Gradle
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            echo "GRADLE=./gradlew" >> "$GITHUB_ENV"
+          else
+            echo "GRADLE=gradle" >> "$GITHUB_ENV"
+          fi
+
+      - name: Vérifier les secrets de signature
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          manquants=0
+          for nom in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!nom}" ]; then
+              echo "::error::Secret manquant : $nom (Settings > Secrets and variables > Actions)"
+              manquants=1
+            fi
+          done
+          exit $manquants
+
+      - name: Reconstituer le fichier de clé
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Construire l'APK et le bundle (release, R8)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: $GRADLE assembleRelease bundleRelease --stacktrace
+
+      - name: Vérifier la signature de l'APK
+        run: |
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$apksigner" verify --print-certs "$apk"
+          done
+
+      - name: Publier l'APK signé
+        uses: actions/upload-artifact@v7
+        with:
+          name: "Dés d'Aventure (release)"
+          path: "app/build/outputs/apk/release/*.apk"
+          if-no-files-found: error
+
+      - name: Publier le bundle .aab
+        uses: actions/upload-artifact@v7
+        with:
+          name: "Bundle .aab"
+          path: "app/build/outputs/bundle/release/*.aab"
+          if-no-files-found: error
+
+      # À CONSERVER : permet de relire les erreurs d'un build release (code obfusqué).
+      - name: Publier le mapping R8
+        uses: actions/upload-artifact@v7
+        with:
+          name: "Mapping R8"
+          path: "app/build/outputs/mapping/release/mapping.txt"
+          if-no-files-found: warn
+
+      - name: Effacer le fichier de clé
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
