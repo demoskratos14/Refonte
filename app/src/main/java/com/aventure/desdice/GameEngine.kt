@@ -17,7 +17,7 @@
 //     buildFullPrompt/buildAiKickoffMessage, maybeUpdateStoryDigest,
 //     runAiNarrator, doSendAiMessage/doSendFullPrompt/doResetAiConversation
 //   - configuration Mistral : getConfigScreenState, get/setMistralKey,
-//     get/setMistralModel
+//     get/setMistralModel (simple délégation à MistralConfig.kt)
 //   - export/import : exportJournal (via JournalExporter), exportIdentity/
 //     importIdentity/applyImportedProgress
 //   - dés classiques : classicDiceState/classicDiceRoll/classicDiceClear
@@ -36,9 +36,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
-
-/** Champ d'app_config.json qui contient la clé API chiffrée. */
-private const val CONFIG_KEY_TOKEN = "mistral_api_key_enc"
 
 /**
  * @param secretCipher chiffre la clé API Mistral dans app_config.json (KeystoreSecretCipher en
@@ -1042,84 +1039,24 @@ class GameEngine(
     }
 
     // ------------------------------------------------------------------
-    // Configuration Mistral (clé et modèle — app_config.json)
+    // Configuration Mistral : logique dans MistralConfig.kt (app_config.json)
     // ------------------------------------------------------------------
 
-    private val appConfigFile = File(baseDir, "app_config.json")
-    // Même constante que le client, pour rester aligné sur la liste de modèles
-    // proposée dans ConfigureKeyScreen.
-    private val defaultMistralModel = MistralClient.DEFAULT_MODEL
+    private val mistralConfig = MistralConfig(baseDir, secretCipher)
 
-    // Le fichier ne contient jamais la clé en clair : seulement son jeton chiffré
-    // (CONFIG_KEY_TOKEN). En mémoire, la config garde la clé déchiffrée sous "mistral_api_key".
-    private fun configOf(key: String, model: String) =
-        JSONObject().apply { put("mistral_api_key", key); put("mistral_model", model) }
+    fun getMistralKey(): String = mistralConfig.getMistralKey()
 
-    private fun loadAppConfig(): JSONObject {
-        if (!appConfigFile.exists()) return configOf("", defaultMistralModel)
-        return try {
-            val data = JSONObject(appConfigFile.readText())
-            val model = data.optString("mistral_model", defaultMistralModel).ifEmpty { defaultMistralModel }
-            val token = data.optString(CONFIG_KEY_TOKEN, "")
-            // Ancien format : clé en clair. On la lit puis on la réécrit chiffrée.
-            val legacyKey = data.optString("mistral_api_key", "")
-            if (token.isNotEmpty()) {
-                // Jeton illisible (clé du Keystore perdue) : comme si aucune clé n'était configurée.
-                configOf(secretCipher.decrypt(token).orEmpty(), model)
-            } else {
-                configOf(legacyKey, model).also { config ->
-                    if (legacyKey.isNotEmpty()) {
-                        try { saveAppConfig(config) } catch (e: Exception) { /* réessayé au prochain chargement */ }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            configOf("", defaultMistralModel)
-        }
-    }
+    fun setMistralKey(key: String) = mistralConfig.setMistralKey(key)
 
-    private fun saveAppConfig(config: JSONObject) {
-        val key = config.optString("mistral_api_key", "")
-        val onDisk = JSONObject().apply {
-            put(CONFIG_KEY_TOKEN, if (key.isEmpty()) "" else secretCipher.encrypt(key))
-            put("mistral_model", config.optString("mistral_model", defaultMistralModel))
-        }
-        appConfigFile.writeText(onDisk.toString(2))
-    }
+    fun clearMistralKey() = mistralConfig.clearMistralKey()
 
-    fun getMistralKey(): String = loadAppConfig().optString("mistral_api_key", "")
+    fun hasMistralKey(): Boolean = mistralConfig.hasMistralKey()
 
-    fun setMistralKey(key: String) {
-        val config = loadAppConfig()
-        config.put("mistral_api_key", key.trim())
-        saveAppConfig(config)
-    }
+    fun getMistralModel(): String = mistralConfig.getMistralModel()
 
-    fun clearMistralKey() = setMistralKey("")
+    fun setMistralModel(model: String) = mistralConfig.setMistralModel(model)
 
-    fun hasMistralKey(): Boolean = getMistralKey().isNotEmpty()
-
-    fun getMistralModel(): String = loadAppConfig().optString("mistral_model", defaultMistralModel)
-
-    fun setMistralModel(model: String) {
-        val config = loadAppConfig()
-        config.put("mistral_model", model.trim().ifEmpty { defaultMistralModel })
-        saveAppConfig(config)
-    }
-
-    fun getConfigScreenState(): JSONObject {
-        val key = getMistralKey()
-        val maskedKey = if (key.isNotEmpty()) "*".repeat(maxOf(0, key.length - 4)) + key.takeLast(4) else ""
-        return JSONObject().apply {
-            put("has_key", hasMistralKey())
-            put("masked_key", maskedKey)
-            put("model", getMistralModel())
-            put(
-                "model_choices",
-                JSONArray(MistralClient.MODEL_CHOICES.map { (value, label) -> JSONArray(listOf(value, label)) })
-            )
-        }
-    }
+    fun getConfigScreenState(): JSONObject = mistralConfig.getConfigScreenState()
 
     // ------------------------------------------------------------------
     // Export / import (journal, identité, progression)
