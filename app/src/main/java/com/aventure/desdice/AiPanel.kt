@@ -518,6 +518,12 @@ fun AiPanel(
                 color = Color(0xFFFFB4AB), // rouge clair, lisible sur la photo
                 style = MaterialTheme.typography.bodySmall
             )
+            // Clé refusée : raccourci direct vers l'écran de la clé.
+            if (onConfigureKey != null && MistralClient.isKeyRefusedMessage(it)) {
+                TextButton(onClick = onConfigureKey) {
+                    Text("🔑 Vérifier ma clé API")
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))

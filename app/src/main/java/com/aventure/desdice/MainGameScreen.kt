@@ -95,6 +95,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -414,7 +415,7 @@ private fun GameHeader(
             text = "\uD83D\uDD01 Changer d'histoire",
             style = bodyStyle(fonts, 14.sp).copy(textDecoration = TextDecoration.Underline),
             modifier = Modifier
-                .clickable(onClick = onChangeStory)
+                .clickable(role = Role.Button, onClick = onChangeStory)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
@@ -428,7 +429,7 @@ private fun GameHeader(
                     text = if (MusicPlayer.isPlaying) "\u23F9 Couper la musique" else "\uD83C\uDFB5 Lancer une musique",
                     style = underlined,
                     modifier = Modifier
-                        .clickable {
+                        .clickable(role = Role.Button) {
                             if (MusicPlayer.isPlaying) MusicPlayer.stop()
                             else MusicPlayer.startFromGameButton(musicContext)
                         }
@@ -439,7 +440,7 @@ private fun GameHeader(
                         text = "\u23ED Autre morceau",
                         style = underlined,
                         modifier = Modifier
-                            .clickable { MusicPlayer.startRandom(musicContext) }
+                            .clickable(role = Role.Button) { MusicPlayer.startRandom(musicContext) }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
@@ -1168,7 +1169,7 @@ private fun SymbolPickerDialog(
                                 .clip(chipShape)
                                 .background(if (selected) Red else Color.White)
                                 .border(2.dp, Ink, chipShape)
-                                .clickable(enabled = !isLoading) {
+                                .clickable(enabled = !isLoading, role = Role.Button) {
                                     isLoading = true
                                     if (pipMode == "single") {
                                         viewModel.setPipSymbol(key)
@@ -1177,6 +1178,8 @@ private fun SymbolPickerDialog(
                                     }
                                 }
                                 .padding(horizontal = 12.dp)
+                                // L'état choisi/non choisi n'était visible que par la couleur.
+                                .semantics { stateDescription = if (selected) "sélectionné" else "non sélectionné" }
                         ) {
                             SymbolIcon(symbol, 22.dp, 18.sp)
                             Text(
@@ -1383,7 +1386,7 @@ private fun TotemGaugeItem(
                     if (isReady) Gold else Color.White.copy(alpha = 0.5f),
                     CircleShape
                 )
-                .then(if (onInfo != null) Modifier.clickable(onClick = onInfo) else Modifier)
+                .then(if (onInfo != null) Modifier.clickable(onClickLabel = "Voir la fiche du totem", role = Role.Button, onClick = onInfo) else Modifier)
         ) {
             SymbolIcon(symbol, 46.dp, 30.sp)
         }
@@ -2090,6 +2093,13 @@ internal fun SymbolIcon(
     val context = LocalContext.current
     val imageName = symbol?.str("image").orEmpty()
     val emoji = symbol?.str("emoji").orEmpty().ifEmpty { fallback }
+    // Totem sans image : le lecteur d'écran lisait le nom de l'emoji au lieu du nom du totem.
+    val label = symbol?.str("label").orEmpty()
+    val emojiModifier = if (label.isNotEmpty()) {
+        Modifier.semantics { contentDescription = label }
+    } else {
+        Modifier
+    }
 
     if (imageName.isNotEmpty()) {
         val cached = synchronized(totemBitmapCache) { totemBitmapCache[imageName] }
@@ -2107,9 +2117,9 @@ internal fun SymbolIcon(
                 modifier = Modifier.size(size)
             )
         } else {
-            Text(text = emoji, style = TextStyle(fontSize = fontSize))
+            Text(text = emoji, style = TextStyle(fontSize = fontSize), modifier = emojiModifier)
         }
     } else {
-        Text(text = emoji, style = TextStyle(fontSize = fontSize))
+        Text(text = emoji, style = TextStyle(fontSize = fontSize), modifier = emojiModifier)
     }
 }

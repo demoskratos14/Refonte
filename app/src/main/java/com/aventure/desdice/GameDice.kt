@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -158,7 +159,7 @@ internal fun TotemBadgesRow(state: JSONObject?, onTotemClick: (String) -> Unit) 
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.18f))
                     .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape)
-                    .clickable { onTotemClick(key) },
+                    .clickable(onClickLabel = "Voir la fiche du totem", role = Role.Button) { onTotemClick(key) },
                 contentAlignment = Alignment.Center
             ) {
                 SymbolIcon(findSymbol(state, key), 32.dp, 24.sp, fallback = icon)

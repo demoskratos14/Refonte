@@ -18,9 +18,11 @@ package com.aventure.desdice
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.UnknownHostException
 
 object MistralClient {
 
@@ -142,25 +144,51 @@ object MistralClient {
             } else {
                 val errorRaw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 val detailMsg = parseErrorDetail(errorRaw) ?: (connection.responseMessage ?: "erreur inconnue")
-                val msg = when (code) {
-                    401 -> "Clé API Mistral refusée (401) : vérifie qu'elle est correcte."
-                    429 ->
-                        "Limite Mistral atteinte (429) : $detailMsg " +
-                            "Réessaie dans un instant ou vérifie ton plan sur console.mistral.ai."
-                    else -> "Erreur Mistral ($code) : $detailMsg"
-                }
-                RawReply(null, false, msg)
+                RawReply(null, false, httpErrorMessage(code, detailMsg))
             }
-        } catch (e: SocketTimeoutException) {
-            RawReply(null, false, "Impossible de joindre l'API Mistral (délai dépassé) : ${e.message}")
-        } catch (e: IOException) {
-            RawReply(null, false, "Impossible de joindre l'API Mistral (réseau ?) : ${e.message}")
         } catch (e: Exception) {
-            RawReply(null, false, "Erreur inattendue en contactant Mistral : ${e.message}")
+            RawReply(null, false, networkErrorMessage(e))
         } finally {
             connection?.disconnect()
         }
     }
+
+    /** Message lisible pour un code HTTP d'erreur renvoyé par Mistral. */
+    internal fun httpErrorMessage(code: Int, detail: String): String = when (code) {
+        401 ->
+            "Clé API Mistral refusée (401) : elle est incorrecte, expirée ou révoquée. " +
+                "Vérifie-la ou remplace-la."
+        403 ->
+            "Accès refusé par Mistral (403) : ta clé n'a pas le droit d'utiliser ce modèle " +
+                "ou ce service. Vérifie ta clé ou choisis un autre modèle."
+        429 ->
+            "Limite Mistral atteinte (429) : $detail " +
+                "Réessaie dans un instant ou vérifie ton plan sur console.mistral.ai."
+        in 500..599 ->
+            "Le service Mistral est momentanément indisponible ($code). " +
+                "Ce n'est pas lié à ta clé : réessaie dans quelques instants."
+        else -> "Erreur Mistral ($code) : $detail"
+    }
+
+    /** Message lisible pour une exception levée pendant l'appel (réseau coupé, délai...). */
+    internal fun networkErrorMessage(e: Exception): String = when (e) {
+        is SocketTimeoutException ->
+            "Mistral met trop de temps à répondre. Vérifie ta connexion Internet puis réessaie."
+        is UnknownHostException, is ConnectException ->
+            "Pas de connexion Internet : impossible de joindre Mistral. " +
+                "Vérifie ton Wi-Fi ou tes données mobiles puis réessaie."
+        is IOException ->
+            "La connexion avec Mistral a été interrompue" +
+                (e.message?.let { " ($it)" } ?: "") + ". Réessaie."
+        else -> "Erreur inattendue en contactant Mistral : ${e.message}"
+    }
+
+    /**
+     * true si le message d'erreur vient d'une clé refusée (401/403) : l'interface propose
+     * alors un raccourci vers l'écran de la clé.
+     */
+    fun isKeyRefusedMessage(message: String): Boolean =
+        message.contains("(401)") || message.contains("(403)")
 
     /** Certaines erreurs Mistral imbriquent le message utile dans un sous-objet {"error": {"message": ...}}. */
     private fun parseErrorDetail(raw: String?): String? {
