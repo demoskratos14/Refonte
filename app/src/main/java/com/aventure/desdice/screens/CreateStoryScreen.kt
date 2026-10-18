@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -434,6 +435,7 @@ fun CreateStoryScreen(
                 .fillMaxSize()
                 .imePadding() // le clavier ne cache pas le champ en cours de saisie
                 .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(bottom = 32.dp)
         ) {
             // On laisse la fenetre et la lune visibles en haut de l'ecran.

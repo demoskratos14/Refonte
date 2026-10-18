@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -136,6 +138,7 @@ fun StorySelectorScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -213,6 +216,7 @@ private fun SelectorHeader(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(start = 11.dp, end = 11.dp, top = 9.dp)
             .height(44.dp)
     ) {
@@ -370,7 +374,7 @@ private fun StorySlide(
                 cta = "Toucher pour commencer \u2192",
                 fonts = fonts,
                 textStyles = textStyles,
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
             )
         }
 
@@ -381,6 +385,7 @@ private fun StorySlide(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
                     .padding(end = 16.dp, bottom = 16.dp)
                     .size(46.dp)
                     .clip(CircleShape)
@@ -423,7 +428,7 @@ private fun NewStorySlide(
             cta = "Toucher pour créer \u2192",
             fonts = fonts,
             textStyles = textStyles,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
             topContent = {
                 Box(
                     modifier = Modifier
