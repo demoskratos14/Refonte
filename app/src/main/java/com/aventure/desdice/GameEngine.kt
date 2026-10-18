@@ -217,6 +217,10 @@ class GameEngine(
         return currentSessionJson()
     }
 
+    /** Déplace une histoire dans la liste (offset -1 = vers le début, +1 = vers la fin). */
+    fun moveStory(slug: String, offset: Int): Boolean =
+        storyRegistry.moveCustomStory(slug, offset)
+
     fun deleteStory(slug: String): JSONObject {
         storyRegistry.deleteCustomStory(slug)
         if (currentStorySlug == slug) {

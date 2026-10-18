@@ -354,6 +354,24 @@ class StoryRegistry(private val baseDir: File) {
         return true
     }
 
+    /**
+     * Déplace une histoire personnalisée dans la liste : offset = -1 la fait passer avant sa
+     * voisine (vers le début), +1 après (vers la fin). L'ordre est celui du tableau de
+     * custom_stories.json, que allStoryOrder() relit tel quel. Renvoie false, sans rien écrire,
+     * si le slug est inconnu ou si le déplacement sortirait de la liste.
+     */
+    fun moveCustomStory(slug: String, offset: Int): Boolean {
+        val metaList = loadCustomMeta().toMutableList()
+        val from = metaList.indexOfFirst { it.slug == slug }
+        if (from < 0) return false
+        val to = from + offset
+        if (offset == 0 || to < 0 || to >= metaList.size) return false
+        val moved = metaList.removeAt(from)
+        metaList.add(to, moved)
+        saveCustomMeta(metaList)
+        return true
+    }
+
     /** Vrai si slug correspond à une histoire personnalisée existante. */
     fun isCustomStory(slug: String): Boolean = loadCustomMeta().any { it.slug == slug }
 
