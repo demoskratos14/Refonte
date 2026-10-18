@@ -1,7 +1,6 @@
 package com.aventure.desdice
 
 import android.graphics.BitmapFactory
-import android.content.ClipData
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
@@ -12,8 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -23,7 +20,6 @@ import com.aventure.desdice.screens.FateFace
 import com.aventure.desdice.screens.PipGlyph
 import com.aventure.desdice.screens.SpinDurationMs
 import com.aventure.desdice.screens.SpinState
-import com.aventure.desdice.screens.TotemManagementDialog
 import com.aventure.desdice.screens.TumblingDie
 import com.aventure.desdice.screens.newSpinSpec
 import java.io.File
@@ -53,8 +49,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -150,7 +144,6 @@ internal val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
 // Color.White pour des boutons blancs.
 private val SecondaryButtonFill = Color(0x4014161A)
 
-private const val TOTEM_THRESHOLD = 15
 // THREAT_THRESHOLD est défini publiquement dans DiceSession.kt (même package) — pas besoin de le redéclarer ici.
 
 internal val FATE_OPTIONS = listOf(
@@ -795,7 +788,7 @@ private fun questKindText(kind: String): String =
     if (kind == "ami") "se faire un nouvel ami" else "trouver un nouvel objet (ou un nouveau totem)"
 
 /** Demande envoyee a l'IA quand on demarre une quete secondaire. */
-private fun questRequestText(kind: String): String =
+internal fun questRequestText(kind: String): String =
     if (kind == "ami") {
         "Je commence la quête secondaire : se faire un nouvel ami. Fais entrer en scène " +
             "un nouveau personnage et raconte cette rencontre."
@@ -979,337 +972,6 @@ private fun ThreatGaugeCells(
                     .border(1.5.dp, Ink.copy(alpha = if (filled) 0.85f else 0.35f), shape)
             )
         }
-    }
-}
-
-// =====================================================================
-// Jauges totemiques
-// =====================================================================
-
-@Composable
-fun TotemGaugesRow(
-    viewModel: GameViewModel,
-    modifier: Modifier = Modifier,
-    // Clic sur l'icone d'un totem : ouvre sa fiche (pouvoirs / capacite speciale).
-    onTotemClick: ((String) -> Unit)? = null
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val scope = rememberCoroutineScope()
-    val fonts = rememberAppFonts()
-
-    var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // Texte narratif renvoye par useTotemEnergyAwait quand un pouvoir se
-    // manifeste -- distinct de "error", reserve aux vraies erreurs techniques.
-    var effectMessage by remember { mutableStateOf<String?>(null) }
-    var showTotemManager by remember { mutableStateOf(false) }
-
-    LaunchedEffect(sessionState) {
-        val session = sessionState
-        symbols = buildMap {
-            session?.optJSONArray("all_symbols")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    put(obj.optString("key"), obj)
-                }
-            }
-        }
-        isLoading = false
-    }
-
-    fun useTotem(key: String) {
-        scope.launch {
-            isLoading = true
-            error = null
-            try {
-                val result = viewModel.useTotemEnergyAwait(key)
-                val effect = result.str("effect")
-                val aiError = result.str("ai_error")
-                if (effect.isNotEmpty()) effectMessage = effect
-                if (aiError.isNotEmpty()) error = aiError
-            } catch (e: Exception) {
-                error = "Erreur : ${e.message}"
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    Section(modifier) {
-        SectionTitle("Jauges totémiques", fonts)
-
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
-            }
-        } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(symbols.toList()) { (key, symbol) ->
-                    // Icone cliquable seulement si une fiche existe.
-                    val hasInfo = sessionState?.optJSONObject("totem_info")?.has(key) == true
-                    TotemGaugeItem(
-                        symbol = symbol,
-                        energy = sessionState?.optJSONObject("totem_energy")?.optInt(key, 0) ?: 0,
-                        fonts = fonts,
-                        onUse = { useTotem(key) },
-                        onInfo = if (hasInfo) ({ onTotemClick?.invoke(key) }) else null
-                    )
-                }
-            }
-        }
-
-        // Affiches en dehors du "if (isLoading)" : sinon le message pose juste
-        // avant la fin du chargement disparaitrait aussitot.
-        error?.let {
-            Text(
-                text = it,
-                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        effectMessage?.let {
-            Text(
-                text = it,
-                style = bodyStyle(fonts, 14.sp),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        ComicButton(
-            text = "➕ Ajouter / gérer les totems",
-            onClick = { showTotemManager = true },
-            fonts = fonts,
-            kind = ButtonKind.Secondary,
-            compact = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-
-    if (showTotemManager) {
-        TotemManagementDialog(
-            viewModel = viewModel,
-            onDismiss = { showTotemManager = false }
-        )
-    }
-}
-
-@Composable
-private fun TotemGaugeItem(
-    symbol: JSONObject,
-    energy: Int,
-    fonts: AppFonts,
-    onUse: () -> Unit,
-    onInfo: (() -> Unit)? = null
-) {
-    val isReady = energy >= TOTEM_THRESHOLD
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(92.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(if (isReady) Gold.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.25f))
-                .border(
-                    if (isReady) 3.dp else 2.dp,
-                    if (isReady) Gold else Color.White.copy(alpha = 0.5f),
-                    CircleShape
-                )
-                .then(if (onInfo != null) Modifier.clickable(onClickLabel = "Voir la fiche du totem", role = Role.Button, onClick = onInfo) else Modifier)
-        ) {
-            SymbolIcon(symbol, 46.dp, 30.sp)
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = symbol.optString("label"),
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-            style = bodyStyle(fonts, 12.sp)
-        )
-        Text(
-            text = "$energy/$TOTEM_THRESHOLD",
-            style = boldStyle(fonts, 13.sp)
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        GaugeBar(
-            fraction = energy.toFloat() / TOTEM_THRESHOLD,
-            color = if (isReady) Gold else Color.White,
-            height = 8.dp
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        ComicButton(
-            text = "Utiliser",
-            onClick = onUse,
-            fonts = fonts,
-            enabled = isReady,
-            compact = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-
-// =====================================================================
-// Quetes secondaires
-// =====================================================================
-
-@Composable
-fun SideQuestsList(
-    viewModel: GameViewModel,
-    modifier: Modifier = Modifier,
-    // Narration automatique active : "Commencer" envoie la demande a l'IA. Sinon la
-    // demande est copiee dans le presse-papiers (a coller dans l'IA de ton choix).
-    hasKey: Boolean = false
-) {
-    val sessionState by viewModel.sessionState.collectAsState()
-    val scope = rememberCoroutineScope()
-    val fonts = rememberAppFonts()
-    val clipboard = LocalClipboard.current
-
-    var sideQuests by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var info by remember { mutableStateOf<String?>(null) }
-
-    // Seulement les quetes OUVERTES (openSideQuests()) :
-    // une quete terminee ou commencee disparait de la liste.
-    LaunchedEffect(sessionState) {
-        sideQuests = buildList {
-            sessionState?.optJSONArray("side_quests")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val quest = arr.getJSONObject(i)
-                    if (quest.optString("status") == "ouverte") add(quest)
-                }
-            }
-        }
-        isLoading = false
-    }
-
-    // "Commencer" : la demande de quete part a l'IA (le lancer "?" en attente est ajoute
-    // automatiquement par sendAiMessage()), puis la quete est retiree de la liste -- il
-    // n'y a donc pas de bouton "Terminer". Si l'IA renvoie une erreur, la quete est
-    // conservee pour pouvoir reessayer.
-    fun startQuest(quest: JSONObject) {
-        val request = questRequestText(quest.optString("kind"))
-        scope.launch {
-            isLoading = true
-            error = null
-            info = null
-            try {
-                if (hasKey) {
-                    val sent = viewModel.sendAiMessageAwait(request)
-                    val aiError = sent.str("ai_error")
-                    if (aiError.isNotEmpty()) {
-                        error = aiError
-                        return@launch
-                    }
-                } else {
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", request)))
-                    info = "Demande copiée dans le presse-papiers."
-                }
-                viewModel.completeSideQuestAwait(quest.optInt("id"))
-            } catch (e: Exception) {
-                error = "Erreur : ${e.message}"
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    Section(modifier) {
-        SectionTitle("Quêtes secondaires", fonts)
-
-        if (isLoading) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                if (hasKey) {
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(text = "⌛ Le narrateur écrit...", style = bodyStyle(fonts, 14.sp))
-                }
-            }
-        } else if (sideQuests.isEmpty()) {
-            Text(
-                text = "Aucune quête secondaire en cours",
-                style = bodyStyle(fonts, 14.sp)
-            )
-        } else {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(sideQuests) { quest ->
-                    SideQuestItem(
-                        quest = quest,
-                        fonts = fonts,
-                        onStart = { startQuest(quest) }
-                    )
-                }
-            }
-        }
-
-        info?.let {
-            Text(
-                text = it,
-                style = bodyStyle(fonts, 14.sp),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        error?.let {
-            Text(
-                text = "⚠️ $it",
-                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun SideQuestItem(
-    quest: JSONObject,
-    fonts: AppFonts,
-    onStart: () -> Unit
-) {
-    val kind = quest.optString("kind")
-    val kindText = if (kind == "ami") "👥 Nouvel ami" else "🎁 Nouvel objet/totem"
-    val shape = RoundedCornerShape(10.dp)
-
-    Column(
-        modifier = Modifier
-            .width(150.dp)
-            .clip(shape)
-            .background(Ink.copy(alpha = 0.45f))
-            .border(2.dp, Color.White.copy(alpha = 0.4f), shape)
-            .padding(10.dp)
-    ) {
-        Text(text = "⭐ Quête secondaire", style = boldStyle(fonts, 12.sp))
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = kindText, style = bodyStyle(fonts, 13.sp))
-        Spacer(modifier = Modifier.height(8.dp))
-        ComicButton(
-            text = "Commencer",
-            onClick = onStart,
-            fonts = fonts,
-            compact = true,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 
@@ -1601,7 +1263,7 @@ internal fun ComicButton(
 
 /** Barre de progression a plat (a la place de LinearProgressIndicator). */
 @Composable
-private fun GaugeBar(fraction: Float, color: Color, height: Dp, modifier: Modifier = Modifier) {
+internal fun GaugeBar(fraction: Float, color: Color, height: Dp, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(height / 2)
     Box(
         modifier = modifier
