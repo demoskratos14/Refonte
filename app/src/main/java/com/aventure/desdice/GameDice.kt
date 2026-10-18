@@ -185,7 +185,7 @@ internal fun TotemInfoDialog(
         }
     }
 
-    val editable = onSave != null && state?.optJSONArray("custom_totems")?.let { arr ->
+    val editable = onSave != null && state.optJSONArray("custom_totems")?.let { arr ->
         (0 until arr.length()).any { arr.optJSONObject(it)?.optString("key") == totemKey }
     } == true
     var editing by remember { mutableStateOf(false) }

@@ -50,6 +50,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -615,7 +616,7 @@ private fun rememberDiceRollSound(): () -> Unit {
             )
             .build()
     }
-    var soundId by remember { mutableStateOf(0) }
+    var soundId by remember { mutableIntStateOf(0) }
     DisposableEffect(Unit) {
         soundId = soundPool.load(context, R.raw.dice_roll, 1)
         onDispose { soundPool.release() }
@@ -672,7 +673,7 @@ private fun ComicButton(
     Box(
         modifier = modifier
             .alpha(if (enabled) 1f else 0.6f)
-            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
             .hardShadow(if (pressed) 1.dp else 3.dp, 10.dp, Ink)
             .background(background, shape)
             .border(3.dp, Ink, shape)
@@ -754,7 +755,7 @@ private fun DiceTray(
                                 spec, progress,
                                 if (isFate) fateFaces else null,
                                 fonts, textStyles, background,
-                                faceNumbers = spin?.numbers?.get(index)
+                                faceNumbers = spin.numbers[index]
                             )
                         }
                     } else {
@@ -893,7 +894,7 @@ private fun AddDieSection(
             ComicButton(
                 text = "Ajouter",
                 onClick = {
-                    if (customValid && customValue != null) {
+                    if (customValid) {
                         onAdd(customValue)
                         customText = ""
                     }

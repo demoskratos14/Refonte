@@ -1,6 +1,7 @@
 package com.aventure.desdice
 
 import android.net.Uri
+import android.content.ClipData
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,9 +34,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -88,7 +89,8 @@ internal fun narratorNoteFor(record: JSONObject?, fateFaces: List<FateFace>): St
 
 @Composable
 internal fun NarratorNoteBox(text: String, fonts: AppFonts, modifier: Modifier = Modifier) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var copied by remember(text) { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Column(
@@ -106,7 +108,7 @@ internal fun NarratorNoteBox(text: String, fonts: AppFonts, modifier: Modifier =
         ComicButton(
             text = if (copied) "Copié ✓" else "Copier",
             onClick = {
-                clipboard.setText(AnnotatedString(text))
+                scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", text))) }
                 copied = true
             },
             fonts = fonts,
@@ -129,7 +131,7 @@ fun ContinueSection(
 ) {
     val sessionState by viewModel.sessionState.collectAsState()
     val fonts = rememberAppFonts()
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
     var busy by remember { mutableStateOf(false) }
@@ -160,7 +162,7 @@ fun ContinueSection(
             error = null
             info = null
             val prompt = viewModel.buildFullPromptText()
-            clipboard.setText(AnnotatedString(prompt))
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", prompt)))
             info = "Prompt copié dans le presse-papiers."
             busy = false
         }

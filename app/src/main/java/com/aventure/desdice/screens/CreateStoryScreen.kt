@@ -33,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -178,7 +179,7 @@ fun CreateStoryScreen(
     // do_apply_imported_progress.
     var importedExtraTotems by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var importedSideQuests by remember { mutableStateOf<JSONArray?>(null) }
-    var importedNextQuestId by remember { mutableStateOf(1) }
+    var importedNextQuestId by remember { mutableIntStateOf(1) }
     var importedStoryLog by remember { mutableStateOf<JSONArray?>(null) }
     var importedStorySummary by remember { mutableStateOf("") }
 

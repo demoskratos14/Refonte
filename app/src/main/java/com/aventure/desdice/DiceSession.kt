@@ -40,6 +40,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
+/** Valeur texte d'une clé JSON, ou null si la clé est absente ou vaut null. */
+private fun JSONObject.optStringOrNull(name: String): String? =
+    if (has(name) && !isNull(name)) optString(name) else null
+
 // ------------------------------------------------------------------------
 // Constantes
 // ------------------------------------------------------------------------
@@ -169,8 +173,8 @@ data class SideQuest(
     companion object {
         fun fromJson(o: JSONObject): SideQuest? {
             if (!o.has("id")) return null
-            val kind = o.optString("kind", null) ?: return null
-            val status = o.optString("status", null) ?: return null
+            val kind = o.optStringOrNull("kind") ?: return null
+            val status = o.optStringOrNull("status") ?: return null
             val mode = o.optString("mode", QUEST_MODE_PARALLEL)
             return SideQuest(o.optInt("id"), kind, status, mode)
         }
@@ -195,7 +199,7 @@ data class CustomTotem(
         fun fromJson(o: JSONObject): CustomTotem? {
             val key = o.optString("key", "").ifEmpty { return null }
             val label = o.optString("label", "").ifEmpty { return null }
-            val image = if (o.isNull("image")) null else o.optString("image", null)
+            val image = o.optStringOrNull("image")
             val powersArr = o.optJSONArray("powers")
             val powers = mutableListOf<String>()
             if (powersArr != null) {

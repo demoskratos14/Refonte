@@ -1,6 +1,7 @@
 package com.aventure.desdice
 
 import android.graphics.BitmapFactory
+import android.content.ClipData
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
@@ -11,9 +12,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.rememberTextMeasurer
 import com.aventure.desdice.screens.DieBox
@@ -68,6 +69,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -95,6 +97,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -252,7 +255,7 @@ fun MainGameScreen(
     // Position (dans le contenu defilant) du haut du panneau de narration IA,
     // mise a jour a chaque changement de mise en page via onGloballyPositioned
     // sur le Box qui l'entoure plus bas.
-    var aiPanelOffset by remember { mutableStateOf(0) }
+    var aiPanelOffset by remember { mutableIntStateOf(0) }
     val scrollState = rememberScrollState()
 
     LaunchedEffect(lastAssistantMessage) {
@@ -847,7 +850,7 @@ private fun rememberDiceRollSound(): () -> Unit {
             )
             .build()
     }
-    var soundId by remember { mutableStateOf(0) }
+    var soundId by remember { mutableIntStateOf(0) }
     DisposableEffect(Unit) {
         soundId = soundPool.load(context, R.raw.dice_roll, 1)
         onDispose { soundPool.release() }
@@ -890,7 +893,7 @@ private fun RollBothButton(size: Dp, enabled: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(size)
             .alpha(if (enabled) 1f else 0.6f)
-            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
             .hardShadow(if (pressed) 1.dp else 3.dp, size / 2, Ink)
             .background(Red, CircleShape)
             .border(3.dp, Ink, CircleShape)
@@ -1430,7 +1433,7 @@ fun SideQuestsList(
     val sessionState by viewModel.sessionState.collectAsState()
     val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
 
     var sideQuests by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -1470,7 +1473,7 @@ fun SideQuestsList(
                         return@launch
                     }
                 } else {
-                    clipboard.setText(AnnotatedString(request))
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("", request)))
                     info = "Demande copiée dans le presse-papiers."
                 }
                 viewModel.completeSideQuestAwait(quest.optInt("id"))
@@ -1986,7 +1989,7 @@ internal fun ComicButton(
     Box(
         modifier = modifier
             .alpha(if (enabled) 1f else 0.5f)
-            .offset(x = if (pressed) 2.dp else 0.dp, y = if (pressed) 2.dp else 0.dp)
+            .offset { IntOffset(if (pressed) 2.dp.roundToPx() else 0, if (pressed) 2.dp.roundToPx() else 0) }
             .then(if (hasFill) Modifier.hardShadow(if (pressed) 1.dp else 3.dp, 10.dp, Ink) else Modifier)
             .background(fill, shape)
             .border(if (compact) 2.dp else 3.dp, Ink, shape)

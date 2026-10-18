@@ -16,4 +16,11 @@
          dans mipmap-*dpi, repli pour Android 7 et moins) : l'illustration remplit tout le carré
          volontairement, c'est le dessin voulu. -->
     <issue id="IconLauncherShape" severity="ignore" />
+
+    <!-- ClassicDiceScreen : le de en perspective dessine avec des appels DrawScope (drawRoundRect,
+         drawText...) entre save() et restore(). Canvas.withMatrix { } leur donnerait pour receveur
+         l'android.graphics.Canvas (memes noms de fonctions) : on garde save/concat/restore. -->
+    <issue id="UseKtx">
+        <ignore regexp="withMatrix" />
+    </issue>
 </lint>

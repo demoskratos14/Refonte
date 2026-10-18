@@ -2,6 +2,7 @@ package com.aventure.desdice.ui
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import android.graphics.Typeface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -56,21 +57,21 @@ class TextStyleChoice internal constructor(
 
     fun setFont(file: String?) {
         fontFile = file
-        prefs.edit().apply {
+        prefs.edit {
             if (file == null) remove(keyFont) else putString(keyFont, file)
-        }.apply()
+        }
     }
 
     fun setColor(newColor: Color?) {
         colorArgb = newColor?.let { it.toArgb() and 0x00FFFFFF or (0xFF shl 24) }
-        prefs.edit().apply {
+        prefs.edit {
             if (newColor == null) remove(keyColor) else putInt(keyColor, colorArgb!!)
-        }.apply()
+        }
     }
 
     fun setSize(sp: Float) {
         sizeSp = sp.coerceIn(minSizeSp, maxSizeSp)
-        prefs.edit().putFloat(keySize, sizeSp).apply()
+        prefs.edit { putFloat(keySize, sizeSp) }
     }
 
     private companion object {
