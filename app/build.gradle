@@ -11,8 +11,11 @@ android {
         applicationId "com.aventure.desdice.histoiresmultiples"
         minSdk 24
         targetSdk 36
-        versionCode 1
-        versionName "1.0"
+        // Valeurs par defaut pour les builds locaux/debug. Le workflow "Release signee"
+        // les remplace (VERSION_CODE = numero du run, VERSION_NAME = version saisie) :
+        // un .aab ou un APK mis a jour doit toujours avoir un versionCode plus grand.
+        versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
+        versionName System.getenv("VERSION_NAME") ?: "1.0"
 
         // Filtrage d'ABI : couvre les appareils 64 bits recents + emulateurs.
         // Tu peux elargir/retirer ce bloc pour couvrir armeabi-v7a/x86
@@ -22,10 +25,33 @@ android {
         }
     }
 
+    // Signature du build release : lue dans des variables d'environnement, fournies par le
+    // workflow "Release signee" a partir des secrets GitHub. Sans elles (build debug, pull
+    // request, poste local), le build release reste possible mais NON signe.
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("KEYSTORE_PATH")
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 : reduit et obfusque le code. Les regles de app/proguard-rules.pro
+            // protegent ce qui est lu par reflexion (voir ce fichier).
+            minifyEnabled true
+            // shrinkResources reste VOLONTAIREMENT desactive : l'appli cherche des polices
+            // (getIdentifier "font") et des musiques (R.raw) par leur nom, ce qu'un
+            // nettoyage des ressources supprimerait.
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (System.getenv("KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             // Le build "debug" est celui produit par le workflow GitHub Actions.
