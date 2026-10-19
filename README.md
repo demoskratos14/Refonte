@@ -540,7 +540,7 @@ Seul l'APK **debug** est produit (pas de signature de release configurée).
 | Compose BOM | 2026.09.00 |
 | Gradle (dans le workflow) | 9.6.0 |
 | JDK | 17 |
-| minSdk / targetSdk / compileSdk | 24 / 36 / 37 |
+| minSdk / targetSdk / compileSdk | 24 / 37 / 37 |
 | ABI | arm64-v8a, x86_64 |
 
 Les versions des bibliothèques sont dans `gradle/libs.versions.toml` (celles d'AGP et de

@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId "com.aventure.desdice.histoiresmultiples"
         minSdk 24
-        targetSdk 36
+        targetSdk 37
         // Valeurs par defaut pour les builds locaux/debug. Le workflow "Release signee"
         // les remplace (VERSION_CODE = numero du run, VERSION_NAME = version saisie) :
         // un .aab ou un APK mis a jour doit toujours avoir un versionCode plus grand.
