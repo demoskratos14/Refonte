@@ -1,9 +1,7 @@
 // GameEngine.kt
 // Moteur de jeu : point d'entrée unique de la logique, appelé par GameViewModel.
 //
-// Il couvre :
-//   - construction de l'état de session envoyé à Compose (sessionToJson,
-//     y compris les infos de totem)
+// Il garde l'état courant (histoire choisie, session) et couvre directement :
 //   - navigation entre histoires : listStories/switchStory/selectStory/
 //     deleteStory/createStory
 //   - lancers de dés : roll/undo/clear
@@ -13,16 +11,16 @@
 //   - totems ajoutés en cours de partie (avec image, via ImageUtils) :
 //     addCustomTotem/removeCustomTotem, énergie totémique : useTotemEnergy
 //   - journal : addStoryEntry, completeSideQuest
-//   - narration IA (via MistralClient) : maybeUpdateStoryDigest, runAiNarrator,
-//     sendAiMessage/sendFullPrompt/resetAiConversation ; les textes envoyés à
-//     l'IA (buildMechanicsContext/buildFullPrompt/buildAiKickoffMessage...)
-//     sont construits dans PromptBuilder.kt
-//   - configuration Mistral : getConfigScreenState, get/setMistralKey,
-//     get/setMistralModel (simple délégation à MistralConfig.kt)
-//   - export/import : exportJournal (via JournalExporter), exportIdentity/
-//     importIdentity/applyImportedProgress
-//   - dés classiques : classicDiceState/classicDiceRoll/classicDiceClear
-//     (simple délégation à ClassicDiceEngine.kt)
+//   - import d'une progression : applyImportedProgress
+//
+// Le reste est délégué à des classes du même package, sans changer l'API publique
+// de GameEngine (les méthodes publiques gardent leur nom et leur signature) :
+//   - SessionJson.kt      : état de session envoyé à Compose (sessionToJson)
+//   - PromptBuilder.kt    : textes envoyés à l'IA (mécaniques, rappels, prompt complet)
+//   - AiNarrator.kt       : appels à Mistral (runAiNarrator) et digest du journal
+//   - MistralConfig.kt    : clé API (chiffrée) et modèle Mistral
+//   - StoryTransfer.kt    : exports (journal, identité, progression) et analyse d'un import
+//   - ClassicDiceEngine.kt : dés classiques (page indépendante des histoires)
 //
 // NB : TOTEMS/ALLY_HELP_TEXT (dérivés de STORIES, les histoires codées en dur)
 // sont toujours vides dans l'appli actuelle — voir StoryRegistry.kt. Le code
@@ -60,91 +58,11 @@ class GameEngine(
     private fun emptySession(): DiceSession = DiceSession(File(baseDir, "dice_state.json"))
 
     // ------------------------------------------------------------------
-    // Construction de l'état envoyé à Compose (sessionToJson)
+    // État envoyé à Compose (construit dans SessionJson.kt)
     // ------------------------------------------------------------------
 
-    /**
-     * Fiche de chaque totem/symbole cliquable : totems ajoutés par le
-     * joueur + symboles "relance" (patte/baguette) sans fiche dédiée.
-     * TOTEMS et ALLY_HELP_TEXT (histoires codées en dur) sont toujours
-     * vides ici — voir le commentaire en tête de fichier.
-     */
-    private fun totemInfoJson(sess: DiceSession): JSONObject {
-        val info = JSONObject()
-        for (t in sess.customTotems) {
-            info.put(
-                t.key,
-                JSONObject().apply {
-                    put("icon", t.emoji)
-                    put("label", t.label.ifEmpty { t.key })
-                    put("powers", JSONArray(t.powers))
-                    put("special", t.special)
-                }
-            )
-        }
-        for ((key, sym) in sess.allSymbols()) {
-            if (info.has(key)) continue
-            if (key != "patte" && key != "baguette") continue
-            info.put(
-                key,
-                JSONObject().apply {
-                    put("icon", sym.emoji)
-                    put("label", sym.label.ifEmpty { key })
-                    put("powers", JSONArray())
-                    put("special", "\uD83D\uDD04 Second Souffle : relance immédiatement le dernier lancer de réussite.")
-                    put("badge", false)
-                }
-            )
-        }
-        return info
-    }
-
-    private fun symbolInfoJson(key: String, sym: SymbolInfo): JSONObject = JSONObject().apply {
-        put("key", key)
-        put("emoji", sym.emoji)
-        put("label", sym.label)
-        put("image", sym.image ?: JSONObject.NULL)
-        put("powers", JSONArray(sym.powers))
-        put("special", sym.special)
-        put("is_custom", sym.isCustom)
-    }
-
-    fun sessionToJson(sess: DiceSession): JSONObject {
-        val lastRecord = sess.history.lastOrNull()
-        val lastResult = lastRecord?.toJson()?.apply {
-            put("description", sess.describeRecord(lastRecord))
-        }
-        val totemEnergyJson = JSONObject()
-        for ((k, v) in sess.totemEnergy) totemEnergyJson.put(k, v)
-
-        return JSONObject().apply {
-            put("history", JSONArray(sess.history.map { it.toJson() }))
-            put("next_id", sess.nextId)
-            put("pip_symbol", sess.pipSymbol)
-            put("pip_mode", sess.pipMode)
-            put("enabled_symbols", JSONArray(sess.enabledSymbols))
-            put("custom_totems", JSONArray(sess.customTotems.map { it.toJson() }))
-            put("allowed_success_values", JSONArray(sess.allowedSuccessValues))
-            put("allowed_fate_keys", JSONArray(sess.allowedFateKeys))
-            put("totem_energy", totemEnergyJson)
-            put("threat_level", sess.threatLevel)
-            put("side_quests", JSONArray(sess.sideQuests.map { it.toJson() }))
-            put("next_quest_id", sess.nextQuestId)
-            put("story_log", JSONArray(sess.storyLog))
-            put("ai_conversation", JSONArray(sess.aiConversation.map { it.toJson() }))
-            put("story_summary", sess.storySummary)
-            put("last_journal_index", sess.lastJournalIndex)
-            put("last_ai_sent_id", sess.lastAiSentId)
-            put("all_symbols", JSONArray(sess.allSymbols().map { (k, v) -> symbolInfoJson(k, v) }))
-            put("story_title", currentStory?.title ?: "")
-            put(
-                "header_title",
-                currentStory?.headerTitle?.ifEmpty { "Les Dés de l'Aventure" } ?: "Les Dés de l'Aventure"
-            )
-            put("totem_info", totemInfoJson(sess))
-            put("last_result", lastResult ?: JSONObject.NULL)
-        }
-    }
+    /** Fiche de chaque totem/symbole, historique, quêtes, journal... : voir SessionJson.kt. */
+    fun sessionToJson(sess: DiceSession): JSONObject = SessionJson.build(sess, currentStory)
 
     /** État courant, ou session vide si rien n'est sélectionné. */
     fun currentSessionJson(): JSONObject = sessionToJson(session ?: emptySession())
