@@ -141,6 +141,17 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun mechanicsContext_withoutHeroNames_saysTheStoryIsForThePlayer() {
+        for (auto in listOf(true, false)) {
+            val text = PromptBuilder.buildMechanicsContext(sess, story(names = emptyList()), auto)
+            assertHas(text, "adressée au joueur. Mécaniques")
+            assertLacks(text, "à le joueur")
+        }
+        // Prénoms vides ou blancs : même résultat que sans prénom.
+        assertHas(PromptBuilder.buildMechanicsContext(sess, story(names = listOf("", "  ")), true), "adressée au joueur.")
+    }
+
+    @Test
     fun mechanicsContext_listsTheTotemsOrSaysThereAreNone() {
         assertHas(PromptBuilder.buildMechanicsContext(sess, story(), true), "(aucun pour l'instant -- tout reste à découvrir en jouant)")
         sess.addCustomTotem("Patte magique", "vol, force", "Souffle de feu")
@@ -300,7 +311,8 @@ class PromptBuilderTest {
     fun kickoff_withoutHeroes_talksToThePlayer() {
         val text = PromptBuilder.buildAiKickoffMessage(sess, story())
         assertHas(text, "Aucun chapitre n'a encore été joué.")
-        assertHas(text, "le joueur")
+        assertHas(text, "présente la situation de départ du joueur")
+        assertLacks(text, "de le joueur")
     }
 
     @Test

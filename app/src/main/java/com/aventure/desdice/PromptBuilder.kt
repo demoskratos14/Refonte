@@ -43,6 +43,16 @@ object PromptBuilder {
     }
 
     /**
+     * "à Alix" / "de Alix et Nao" : le nom (ou la liste) précédé de la préposition demandée ("à"
+     * ou "de"). Sans prénom, on dit "au joueur" / "du joueur" -- et non "à le joueur" / "de le
+     * joueur", ce que donnerait joinProtagonistNames() collé derrière la préposition.
+     */
+    private fun withPreposition(preposition: String, names: List<String>): String {
+        if (names.any { it.isNotBlank() }) return "$preposition ${joinProtagonistNames(names)}"
+        return if (preposition == "à") "au joueur" else "du joueur"
+    }
+
+    /**
      * Consigne d'adressage à donner à l'IA : "tu" pour un seul héros ; pour plusieurs, un mélange
      * de vouvoiement collectif (action commune) et de tutoiement par prénom (action ou choix
      * distinct d'un héros) -- en particulier au moment des choix et des lancers de dés, où
@@ -65,16 +75,16 @@ object PromptBuilder {
     }
 
     fun buildMechanicsContext(sess: DiceSession, story: StoryEntry?, autoMode: Boolean): String {
-        val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
+        val addressedTo = withPreposition("à", story?.protagonistNames ?: emptyList())
         val lines = mutableListOf<String>()
         lines += "=== CONTEXTE IA NARRATRICE ==="
         lines += if (autoMode) {
-            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée à " +
-                "$protagonistRef. Mécaniques ci-dessous ; l'histoire se poursuit directement dans " +
+            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée " +
+                "$addressedTo. Mécaniques ci-dessous ; l'histoire se poursuit directement dans " +
                 "cette conversation, événement par événement."
         } else {
-            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée à " +
-                "$protagonistRef. Mécaniques ci-dessous, puis l'histoire déjà vécue."
+            "Narrateur d'une histoire héroïque interactive, 2e personne ('tu'), adressée " +
+                "$addressedTo. Mécaniques ci-dessous, puis l'histoire déjà vécue."
         }
         lines += ""
         lines += "DÉ DE RÉUSSITE (1-6, jamais de fin d'histoire même sur un 1, toujours moyen de se rattraper) :"
@@ -359,11 +369,11 @@ object PromptBuilder {
             lines += "Commence maintenant le prochain chapitre de l'histoire, dans la continuité " +
                 "directe de ce qui précède."
         } else {
-            val protagonistRef = joinProtagonistNames(story?.protagonistNames ?: emptyList())
+            val startOf = withPreposition("de", story?.protagonistNames ?: emptyList())
             lines += ""
             lines += "Aucun chapitre n'a encore été joué. Commence maintenant le tout premier " +
-                "chapitre de cette aventure : plante le décor et présente la situation de départ de " +
-                "$protagonistRef, puis demande-moi le premier lancer dès que la situation l'exige."
+                "chapitre de cette aventure : plante le décor et présente la situation de départ " +
+                "$startOf, puis demande-moi le premier lancer dès que la situation l'exige."
         }
         return lines.joinToString("\n")
     }
