@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Réglages du lint (lu automatiquement : app/lint.xml). Ici, uniquement des FAUX POSITIFS connus. -->
 <lint>
+    <!-- shrinkResources reste VOLONTAIREMENT desactive (voir app/build.gradle) : l'appli cherche des
+         polices (getIdentifier "font") et des musiques (R.raw) par leur nom. -->
+    <issue id="NotShrinkingResources" severity="ignore" />
+
     <!-- Musiques res/raw/music_*.ogg : MusicPlayer les détecte par leur nom (préfixe "music_"),
          le lint ne voit donc pas qu'elles sont utilisées. -->
     <issue id="UnusedResources">
