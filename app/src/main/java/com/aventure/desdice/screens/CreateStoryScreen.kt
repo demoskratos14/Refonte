@@ -144,7 +144,7 @@ fun CreateStoryScreen(
     // héros) ; les champs laissés vides sont filtrés au moment de la création (submit()).
     var protagonistNames by remember { mutableStateOf(listOf("")) }
     // "short" (~10 echanges), "medium" (20-30) ou "long" (illimite, en
-    // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "medium"
+    // chapitres) -- voir PromptBuilder.buildStoryLengthInstructions(). "medium"
     // choisi par defaut pour une NOUVELLE histoire (contrairement au "long"
     // utilise en repli cote moteur pour les histoires deja existantes) :
     // c'est un choix delibere a faire a la creation, pas une simple valeur
@@ -152,7 +152,7 @@ fun CreateStoryScreen(
     var storyLength by remember { mutableStateOf("medium") }
     // Objectif moral optionnel (patience, fair-play, partage...) : vient se
     // superposer a l'univers/lore ci-dessus sans le remplacer -- voir
-    // GameEngine.buildMechanicsContext(). Vide par defaut : aucune histoire
+    // PromptBuilder.buildMechanicsContext(). Vide par defaut : aucune histoire
     // n'est obligee d'en avoir un.
     var moralGoal by remember { mutableStateOf("") }
     var totemLabel by remember { mutableStateOf("") }
