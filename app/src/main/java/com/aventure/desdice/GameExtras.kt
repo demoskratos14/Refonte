@@ -275,7 +275,7 @@ fun JournalSection(
 
         // Saisie manuelle : masquee quand l'API (clé Mistral) est active,
         // puisque c'est alors elle qui ecrit le journal automatiquement
-        // (voir GameEngine.maybeUpdateStoryDigest). Lecture et export
+        // (voir AiNarrator.maybeUpdateStoryDigest). Lecture et export
         // restent toujours utiles, donc toujours affiches plus bas.
         if (!hasKey) {
             ComicTextField(

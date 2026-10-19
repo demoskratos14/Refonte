@@ -100,13 +100,13 @@ data class StoryMeta(
     val protagonistNames: List<String>,
     val saveFile: String,
     // "short" (~10 échanges), "medium" (20-30) ou "long" (illimité, en
-    // chapitres) -- voir GameEngine.buildStoryLengthInstructions(). "long"
+    // chapitres) -- voir PromptBuilder.buildStoryLengthInstructions(). "long"
     // par défaut (y compris pour toute histoire créée avant l'ajout de ce
     // champ, absent de son JSON) : c'est la valeur la plus proche du
     // comportement d'origine (aucune limite), chapitres en plus.
     val storyLength: String = "long",
     // Thème/valeur optionnel autour duquel construire le récit (patience,
-    // fair-play, partage...) -- voir GameEngine.buildMechanicsContext().
+    // fair-play, partage...) -- voir PromptBuilder.buildMechanicsContext().
     // Chaîne vide par défaut (y compris pour toute histoire créée avant
     // l'ajout de ce champ) : aucun objectif moral n'est alors transmis à
     // l'IA, comportement identique à avant l'ajout de ce champ.

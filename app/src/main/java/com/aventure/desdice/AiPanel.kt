@@ -83,7 +83,7 @@ import kotlinx.coroutines.launch
  * des réglages du texte courant et des titres.
  *
  * Quand la réponse de l'IA se termine par des lignes "OPTION: ..." (voir la consigne
- * PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext), ces lignes
+ * PROPOSITIONS D'ACTIONS CLIQUABLES de PromptBuilder.buildMechanicsContext), ces lignes
  * sont retirées du texte affiché et proposées sous forme de boutons juste en dessous
  * du dernier message ; le joueur garde toujours le champ de saisie pour répondre
  * librement au lieu d'en choisir une.
@@ -139,7 +139,7 @@ private fun buildChoicesSpeech(choices: List<String>): String {
 }
 
 // Ligne "OPTION: <action>" ajoutée par l'IA en fin de réponse (voir la consigne
-// PROPOSITIONS D'ACTIONS CLIQUABLES de GameEngine.buildMechanicsContext) : tiret ou
+// PROPOSITIONS D'ACTIONS CLIQUABLES de PromptBuilder.buildMechanicsContext) : tiret ou
 // puce éventuels tolérés devant, tout le reste de la ligne pris comme intitulé du bouton.
 // Tolère le gras markdown (**OPTION:** ...), une numérotation (OPTION 1 :) et une puce.
 private val OPTION_LINE = Regex(
