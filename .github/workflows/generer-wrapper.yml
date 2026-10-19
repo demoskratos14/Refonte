@@ -33,7 +33,7 @@ jobs:
           packages: "platform-tools"
 
       - name: Préparer Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ inputs.version }}
 
