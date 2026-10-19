@@ -450,6 +450,7 @@ DesDeAventure/
         │   ├── StoryTransfer.kt      # exports (journal, identité, progression) et import, délégué par GameEngine
         │   ├── PromptBuilder.kt      # textes envoyés à l'IA (mécaniques, rappels, prompt complet, kickoff)
         │   ├── AiNarrator.kt         # appels à Mistral : narration, nettoyage des balises, digest du journal
+        │   ├── SessionJson.kt        # état de session envoyé à Compose (sessionToJson)
         │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
         │   ├── MistralClient.kt      # client API Mistral
         │   ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
