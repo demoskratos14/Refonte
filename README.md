@@ -20,8 +20,10 @@ d'aide** expliquent, écran par écran, comment s'en servir.
    ensuite fait l'objet d'une refonte complète (2026) : plus de HTML, chaque
    écran est un composable Compose.
 2. Le moteur de jeu est écrit en **Kotlin pur** (`DiceSession.kt`,
-   `StoryRegistry.kt`, `GameEngine.kt`, `ImageUtils.kt`, `MistralClient.kt`,
-   `JournalExporter.kt`). Tous les écrans (`MainGameScreen.kt` et les
+   `StoryRegistry.kt`, `GameEngine.kt` et les classes qu'il délègue :
+   `SessionJson.kt`, `PromptBuilder.kt`, `AiNarrator.kt`, `MistralConfig.kt`,
+   `StoryTransfer.kt`, `ClassicDiceEngine.kt` ; puis `ImageUtils.kt`,
+   `MistralClient.kt`, `JournalExporter.kt`). Tous les écrans (`MainGameScreen.kt` et les
    composables qu'il appelle, `ClassicDiceScreen.kt`, `ConfigureKeyScreen.kt`,
    `CreateStoryScreen.kt`, `StorySelectorScreen.kt`) passent uniquement par
    `GameViewModel`/`GameEngine`. Le projet n'a aucune dépendance native ni
@@ -53,6 +55,12 @@ d'aide** expliquent, écran par écran, comment s'en servir.
   `GameViewModel` expose une méthode par action, qui appelle `GameEngine`
   puis range le résultat dans `GameViewModel.sessionState` (un `StateFlow`) ;
   tous les écrans se redessinent à partir de lui.
+  `GameEngine` garde l'état courant (histoire, session), la navigation, les
+  lancers et les totems ; le reste est délégué, sans changer son API publique :
+  état envoyé à Compose (`SessionJson.kt`), textes envoyés à l'IA
+  (`PromptBuilder.kt`), appels à Mistral et digest du journal
+  (`AiNarrator.kt`), clé et modèle (`MistralConfig.kt`), exports et import
+  (`StoryTransfer.kt`), dés classiques (`ClassicDiceEngine.kt`).
 - Les erreurs de l'IA ne font jamais perdre un lancer : elles reviennent
   dans le champ `ai_error` du JSON et s'affichent sous la narration.
 - **Exception** : `exportJournal()` et `exportIdentity()` renvoient des
@@ -140,7 +148,7 @@ enchaîne création, totems et progression importée, puis ferme l'écran.
 
 **Longueur de l'histoire** (`storyLength`, propagé jusqu'à
 `StoryEntry.storyLength` et transmis à l'IA via
-`GameEngine.buildStoryLengthInstructions()`) :
+`PromptBuilder.buildStoryLengthInstructions()`) :
 
 | Valeur | Libellé | Effet |
 |---|---|---|
@@ -179,7 +187,7 @@ après chaque `load()` (`switchStory`, `resetStoryToOrigin`) ; elle est aussi
 (`normalizeStoryLength()`).
 
 **Ce que l'IA reçoit.**
-- Le message système (`GameEngine.buildMechanicsContext()`) décrit le rôle du
+- Le message système (`PromptBuilder.buildMechanicsContext()`) décrit le rôle du
   ❓ pour la longueur de l'histoire.
 - À chaque lancer, `DiceSession.describeRecord()` (via `fateDescription()` et
   `comboNote()` pour les combos 1/6 + ❓) décrit ce qui se passe : événement
@@ -208,7 +216,7 @@ après chaque `load()` (`switchStory`, `resetStoryToOrigin`) ; elle est aussi
 mettre en avant à travers ses situations (patience, fair-play, partage,
 courage face à la peur, entraide...), en plus de l'univers décrit dans le
 texte de lore — jamais à sa place. Transmis à l'IA dans
-`GameEngine.buildMechanicsContext()` par une instruction dédiée
+`PromptBuilder.buildMechanicsContext()` par une instruction dédiée
 (« OBJECTIF MORAL DU RÉCIT »), juste après les paragraphes de lore, avec la
 consigne explicite de le faire vivre par le récit (situations, personnages,
 choix) et de ne jamais le tourner en discours moralisateur direct. Laissé
