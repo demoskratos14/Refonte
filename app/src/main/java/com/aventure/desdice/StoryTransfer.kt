@@ -147,6 +147,7 @@ class StoryTransfer(
             put("story_summary", parsed.storySummary)
             put("story_length", parsed.storyLength)
             put("moral_goal", parsed.moralGoal)
+            put("player_age", parsed.playerAge)
         }
     }
 }

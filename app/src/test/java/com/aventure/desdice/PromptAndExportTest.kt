@@ -438,4 +438,60 @@ class PromptAndExportTest {
         assertEquals("Chat", chat.getString("label"))
         assertEquals(listOf("miaule", "ronronne"), strings(chat.getJSONArray("powers")))
     }
+
+    // ---- cadre de contenu selon l'âge ----
+
+    @Test
+    fun fullPrompt_withoutAge_usesTheChildFrame() {
+        val prompt = promptFor()
+        assertHas(prompt, "CADRE DE SÉCURITÉ")
+        assertLacks(prompt, "CADRE DE CONTENU")
+        assertLacks(prompt, "le plus jeune joueur a")
+    }
+
+    @Test
+    fun fullPrompt_childAge_isMentionedAndAdaptsTheLanguage() {
+        val prompt = promptFor(meta().copy(playerAge = 6))
+        assertHas(prompt, "CADRE DE SÉCURITÉ")
+        assertHas(prompt, "un enfant de 6 ans")
+        assertHas(prompt, "phrases courtes et mots simples")
+        assertHas(prompt, "emojis")
+    }
+
+    @Test
+    fun fullPrompt_age11_isStillTheChildFrame_andAge12IsTheTeenFrame() {
+        assertHas(promptFor(meta().copy(playerAge = 11)), "CADRE DE SÉCURITÉ")
+        assertHas(promptFor(meta().copy(playerAge = 12)), "CADRE DE CONTENU — ADOLESCENT")
+    }
+
+    @Test
+    fun fullPrompt_teenFrame_allowsFearButKeepsTheLimits() {
+        val prompt = promptFor(meta().copy(playerAge = 14))
+        assertHas(prompt, "TON DU RÉCIT")
+        assertHas(prompt, "CADRE DE CONTENU — ADOLESCENT")
+        assertHas(prompt, "le plus jeune joueur a 14 ans")
+        assertHas(prompt, "installer du suspense, de la peur")
+        assertHas(prompt, "contenu sexuel ou érotique")
+        assertHas(prompt, "Ne demande jamais d'information personnelle")
+        assertLacks(prompt, "CADRE DE SÉCURITÉ")
+    }
+
+    @Test
+    fun fullPrompt_adultFrame_allowsDarkThemesButNoExplicitSexualContent() {
+        val prompt = promptFor(meta().copy(playerAge = 30))
+        assertHas(prompt, "TON DU RÉCIT")
+        assertHas(prompt, "CADRE DE CONTENU — ADULTE")
+        assertHas(prompt, "horreur")
+        assertHas(prompt, "aucun contenu sexuel explicite")
+        assertHas(prompt, "aucune sexualisation de mineurs")
+        assertHas(prompt, "Ne demande jamais d'information personnelle")
+        assertLacks(prompt, "CADRE DE SÉCURITÉ")
+    }
+
+    @Test
+    fun fullPrompt_teenAndAdultFrames_tellTheAiToSoftenIfThePlayerSeemsYounger() {
+        assertHas(promptFor(meta().copy(playerAge = 15)), "nettement plus jeune que l'âge déclaré")
+        assertHas(promptFor(meta().copy(playerAge = 40)), "nettement plus jeune que l'âge déclaré")
+        assertLacks(promptFor(meta().copy(playerAge = 8)), "nettement plus jeune que l'âge déclaré")
+    }
 }

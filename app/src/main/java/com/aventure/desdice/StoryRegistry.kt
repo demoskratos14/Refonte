@@ -110,7 +110,11 @@ data class StoryMeta(
     // Chaîne vide par défaut (y compris pour toute histoire créée avant
     // l'ajout de ce champ) : aucun objectif moral n'est alors transmis à
     // l'IA, comportement identique à avant l'ajout de ce champ.
-    val moralGoal: String = ""
+    val moralGoal: String = "",
+    // Âge du plus jeune joueur (voir AgeTier.kt) : choisit le cadre de contenu donné à l'IA.
+    // 0 (PlayerAge.UNKNOWN) par défaut, y compris pour toute histoire créée avant l'ajout
+    // de ce champ : palier enfant, le plus prudent.
+    val playerAge: Int = PlayerAge.UNKNOWN
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("slug", slug)
@@ -126,6 +130,7 @@ data class StoryMeta(
         put("save_file", saveFile)
         put("story_length", storyLength)
         put("moral_goal", moralGoal)
+        put("player_age", playerAge)
     }
     companion object {
         /** null si "slug" est absent/vide. */
@@ -145,7 +150,8 @@ data class StoryMeta(
                 protagonistNames = readProtagonistNames(o),
                 saveFile = o.optString("save_file", "dice_state_$slug.json"),
                 storyLength = o.optString("story_length", "long"),
-                moralGoal = o.optString("moral_goal", "")
+                moralGoal = o.optString("moral_goal", ""),
+                playerAge = PlayerAge.normalize(o.optInt("player_age", PlayerAge.UNKNOWN))
             )
         }
     }
@@ -183,7 +189,8 @@ data class StoryEntry(
     val seedStateFile: String? = null,
     val defaultTotem: DefaultTotem?,
     val storyLength: String = "long",
-    val moralGoal: String = ""
+    val moralGoal: String = "",
+    val playerAge: Int = PlayerAge.UNKNOWN
 )
 
 /** Un totem acquis en cours de partie, tel qu'embarqué dans un export d'identité. */
@@ -216,7 +223,8 @@ data class StoryIdentityImport(
     val storyLog: JSONArray,
     val storySummary: String,
     val storyLength: String,
-    val moralGoal: String
+    val moralGoal: String,
+    val playerAge: Int = PlayerAge.UNKNOWN
 )
 
 // ------------------------------------------------------------------------
@@ -297,7 +305,8 @@ class StoryRegistry(private val baseDir: File) {
         totemSpecial: String = "",
         protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
-        moralGoal: String = ""
+        moralGoal: String = "",
+        playerAge: Int = PlayerAge.UNKNOWN
     ): String {
         val finalTitle = title.trim().ifEmpty { "Nouvelle histoire" }
         val slug = slugifyStoryTitle(finalTitle)
@@ -320,7 +329,8 @@ class StoryRegistry(private val baseDir: File) {
             protagonistNames = protagonistNames.map { it.trim() }.filter { it.isNotEmpty() },
             saveFile = "dice_state_$slug.json",
             storyLength = storyLength,
-            moralGoal = moralGoal.trim()
+            moralGoal = moralGoal.trim(),
+            playerAge = PlayerAge.normalize(playerAge)
         )
         val metaList = loadCustomMeta().toMutableList()
         metaList.add(meta)
@@ -412,7 +422,8 @@ class StoryRegistry(private val baseDir: File) {
                 special = meta.totemSpecial
             ),
             storyLength = meta.storyLength,
-            moralGoal = meta.moralGoal
+            moralGoal = meta.moralGoal,
+            playerAge = meta.playerAge
         )
     }
 
@@ -473,6 +484,7 @@ class StoryRegistry(private val baseDir: File) {
             put("story_summary", storySummary ?: "")
             put("story_length", meta.storyLength)
             put("moral_goal", meta.moralGoal)
+            put("player_age", meta.playerAge)
         }
     }
 
@@ -557,7 +569,8 @@ class StoryRegistry(private val baseDir: File) {
             storyLog = storyLog,
             storySummary = data.optString("story_summary", "").trim(),
             storyLength = data.optString("story_length", "long"),
-            moralGoal = data.optString("moral_goal", "").trim()
+            moralGoal = data.optString("moral_goal", "").trim(),
+            playerAge = PlayerAge.normalize(data.optInt("player_age", PlayerAge.UNKNOWN))
         )
     }
 }

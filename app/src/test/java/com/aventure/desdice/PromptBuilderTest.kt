@@ -41,7 +41,8 @@ class PromptBuilderTest {
         names: List<String> = emptyList(),
         lore: List<String> = emptyList(),
         moralGoal: String = "",
-        fixedAlliesLine: String = ""
+        fixedAlliesLine: String = "",
+        playerAge: Int = 0
     ) = StoryEntry(
         slug = "aventure",
         title = "L'aventure",
@@ -55,7 +56,8 @@ class PromptBuilderTest {
         loreParagraphs = lore,
         defaultTotem = null,
         storyLength = length,
-        moralGoal = moralGoal
+        moralGoal = moralGoal,
+        playerAge = playerAge
     )
 
     private fun assertHas(text: String, fragment: String) =
@@ -353,5 +355,33 @@ class PromptBuilderTest {
             val record = RollRecord(id = 1, type = "fate", success = null, fate = face.key)
             assertEquals(sess.describeRecord(record), PromptBuilder.buildAiEventText(sess, record))
         }
+    }
+
+    @Test
+    fun contentFrame_isTheSameInAutoAndManualMode_perTier() {
+        for (age in listOf(0, 8, 14, 25)) {
+            val auto = PromptBuilder.buildMechanicsContext(sess, story(playerAge = age), true)
+            val manual = PromptBuilder.buildMechanicsContext(sess, story(playerAge = age), false)
+            val frame = PromptBuilder.buildContentFrame(age).joinToString("\n")
+            assertHas(auto, frame)
+            assertHas(manual, frame)
+        }
+    }
+
+    @Test
+    fun contentFrame_framesDifferByTier() {
+        val child = PromptBuilder.buildContentFrame(8).joinToString("\n")
+        val teen = PromptBuilder.buildContentFrame(14).joinToString("\n")
+        val adult = PromptBuilder.buildContentFrame(30).joinToString("\n")
+        assertTrue(child != teen && teen != adult && child != adult)
+        assertHas(child, "CADRE DE SÉCURITÉ")
+        assertHas(teen, "CADRE DE CONTENU — ADOLESCENT")
+        assertHas(adult, "CADRE DE CONTENU — ADULTE")
+    }
+
+    @Test
+    fun contentFrame_outOfRangeAges_followTheNormalisedTier() {
+        assertEquals(PromptBuilder.buildContentFrame(0), PromptBuilder.buildContentFrame(-7))
+        assertEquals(PromptBuilder.buildContentFrame(110), PromptBuilder.buildContentFrame(900))
     }
 }

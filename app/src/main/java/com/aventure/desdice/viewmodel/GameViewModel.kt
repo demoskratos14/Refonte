@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aventure.desdice.FATE_FACES
 import com.aventure.desdice.GameEngine
 import com.aventure.desdice.KeystoreSecretCipher
+import com.aventure.desdice.PlayerAge
 import com.aventure.desdice.model.Story
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -178,7 +179,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         totemImageFilename: String,
         protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
-        moralGoal: String = ""
+        moralGoal: String = "",
+        playerAge: Int = PlayerAge.UNKNOWN
     ): JSONObject = withContext(Dispatchers.IO) {
         mutex.withLock {
             engine.createStory(
@@ -193,7 +195,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 totemImageFilename = totemImageFilename,
                 protagonistNames = protagonistNames,
                 storyLength = storyLength,
-                moralGoal = moralGoal
+                moralGoal = moralGoal,
+                playerAge = playerAge
             ).also { loadSessionState(it) }
         }
     }

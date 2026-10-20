@@ -152,7 +152,7 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
                 (if (isLastChunk && finalChapter) "le tout dernier extrait (celui qui clôt définitivement l'histoire) "
                 else if (isLastChunk) "la fin d'un chapitre (l'extrait se termine sur la conclusion du chapitre) "
                 else "un extrait récent ") +
-                "d'une histoire de jeu de rôle pour enfant (en français) et dois produire DEUX textes " +
+                "d'une histoire de jeu de rôle (en français) et dois produire DEUX textes " +
                 "bien distincts, chacun introduit par sa balise exacte sur sa propre ligne, rien " +
                 "d'autre avant/après/entre :\n" +
                 "$digestChapterTag\n" +

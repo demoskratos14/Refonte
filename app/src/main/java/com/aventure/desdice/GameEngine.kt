@@ -192,7 +192,8 @@ class GameEngine(
         totemImageFilename: String,
         protagonistNames: List<String> = emptyList(),
         storyLength: String = "long",
-        moralGoal: String = ""
+        moralGoal: String = "",
+        playerAge: Int = PlayerAge.UNKNOWN
     ): JSONObject {
         val savedTotemFilename = if (totemImageBytes.isNotEmpty()) {
             saveTotemImageBytes(totemImageBytes, totemImageFilename)
@@ -210,7 +211,8 @@ class GameEngine(
             totemSpecial = totemSpecial,
             protagonistNames = protagonistNames,
             storyLength = storyLength,
-            moralGoal = moralGoal
+            moralGoal = moralGoal,
+            playerAge = playerAge
         )
         switchStory(slug)
         return currentSessionJson()

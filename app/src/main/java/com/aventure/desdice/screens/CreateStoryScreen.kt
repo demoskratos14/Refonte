@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -54,12 +55,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.aventure.desdice.AgeTier
+import com.aventure.desdice.PlayerAge
 import com.aventure.desdice.R
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppTextStyles
@@ -155,6 +159,11 @@ fun CreateStoryScreen(
     // PromptBuilder.buildMechanicsContext(). Vide par defaut : aucune histoire
     // n'est obligee d'en avoir un.
     var moralGoal by remember { mutableStateOf("") }
+    // Age du plus jeune joueur (texte saisi) : determine le cadre de contenu donne a l'IA --
+    // voir AgeTier.kt et PromptBuilder.buildContentFrame(). Vide = histoire pour enfant.
+    var playerAgeText by remember { mutableStateOf("") }
+    // Case a cocher obligatoire pour le palier adulte (18 ans et plus) ; jamais reprise d'un import.
+    var adultConfirmed by remember { mutableStateOf(false) }
     var totemLabel by remember { mutableStateOf("") }
     var totemPowers by remember { mutableStateOf("") }
     var totemSpecial by remember { mutableStateOf("") }
@@ -223,6 +232,8 @@ fun CreateStoryScreen(
                     totemSpecial = parsed.optString("totem_special", "")
                     storyLength = parsed.optString("story_length", "long")
                     moralGoal = parsed.optString("moral_goal", "")
+                    playerAgeText = parsed.optInt("player_age", 0).let { if (it > 0) it.toString() else "" }
+                    adultConfirmed = false
 
                     val bgB64 = parsed.optString("bg_image_b64", "")
                     if (bgB64.isNotEmpty()) {
@@ -290,6 +301,11 @@ fun CreateStoryScreen(
             error = "Le titre est obligatoire."
             return
         }
+        val playerAge = PlayerAge.parse(playerAgeText)
+        if (PlayerAge.tierOf(playerAge) == AgeTier.ADULT && !adultConfirmed) {
+            error = "Pour une histoire adulte, coche « Je confirme avoir 18 ans ou plus »."
+            return
+        }
         val bg = bgUri
         val importedBg = importedBgBytes
         if (bg == null && importedBg == null) {
@@ -331,7 +347,8 @@ fun CreateStoryScreen(
                     totemImageFilename = totemFilename,
                     protagonistNames = protagonistNames.map { it.trim() }.filter { it.isNotEmpty() },
                     storyLength = storyLength,
-                    moralGoal = moralGoal
+                    moralGoal = moralGoal,
+                    playerAge = playerAge
                 )
                 // Le totem de depart est deja pose par createStoryAwait (un
                 // seul, comme toujours). Les totems importes en plus (acquis
@@ -650,6 +667,54 @@ fun CreateStoryScreen(
                     minHeight = 70.dp
                 )
 
+                // --- Age du plus jeune joueur ---
+                SectionTitle("Âge du plus jeune joueur", fonts, textStyles)
+                Text(
+                    text = "L'IA adapte le ton et le niveau de peur à cet âge : histoire pour " +
+                        "enfant (moins de 12 ans), pour adolescent (12 à 17 ans) ou pour adulte " +
+                        "(18 ans et plus). S'il y a plusieurs joueurs, indique l'âge du plus jeune. " +
+                        "Laisser vide = histoire pour enfant.",
+                    fontFamily = fonts.body,
+                    fontSize = textStyles.bodySp(13f),
+                    color = textStyles.bodyColor ?: Color.White,
+                    style = TextStyle(shadow = TextShadow)
+                )
+                ComicTextField(
+                    label = "Âge (en années)",
+                    value = playerAgeText,
+                    onValueChange = { playerAgeText = it.filter { c -> c.isDigit() }.take(3) },
+                    fonts = fonts,
+                    textStyles = textStyles,
+                    enabled = !saving,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                val shownAge = PlayerAge.parse(playerAgeText)
+                val shownTier = PlayerAge.tierOf(shownAge)
+                Text(
+                    text = when {
+                        shownAge == PlayerAge.UNKNOWN -> "Palier : enfant (par défaut)."
+                        shownTier == AgeTier.CHILD -> "Palier : enfant. Dangers et monstres rassurants, vocabulaire adapté à l'âge."
+                        shownTier == AgeTier.TEEN -> "Palier : adolescent. Suspense et peur plus marqués, sans contenu sexuel."
+                        else -> "Palier : adulte. Thèmes sombres autorisés, sans contenu sexuel explicite."
+                    },
+                    fontFamily = fonts.bodyBold,
+                    fontSize = textStyles.bodySp(12f),
+                    color = textStyles.bodyColor ?: Color.White,
+                    style = TextStyle(shadow = TextShadow)
+                )
+                if (shownTier == AgeTier.ADULT) {
+                    ComicButton(
+                        text = if (adultConfirmed) "☑ Je confirme avoir 18 ans ou plus"
+                        else "☐ Je confirme avoir 18 ans ou plus",
+                        onClick = { adultConfirmed = !adultConfirmed },
+                        fonts = fonts,
+                        textStyles = textStyles,
+                        secondary = !adultConfirmed,
+                        enabled = !saving
+                    )
+                }
+
                 // --- Image de fond ---
                 SectionTitle("Image de fond", fonts, textStyles)
                 ComicButton(
@@ -834,7 +899,8 @@ private fun ComicTextField(
     // le texte defile A L'INTERIEUR de la zone (comme un <textarea> HTML
     // avec "resize: none"), plutot que de pousser le reste de la page vers
     // le bas -- utile pour le collage d'un JSON potentiellement tres long.
-    maxHeight: Dp = Dp.Unspecified
+    maxHeight: Dp = Dp.Unspecified,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -860,6 +926,7 @@ private fun ComicTextField(
             onValueChange = onValueChange,
             singleLine = singleLine,
             enabled = enabled,
+            keyboardOptions = keyboardOptions,
             textStyle = TextStyle(
                 fontFamily = fonts.body,
                 fontSize = textStyles.bodySp(15f),

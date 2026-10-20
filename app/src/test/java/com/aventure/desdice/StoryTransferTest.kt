@@ -289,4 +289,21 @@ class StoryTransferTest {
         transfer.importIdentity("""{"title": "Autre histoire", "totem_label": "Chat"}""")
         assertEquals(before, File(dir, "custom_stories.json").readText())
     }
+
+    @Test
+    fun identity_carriesThePlayerAgeThroughExportAndImport() {
+        File(dir, "custom_stories.json").writeText(
+            JSONArray(listOf(meta().copy(playerAge = 15).toJson())).toString()
+        )
+        val withAge = StoryTransfer(StoryRegistry(dir)) { filename -> if (filename == null) "" else "B64:$filename" }
+
+        val raw = String(withAge.exportIdentity("aventure", sess).first, Charsets.UTF_8)
+
+        assertEquals(15, withAge.importIdentity(raw).getInt("player_age"))
+    }
+
+    @Test
+    fun import_withoutAge_givesUnknown() {
+        assertEquals(PlayerAge.UNKNOWN, transfer.importIdentity("ceci n'est pas du JSON").getInt("player_age"))
+    }
 }

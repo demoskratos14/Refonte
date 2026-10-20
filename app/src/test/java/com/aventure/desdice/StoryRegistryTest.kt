@@ -445,4 +445,49 @@ class StoryRegistryTest {
         writeMetas(meta("a"), meta("b"))
         for (slug in registry.allStoryOrder()) assertNotNull(registry.exportStoryIdentity(slug))
     }
+
+    // ---- âge du joueur ----
+
+    @Test
+    fun playerAge_defaultsToUnknown_forOldStories() {
+        val m = StoryMeta.fromJson(JSONObject().put("slug", "vieux"))!!
+        assertEquals(PlayerAge.UNKNOWN, m.playerAge)
+    }
+
+    @Test
+    fun playerAge_roundTripsThroughMetaJson() {
+        assertEquals(14, StoryMeta.fromJson(meta("a").copy(playerAge = 14).toJson())!!.playerAge)
+    }
+
+    @Test
+    fun playerAge_isNormalisedWhenRead() {
+        assertEquals(PlayerAge.MAX_AGE, StoryMeta.fromJson(meta("a").toJson().put("player_age", 500))!!.playerAge)
+        assertEquals(PlayerAge.UNKNOWN, StoryMeta.fromJson(meta("a").toJson().put("player_age", -4))!!.playerAge)
+        assertEquals(PlayerAge.MIN_AGE, StoryMeta.fromJson(meta("a").toJson().put("player_age", 1))!!.playerAge)
+    }
+
+    @Test
+    fun playerAge_reachesTheStoryEntry() {
+        writeMetas(meta("a").copy(playerAge = 15))
+        assertEquals(15, registry.allStories().getValue("a").playerAge)
+    }
+
+    @Test
+    fun playerAge_isExportedAndReimported() {
+        writeMetas(meta("a").copy(playerAge = 9))
+
+        val exported = registry.exportStoryIdentity("a")!!
+
+        assertEquals(9, exported.getInt("player_age"))
+        assertEquals(9, registry.parseIdentityImport(exported.toString()).playerAge)
+    }
+
+    @Test
+    fun identityFileWithoutAge_importsAsUnknown() {
+        writeMetas(meta("a"))
+        val exported = registry.exportStoryIdentity("a")!!
+        exported.remove("player_age")
+
+        assertEquals(PlayerAge.UNKNOWN, registry.parseIdentityImport(exported.toString()).playerAge)
+    }
 }
