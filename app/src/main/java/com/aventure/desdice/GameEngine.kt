@@ -408,7 +408,7 @@ class GameEngine(
     private fun resetStoryToOrigin() {
         val story = currentStory ?: return
         val saveFile = File(baseDir, story.saveFile)
-        if (saveFile.exists()) saveFile.delete()
+        SafeFile.deleteAll(saveFile) // aussi la copie .bak : sinon l'ancienne partie pourrait revenir
         story.seedStateFile?.let { seedPath ->
             val seedFile = File(baseDir, seedPath)
             if (seedFile.exists()) seedFile.copyTo(saveFile, overwrite = true)

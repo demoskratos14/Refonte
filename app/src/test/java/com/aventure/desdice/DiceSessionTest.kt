@@ -165,4 +165,101 @@ class DiceSessionTest {
         assertEquals(session.allowedSuccessValues, reloaded.allowedSuccessValues)
         assertFalse(1 in reloaded.allowedSuccessValues)
     }
+    // ---- sauvegarde abîmée (coupure pendant l'écriture) ----
+
+    private val backupFile get() = File(saveFile.path + ".bak")
+    private val corruptFile get() = File(saveFile.path + ".corrupt")
+
+    @Test
+    fun save_leavesNoTemporaryFile() {
+        session.rollSuccess()
+
+        assertTrue(saveFile.exists())
+        assertFalse(File(saveFile.path + ".tmp").exists())
+    }
+
+    @Test
+    fun save_keepsPreviousVersionAsBackup() {
+        session.rollSuccess()
+        session.rollSuccess()
+
+        assertTrue(backupFile.exists())
+        val previous = DiceSession(backupFile)
+        assertTrue(previous.load())
+        assertEquals(1, previous.history.size)
+    }
+
+    @Test
+    fun load_withCorruptedFile_fallsBackToBackup() {
+        session.rollSuccess()
+        session.rollSuccess()
+        session.rollSuccess()                 // fichier = 3 lancers, copie = 2 lancers
+        saveFile.writeText("{\"history\": [")  // fichier tronqué
+
+        val reloaded = DiceSession(saveFile)
+
+        assertTrue(reloaded.load())
+        assertEquals(2, reloaded.history.size)
+    }
+
+    @Test
+    fun load_withTruncatedFileAndNoBackup_doesNotThrow_andStartsFresh() {
+        session.rollSuccess()
+        val full = saveFile.readText()
+        saveFile.writeText(full.take(full.length / 2))
+
+        val reloaded = DiceSession(saveFile)
+
+        assertFalse(reloaded.load())
+        assertTrue(reloaded.history.isEmpty())
+        assertEquals(1, reloaded.nextId)
+    }
+
+    @Test
+    fun load_withCorruptedFileAndNoBackup_keepsTheCorruptFileAside() {
+        session.rollSuccess()
+        saveFile.writeText("pas du json")
+
+        assertFalse(DiceSession(saveFile).load())
+
+        assertFalse(saveFile.exists())
+        assertEquals("pas du json", corruptFile.readText())
+    }
+
+    @Test
+    fun load_whenBothFileAndBackupAreCorrupted_startsFresh() {
+        session.rollSuccess()
+        session.rollSuccess()
+        saveFile.writeText("abîmé 1")
+        backupFile.writeText("abîmé 2")
+
+        val reloaded = DiceSession(saveFile)
+
+        assertFalse(reloaded.load())
+        assertTrue(reloaded.history.isEmpty())
+    }
+
+    @Test
+    fun load_afterFallback_nextSaveWritesAHealthyFile() {
+        session.rollSuccess()
+        session.rollSuccess()
+        saveFile.writeText("abîmé")
+
+        val reloaded = DiceSession(saveFile)
+        assertTrue(reloaded.load())
+        reloaded.rollSuccess()
+
+        val again = DiceSession(saveFile)
+        assertTrue(again.load())
+        assertEquals(reloaded.history.size, again.history.size)
+    }
+
+    @Test
+    fun load_withDeletedFile_doesNotResurrectFromBackup() {
+        session.rollSuccess()
+        session.rollSuccess()
+        saveFile.delete() // suppression volontaire (réinitialisation) : la copie .bak reste
+
+        assertFalse(DiceSession(saveFile).load())
+    }
 }

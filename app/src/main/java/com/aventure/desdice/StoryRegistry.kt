@@ -240,18 +240,24 @@ class StoryRegistry(private val baseDir: File) {
     // ---------- persistance des métadonnées ----------
 
     private fun loadCustomMeta(): List<StoryMeta> {
-        if (!customStoriesFile.exists()) return emptyList()
-        return try {
-            val arr = JSONArray(customStoriesFile.readText())
-            (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { StoryMeta.fromJson(it) } }
-        } catch (e: Exception) {
-            emptyList()
+        // Fichier abîmé : on essaie la copie de la version précédente (.bak) ; sinon on le met
+        // de côté (.corrupt) pour qu'un prochain enregistrement ne l'écrase pas.
+        for (candidate in SafeFile.candidates(customStoriesFile)) {
+            try {
+                val arr = JSONArray(candidate.readText())
+                return (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { StoryMeta.fromJson(it) } }
+            } catch (e: Exception) {
+                // on passe au candidat suivant
+            }
         }
+        SafeFile.quarantine(customStoriesFile)
+        return emptyList()
     }
 
     private fun saveCustomMeta(metaList: List<StoryMeta>) {
-        customStoriesFile.parentFile?.mkdirs()
-        customStoriesFile.writeText(JSONArray(metaList.map { it.toJson() }).toString(2))
+        SafeFile.writeAtomic(customStoriesFile, JSONArray(metaList.map { it.toJson() }).toString(2)) {
+            JSONArray(it); true
+        }
     }
 
     private fun slugifyStoryTitle(title: String): String {
@@ -340,7 +346,7 @@ class StoryRegistry(private val baseDir: File) {
         }
 
         val saveFile = File(baseDir, meta.saveFile)
-        if (saveFile.exists()) saveFile.delete()
+        SafeFile.deleteAll(saveFile)
 
         // L'image du totem de départ vit dans totem_images/ (partagée avec
         // les totems ajoutés en cours de partie), pas dans custom_story_bg/

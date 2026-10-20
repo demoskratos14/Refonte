@@ -119,6 +119,16 @@ class PromptAndExportTest {
     }
 
     @Test
+    fun fullPrompt_containsTheChildSafetyFrame() {
+        val prompt = promptFor()
+        assertHas(prompt, "CADRE DE SÉCURITÉ")
+        assertHas(prompt, "violence graphique")
+        assertHas(prompt, "Ne demande jamais d'information personnelle")
+        // Le cadre vient après le ton du récit, dans le même bloc de contexte.
+        assertTrue(prompt.indexOf("TON DU RÉCIT") < prompt.indexOf("CADRE DE SÉCURITÉ"))
+    }
+
+    @Test
     fun fullPrompt_manualMode_hasNoAutomaticModeSections() {
         val prompt = promptFor()
         assertHas(prompt, "ATTENDU DE TOI : histoire collaborative et immersive intégrant mes lancers")

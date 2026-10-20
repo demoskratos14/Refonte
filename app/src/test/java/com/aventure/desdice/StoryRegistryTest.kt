@@ -81,6 +81,40 @@ class StoryRegistryTest {
     }
 
     @Test
+    fun corruptedStoriesFile_isKeptAsideInsteadOfBeingOverwritten() {
+        File(dir, "custom_stories.json").writeText("{ceci n'est pas du json")
+
+        assertTrue(registry.allStories().isEmpty())
+
+        assertFalse(File(dir, "custom_stories.json").exists())
+        assertEquals("{ceci n'est pas du json", File(dir, "custom_stories.json.corrupt").readText())
+    }
+
+    @Test
+    fun corruptedStoriesFile_recoversFromBackup() {
+        writeMetas(meta("a"), meta("b"), meta("c"))
+        assertTrue(registry.moveCustomStory("c", -1)) // 2e enregistrement : l'ancien devient la copie .bak
+        assertEquals(listOf("a", "c", "b"), registry.allStoryOrder())
+
+        File(dir, "custom_stories.json").writeText("{tronqué")
+
+        assertEquals(listOf("a", "b", "c"), StoryRegistry(dir).allStoryOrder())
+    }
+
+    @Test
+    fun deletingAStory_alsoDeletesItsSaveBackup() {
+        writeMetas(meta("a"))
+        val save = File(dir, "dice_state_a.json")
+        save.writeText("{}")
+        File(dir, "dice_state_a.json.bak").writeText("{}")
+
+        assertTrue(registry.deleteCustomStory("a"))
+
+        assertFalse(save.exists())
+        assertFalse(File(dir, "dice_state_a.json.bak").exists())
+    }
+
+    @Test
     fun entriesWithoutSlug_areIgnored() {
         val arr = JSONArray().apply {
             put(JSONObject().put("title", "sans slug"))

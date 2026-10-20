@@ -142,15 +142,31 @@ class DiceSession(private var saveFile: File) {
             put("last_journal_index", lastJournalIndex)
             put("custom_totems", JSONArray(customTotems.map { it.toJson() }))
         }
-        saveFile.parentFile?.mkdirs()
-        saveFile.writeText(data.toString(2))
+        // Écriture atomique + copie de la version précédente (voir SafeFile.kt) :
+        // une coupure en plein enregistrement ne peut plus abîmer la partie.
+        SafeFile.writeAtomic(saveFile, data.toString(2)) { JSONObject(it); true }
     }
 
-    /** @return true si un fichier existait et a été chargé, false sinon. */
+    /**
+     * @return true si un fichier existait et a été chargé, false sinon.
+     * Ne lève jamais d'exception pour un fichier abîmé : on essaie la copie de la version
+     * précédente (.bak) ; si elle est illisible aussi, le fichier est mis de côté
+     * (.corrupt) et on repart d'une partie vierge (retour false).
+     */
     fun load(): Boolean {
-        if (!saveFile.exists()) return false
-        val data = JSONObject(saveFile.readText())
+        for (candidate in SafeFile.candidates(saveFile)) {
+            try {
+                applyData(JSONObject(candidate.readText()))
+                return true
+            } catch (e: Exception) {
+                resetState() // une lecture à moitié faite ne doit rien laisser derrière elle
+            }
+        }
+        SafeFile.quarantine(saveFile)
+        return false
+    }
 
+    private fun applyData(data: JSONObject) {
         history = (data.optJSONArray("history") ?: JSONArray()).let { arr ->
             (0 until arr.length()).map { RollRecord.fromJson(arr.getJSONObject(it)) }.toMutableList()
         }
@@ -217,8 +233,6 @@ class DiceSession(private var saveFile: File) {
         lastAiSentId = data.optInt("last_ai_sent_id", 0)
         val jidx = data.optInt("last_journal_index", 0)
         lastJournalIndex = maxOf(0, minOf(jidx, restLen))
-
-        return true
     }
 
     // ---------- totems : lecture seule nécessaire aux lancers (la gestion complète est plus bas) ----------
