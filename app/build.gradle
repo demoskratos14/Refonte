@@ -79,6 +79,14 @@ android {
         textReport false
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric a besoin des ressources/assets/manifeste fusionnes de l'appli
+            // pour faire tourner les ecrans Compose sur la JVM (sans emulateur).
+            includeAndroidResources = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -128,6 +136,16 @@ dependencies {
     // Vraie implementation d'org.json : sur la JVM de test, android.jar ne contient que des
     // "stubs" qui plantent ("not mocked") des qu'on appelle JSONObject.
     testImplementation libs.org.json
+
+    // --- Tests Compose sur la JVM (Robolectric, sans emulateur) ---
+    // Ecrans testes dans app/src/test/.../ui ; SDK simule fixe dans
+    // app/src/test/resources/robolectric.properties.
+    testImplementation libs.robolectric
+    testImplementation platform(libs.androidx.compose.bom)
+    testImplementation libs.androidx.compose.ui.test.junit4
+    // Fournit l'activite vide (ComponentActivity) qu'utilise createComposeRule().
+    // Debug uniquement : n'est donc pas dans l'APK release.
+    debugImplementation libs.androidx.compose.ui.test.manifest
 }
 
 // Nom du fichier .apk genere : "Dés d'Aventure-debug.apk" (au lieu de "app-debug.apk").
