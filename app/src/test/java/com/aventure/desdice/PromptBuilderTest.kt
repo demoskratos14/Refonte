@@ -384,4 +384,33 @@ class PromptBuilderTest {
         assertEquals(PromptBuilder.buildContentFrame(0), PromptBuilder.buildContentFrame(-7))
         assertEquals(PromptBuilder.buildContentFrame(110), PromptBuilder.buildContentFrame(900))
     }
+
+    @Test
+    fun contentFrame_everyTierHasFearStakesAndPuzzleSections() {
+        for (age in listOf(0, 8, 14, 30)) {
+            val frame = PromptBuilder.buildContentFrame(age).joinToString("\n")
+            assertHas(frame, "PEUR ET MONSTRES")
+            assertHas(frame, "ENJEUX ET ÉCHECS")
+            assertHas(frame, "PROBLÈMES ET ÉNIGMES")
+        }
+    }
+
+    @Test
+    fun contentFrame_permanentDefeat_isForbiddenForChildren_rareForTeens_possibleForAdults() {
+        val child = PromptBuilder.buildContentFrame(8).joinToString("\n")
+        val teen = PromptBuilder.buildContentFrame(14).joinToString("\n")
+        val adult = PromptBuilder.buildContentFrame(30).joinToString("\n")
+        assertHas(child, "n'est JAMAIS définitif")
+        assertHas(teen, "reste possible mais RARE")
+        assertHas(adult, "est possible quand les mauvais choix et les mauvais jets s'accumulent")
+        assertHas(teen, "jamais fatal")
+        assertHas(adult, "jamais sur un seul échec critique")
+    }
+
+    @Test
+    fun mechanicsContext_noLongerClaimsThatNoFailureIsEverFinal() {
+        val prompt = PromptBuilder.buildMechanicsContext(sess, story(playerAge = 30), true)
+        assertLacks(prompt, "jamais de fin d'histoire même sur un 1")
+        assertLacks(prompt, "jamais la fin de l'histoire")
+    }
 }

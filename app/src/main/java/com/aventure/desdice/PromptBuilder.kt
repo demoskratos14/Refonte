@@ -15,7 +15,7 @@ package com.aventure.desdice
 object PromptBuilder {
 
     private val successCompact: Map<Int, String> = mapOf(
-        1 to "Échec critique, rattrapable (jamais la fin de l'histoire)",
+        1 to "Échec critique (ses conséquences suivent la section ENJEUX ET ÉCHECS plus bas)",
         2 to "Échec ou réussite très dure",
         3 to "Réussite partielle",
         4 to "Bonne réussite",
@@ -87,7 +87,7 @@ object PromptBuilder {
                 "$addressedTo. Mécaniques ci-dessous, puis l'histoire déjà vécue."
         }
         lines += ""
-        lines += "DÉ DE RÉUSSITE (1-6, jamais de fin d'histoire même sur un 1, toujours moyen de se rattraper) :"
+        lines += "DÉ DE RÉUSSITE (1-6) :"
         lines += (1..6).joinToString(" | ") { v -> "$v=${successCompact[v]}" }
         lines += ""
         val storyLen = normalizeStoryLength(story?.storyLength ?: "long")
@@ -228,7 +228,80 @@ object PromptBuilder {
      * contenu sexuel explicite : le fournisseur d'IA et les boutiques d'applis y tiennent, et
      * l'âge est seulement déclaré.
      */
-    fun buildContentFrame(playerAge: Int): List<String> {
+    fun buildContentFrame(playerAge: Int): List<String> =
+        buildToneAndLimits(playerAge) + buildStakesFrame(PlayerAge.tierOf(playerAge))
+
+    /**
+     * Niveau de peur, enjeux des échecs et difficulté des problèmes, selon le palier. Ce sont des
+     * PLAFONDS, pas des obligations : l'univers de l'histoire garde la main (une histoire douce
+     * reste douce même pour des adultes, et il n'y a pas de monstre si l'histoire n'en appelle pas).
+     * Une défaite définitive passe par la balise de fin d'histoire (voir buildMechanicsContext).
+     */
+    private fun buildStakesFrame(tier: AgeTier): List<String> = when (tier) {
+        AgeTier.CHILD -> listOf(
+            "",
+            "PEUR ET MONSTRES : niveau de peur BAS. Si l'univers comporte des créatures ou des dangers, " +
+                "ils restent drôles, maladroits, mystérieux ou attendrissants plutôt que menaçants, et on " +
+                "peut s'en faire des amis. N'ajoute ni monstre ni scène inquiétante si l'histoire ne s'y " +
+                "prête pas : c'est l'univers qui décide.",
+            "",
+            "ENJEUX ET ÉCHECS : un échec, même critique (1 au dé de réussite), n'est JAMAIS définitif ni " +
+                "humiliant : il crée un contretemps, un détour ou une situation cocasse, et il y a toujours " +
+                "un moyen de se rattraper. Personne ne meurt ni n'est perdu pour de bon, pas même un allié " +
+                "(un personnage qui s'éloigne peut revenir). Plusieurs échecs de suite ne mènent jamais à " +
+                "une fin de l'histoire : ils rendent seulement le chemin plus long.",
+            "",
+            "PROBLÈMES ET ÉNIGMES : simples et concrets, une seule idée à la fois, avec une solution " +
+                "faisable grâce aux indices déjà donnés. Si le joueur hésite ou se trompe, glisse un indice " +
+                "plus évident au lieu de le laisser bloqué. Pas de piège sans issue."
+        )
+        AgeTier.TEEN -> listOf(
+            "",
+            "PEUR ET MONSTRES : niveau de peur MOYEN, quand l'histoire s'y prête : créatures " +
+                "inquiétantes, ambiances tendues, frissons, stress d'une poursuite ou d'un piège. Les " +
+                "monstres peuvent être menaçants et avoir de la présence, mais jamais terrifiants à " +
+                "l'excès ni gore. N'en ajoute pas si l'univers n'en appelle pas : c'est l'histoire qui décide.",
+            "",
+            "ENJEUX ET ÉCHECS : les échecs ont de vraies conséquences (blessure, objet perdu, allié en " +
+                "difficulté, adversaire qui prend l'avantage, temps perdu) mais restent en général " +
+                "rattrapables. Un échec critique isolé n'est jamais fatal. Une défaite définitive (un héros " +
+                "qui tombe, un allié perdu pour de bon, la quête qui échoue) reste possible mais RARE : " +
+                "seulement quand plusieurs mauvais choix ET plusieurs échecs critiques s'enchaînent, " +
+                "toujours précédée de signes clairs que le danger devient pressant, pour laisser au joueur " +
+                "une vraie chance de réagir. Préfère alors un sacrifice, une défaite partielle ou un " +
+                "basculement de l'histoire à une fin brutale ; si l'histoire s'achève ainsi, conclus-la proprement. S'il y a plusieurs héros, un héros qui tombe " +
+                "n'arrête pas l'histoire tant que les autres peuvent continuer.",
+            "",
+            "PROBLÈMES ET ÉNIGMES : un peu plus élaborés : un choix délicat, deux ou trois indices à " +
+                "relier, une énigme en deux étapes, un dilemme entre deux options qui ont chacune un prix. " +
+                "Ne donne pas la solution d'emblée ; si le joueur est bloqué après plusieurs essais, " +
+                "relance-le avec un indice, pas avec la réponse."
+        )
+        AgeTier.ADULT -> listOf(
+            "",
+            "PEUR ET MONSTRES : niveau de peur et de menace ÉLEVÉ quand l'histoire s'y prête : horreur, " +
+                "créatures terrifiantes, dangers mortels, tension oppressante. Le danger est réel et les " +
+                "ennemis ne se retiennent pas. Le niveau suit pourtant l'univers : ne force pas l'horreur " +
+                "ni les monstres dans une histoire qui n'est pas sombre.",
+            "",
+            "ENJEUX ET ÉCHECS : le risque est ÉLEVÉ. Les échecs ont des conséquences lourdes et durables " +
+                "(blessures qui persistent, pertes, trahisons, alliés qui tombent). Une défaite définitive " +
+                "(mort d'un héros, quête perdue, fin tragique) est possible quand les mauvais choix et les " +
+                "mauvais jets s'accumulent : jamais sur un seul échec critique, ni sans avoir laissé " +
+                "apparaître le danger avant, mais ne la retiens pas par complaisance. Si elle arrive, " +
+                "raconte-la jusqu'au bout et conclus l'histoire. S'il y a plusieurs héros, un héros qui tombe n'arrête pas " +
+                "l'histoire tant que d'autres peuvent continuer. Récompense en retour les bons choix et " +
+                "la prudence : un bon plan peut compenser un mauvais jet.",
+            "",
+            "PROBLÈMES ET ÉNIGMES : de vraies énigmes et de vrais dilemmes : logique, indices dispersés " +
+                "à recouper, fausses pistes, informations incomplètes, choix sans bonne réponse évidente " +
+                "aux conséquences à long terme. Ne donne jamais la solution : seulement un indice " +
+                "supplémentaire si le joueur est réellement bloqué après plusieurs tentatives. Toute " +
+                "énigme doit rester juste : sa solution doit pouvoir se déduire des indices déjà donnés."
+        )
+    }
+
+    private fun buildToneAndLimits(playerAge: Int): List<String> {
         val age = PlayerAge.normalize(playerAge)
         val ageText = if (age != PlayerAge.UNKNOWN) " (le plus jeune joueur a $age ans)" else ""
         val noPersonalInfo = "Ne demande jamais d'information personnelle au joueur (nom de famille, " +

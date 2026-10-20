@@ -109,7 +109,7 @@ class PromptAndExportTest {
     fun fullPrompt_describesTheTwoDiceAndTheRules() {
         val prompt = promptFor()
         assertHas(prompt, "DÉ DE RÉUSSITE (1-6")
-        assertHas(prompt, "1=Échec critique, rattrapable (jamais la fin de l'histoire)")
+        assertHas(prompt, "1=Échec critique (ses conséquences suivent la section ENJEUX ET ÉCHECS plus bas)")
         assertHas(prompt, "6=Réussite héroïque")
         assertHas(prompt, "DÉ DU DESTIN (6 symboles ; ")
         assertHas(prompt, "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. À $THREAT_THRESHOLD points")

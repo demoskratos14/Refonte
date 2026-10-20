@@ -35,6 +35,13 @@ object PlayerAge {
         }
     }
 
+    /** Résumé affiché au joueur pour un palier (création d'histoire, changement de palier). */
+    fun describe(tier: AgeTier): String = when (tier) {
+        AgeTier.CHILD -> "Palier : enfant. Peur faible, monstres rassurants, jamais d'échec définitif, problèmes simples."
+        AgeTier.TEEN -> "Palier : adolescent. Peur moyenne, suspense, défaite définitive possible mais rare, problèmes plus élaborés, sans contenu sexuel."
+        AgeTier.ADULT -> "Palier : adulte. Peur et danger élevés, défaite définitive possible si les choix et les dés sont mauvais, vraies énigmes, sans contenu sexuel explicite."
+    }
+
     /** Lit un âge saisi à la main (champ texte) : [UNKNOWN] si vide ou illisible. */
     fun parse(text: String): Int = normalize(text.trim().toIntOrNull() ?: UNKNOWN)
 }

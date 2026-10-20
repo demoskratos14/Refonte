@@ -21,7 +21,7 @@ const val THREAT_THRESHOLD = 10
 const val AI_HISTORY_WINDOW = 24
 
 val SUCCESS_LABELS: Map<Int, String> = mapOf(
-    1 to "Échec critique / conséquence importante (mais jamais la fin de l'histoire : il y a toujours moyen de se rattraper)",
+    1 to "Échec critique / conséquence importante (sa gravité suit la section ENJEUX ET ÉCHECS du contexte)",
     2 to "Échec, ou réussite très difficile",
     3 to "Réussite partielle",
     4 to "Bonne réussite",

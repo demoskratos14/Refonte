@@ -694,9 +694,7 @@ fun CreateStoryScreen(
                 Text(
                     text = when {
                         shownAge == PlayerAge.UNKNOWN -> "Palier : enfant (par défaut)."
-                        shownTier == AgeTier.CHILD -> "Palier : enfant. Dangers et monstres rassurants, vocabulaire adapté à l'âge."
-                        shownTier == AgeTier.TEEN -> "Palier : adolescent. Suspense et peur plus marqués, sans contenu sexuel."
-                        else -> "Palier : adulte. Thèmes sombres autorisés, sans contenu sexuel explicite."
+                        else -> PlayerAge.describe(shownTier)
                     },
                     fontFamily = fonts.bodyBold,
                     fontSize = textStyles.bodySp(12f),

@@ -122,7 +122,7 @@ LES CHAMPS DE L'ÉCRAN
 - Héros (optionnel) : un ou plusieurs prénoms, avec « + Ajouter un héros » pour en mettre davantage (et ✕ pour en retirer un). À laisser vide si les joueurs préfèrent les choisir eux-mêmes une fois l'histoire commencée. Avec plusieurs héros, l'IA vouvoie le groupe quand il agit ensemble, et tutoie chacun par son prénom quand l'un d'eux agit ou choisit seul -- chaque héros a alors ses propres choix et ses propres lancers de dés.
 - Longueur de l'histoire : Courte (une dizaine d'échanges), Moyenne (20 à 30), ou Longue (racontée en chapitres, chacun avec une vraie fin, sans limite totale -- l'IA demande avant de commencer le chapitre suivant).
 - Objectif moral (optionnel) : une valeur ou une notion que l'aventure met en avant à travers ses situations -- patience, fair-play, partage, courage face à la peur, entraide... L'IA la fait vivre par le récit, jamais par un discours moralisateur direct.
-- Âge du plus jeune joueur : l'IA adapte le ton et le niveau de peur. Moins de 12 ans : histoire pour enfant, rassurante, vocabulaire adapté à l'âge. De 12 à 17 ans : adolescent, suspense et peur plus marqués, sans contenu sexuel. À partir de 18 ans : adulte, thèmes sombres autorisés, sans contenu sexuel explicite (une case à cocher confirme l'âge). S'il y a plusieurs joueurs, indique l'âge du plus jeune ; laissé vide, c'est une histoire pour enfant.
+- Âge du plus jeune joueur : l'IA adapte le ton et le niveau de peur. Moins de 12 ans : histoire pour enfant, peur faible, monstres rassurants, problèmes simples, jamais d'échec définitif. De 12 à 17 ans : adolescent, peur moyenne, problèmes plus élaborés, défaite définitive possible mais rare, sans contenu sexuel. À partir de 18 ans : adulte, peur et danger élevés, vraies énigmes, défaite définitive possible si les choix et les dés sont mauvais, sans contenu sexuel explicite (une case à cocher confirme l'âge). Le palier peut être changé en cours d'histoire (bouton « Palier de contenu »). S'il y a plusieurs joueurs, indique l'âge du plus jeune ; laissé vide, c'est une histoire pour enfant.
 - Image de fond (optionnel) : illustre l'écran de cette histoire.
 - Totem de départ : le nom du tout premier totem du héros, ses pouvoirs (séparés par des virgules), une capacité spéciale (optionnel), et une image (optionnel).
 
@@ -140,7 +140,7 @@ Chaque tour de jeu repose sur deux dés et une conversation avec une IA narratri
 LE DÉ DE RÉUSSITE
 
 Il indique si une action réussit :
-- 1 : échec critique, mais toujours rattrapable (jamais la fin de l'histoire)
+- 1 : échec critique (jamais définitif pour un enfant ; pour un adolescent ou un adulte, des échecs et de mauvais choix qui s'enchaînent peuvent mener à une défaite définitive)
 - 2 : échec, ou réussite très dure
 - 3 : réussite partielle
 - 4 : bonne réussite

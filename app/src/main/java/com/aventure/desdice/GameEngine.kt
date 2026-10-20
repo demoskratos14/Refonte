@@ -379,13 +379,12 @@ class GameEngine(
 
         val sess = session
         if (sess != null && sess.aiConversation.isNotEmpty()) {
-            val replaced = sess.replaceInConversation(
-                PromptBuilder.contentFrameText(oldAge),
-                PromptBuilder.contentFrameText(newAge)
-            )
-            // Sauvegarde d'une version plus ancienne de l'appli (texte du cadre différent) :
-            // le message "system" est alors reconstruit en entier, comme au premier échange.
-            if (replaced == 0) {
+            val newFrame = PromptBuilder.contentFrameText(newAge)
+            sess.replaceInConversation(PromptBuilder.contentFrameText(oldAge), newFrame)
+            // Message "system" écrit par une version plus ancienne de l'appli (texte du cadre
+            // différent, donc non reconnu) : il est reconstruit en entier, comme au premier échange.
+            val head = sess.aiConversation.firstOrNull()
+            if (head != null && head.role == "system" && !head.content.contains(newFrame)) {
                 sess.replaceSystemMessage(PromptBuilder.buildMechanicsContext(sess, newStory, autoMode = true))
             }
             if (PlayerAge.tierOf(oldAge) != PlayerAge.tierOf(newAge)) {

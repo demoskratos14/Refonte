@@ -442,9 +442,7 @@ private fun ContentTierDialog(
                 Text(
                     when {
                         newAge == PlayerAge.UNKNOWN -> "Palier : enfant (par défaut)."
-                        newTier == AgeTier.CHILD -> "Palier : enfant. Dangers et monstres rassurants, vocabulaire adapté à l'âge."
-                        newTier == AgeTier.TEEN -> "Palier : adolescent. Suspense et peur plus marqués, sans contenu sexuel."
-                        else -> "Palier : adulte. Thèmes sombres autorisés, sans contenu sexuel explicite."
+                        else -> PlayerAge.describe(newTier)
                     },
                     style = bodyStyle.copy(fontFamily = fonts.bodyBold)
                 )
