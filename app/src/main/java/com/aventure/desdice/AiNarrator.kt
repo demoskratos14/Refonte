@@ -47,7 +47,8 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
         currentStorySlug: String?,
         eventText: String,
         visible: Boolean = true,
-        displayText: String = ""
+        displayText: String = "",
+        extraNote: String? = null
     ): Pair<String?, String?> {
         if (!mistralConfig.hasMistralKey() || eventText.isEmpty()) return null to null
         if (sess.aiConversation.isEmpty()) {
@@ -72,6 +73,10 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
         PromptBuilder.buildChapterEndNote(currentStory)?.let { note ->
+            messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
+        }
+        // Note ponctuelle (ex. changement de palier de contenu) : envoyée à l'API, jamais enregistrée.
+        extraNote?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
         val (text, error) = MistralClient.chat(

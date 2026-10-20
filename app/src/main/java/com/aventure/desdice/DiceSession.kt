@@ -817,6 +817,35 @@ class DiceSession(private var saveFile: File) {
         save()
     }
 
+    /**
+     * Remplace [old] par [new] dans tous les messages de la conversation IA qui le contiennent
+     * (le message "system" du début ET le message de démarrage masqué, qui répète les mécaniques).
+     * Rôle, visibilité et texte affiché sont conservés ; ne touche pas aux compteurs du digest
+     * (aucun message ajouté ni retiré). Renvoie le nombre de messages modifiés.
+     */
+    fun replaceInConversation(old: String, new: String): Int {
+        if (old.isEmpty()) return 0
+        var changed = 0
+        for (i in aiConversation.indices) {
+            val m = aiConversation[i]
+            if (m.content.contains(old)) {
+                aiConversation[i] = m.copy(content = m.content.replace(old, new))
+                changed++
+            }
+        }
+        if (changed > 0) save()
+        return changed
+    }
+
+    /** Remplace le contenu du message "system" du début (s'il existe). false si absent. */
+    fun replaceSystemMessage(content: String): Boolean {
+        val trimmed = content.trim()
+        if (trimmed.isEmpty() || aiConversation.isEmpty() || aiConversation[0].role != "system") return false
+        aiConversation[0] = aiConversation[0].copy(content = trimmed)
+        save()
+        return true
+    }
+
     /** aiConversation sans le message "system" initial (s'il existe). */
     private fun restConversation(): List<AiMessage> {
         return if (aiConversation.isNotEmpty() && aiConversation[0].role == "system") {

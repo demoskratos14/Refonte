@@ -344,6 +344,20 @@ class StoryRegistry(private val baseDir: File) {
      * (dice_state_<slug>.json) et l'image de son totem de départ le cas
      * échéant. Sans effet (renvoie false) si le slug est inconnu..
      */
+    /**
+     * Change l'âge du plus jeune joueur (donc le palier de contenu, voir AgeTier.kt) d'une
+     * histoire existante, sans toucher au reste. false si l'histoire est introuvable.
+     */
+    fun updatePlayerAge(slug: String, playerAge: Int): Boolean {
+        val list = loadCustomMeta()
+        val idx = list.indexOfFirst { it.slug == slug }
+        if (idx < 0) return false
+        val updated = list.toMutableList()
+        updated[idx] = list[idx].copy(playerAge = PlayerAge.normalize(playerAge))
+        saveCustomMeta(updated)
+        return true
+    }
+
     fun deleteCustomStory(slug: String): Boolean {
         val metaList = loadCustomMeta()
         val meta = metaList.find { it.slug == slug } ?: return false

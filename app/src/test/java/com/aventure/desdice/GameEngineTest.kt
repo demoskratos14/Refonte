@@ -622,4 +622,53 @@ class GameEngineTest {
         assertEquals("Chat", result.getJSONArray("extra_totems").getJSONObject(0).getString("label"))
         assertEquals(listOf("Un"), strings(result.getJSONArray("story_log")))
     }
+
+    // ---- changement de palier en cours d'histoire ----
+
+    @Test
+    fun setPlayerAge_remplaceLeCadreDansLaConversationEtEnregistreLAge() {
+        writeStories(meta().copy(playerAge = 15))
+        engine.switchStory("aventure")
+        val sess = engine.session!!
+        val story = StoryRegistry(dir).allStories()["aventure"]!!
+        sess.addAiMessage("system", PromptBuilder.buildMechanicsContext(sess, story, autoMode = true), visible = false)
+        sess.addAiMessage("user", "Je regarde autour de moi.")
+        assertTrue(sess.aiConversation[0].content.contains("CADRE DE CONTENU — ADOLESCENT"))
+
+        val json = engine.setPlayerAge(9)
+
+        val head = sess.aiConversation[0].content
+        assertTrue(head.contains("CADRE DE SÉCURITÉ"))
+        assertFalse(head.contains("CADRE DE CONTENU — ADOLESCENT"))
+        assertEquals(2, sess.aiConversation.size) // aucun message ajouté : le digest ne se décale pas
+        assertEquals("Je regarde autour de moi.", sess.aiConversation[1].content)
+        assertEquals(9, json.getInt("player_age"))
+        assertEquals(9, StoryRegistry(dir).allStories()["aventure"]!!.playerAge)
+    }
+
+    @Test
+    fun setPlayerAge_cadreNonReconnu_reconstruitLeMessageSystem() {
+        writeStories(meta().copy(playerAge = 15))
+        engine.switchStory("aventure")
+        val sess = engine.session!!
+        sess.addAiMessage("system", "Ancien texte sans cadre reconnaissable", visible = false)
+
+        engine.setPlayerAge(20)
+
+        val head = sess.aiConversation[0].content
+        assertTrue(head.contains("CADRE DE CONTENU — ADULTE"))
+        assertFalse(head.contains("Ancien texte"))
+    }
+
+    @Test
+    fun setPlayerAge_memeAge_neChangeRien() {
+        writeStories(meta().copy(playerAge = 15))
+        engine.switchStory("aventure")
+        val sess = engine.session!!
+        sess.addAiMessage("system", "Message inchangé", visible = false)
+
+        engine.setPlayerAge(15)
+
+        assertEquals("Message inchangé", sess.aiConversation[0].content)
+    }
 }

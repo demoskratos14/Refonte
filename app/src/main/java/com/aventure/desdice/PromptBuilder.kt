@@ -199,6 +199,27 @@ object PromptBuilder {
         return lines.joinToString("\n")
     }
 
+    /** Le cadre de contenu tel qu'il apparaît dans un message déjà construit (lignes jointes par un saut de ligne). */
+    fun contentFrameText(playerAge: Int): String = buildContentFrame(playerAge).joinToString("\n")
+
+    /**
+     * Note transmise UNE fois à l'IA juste après un changement de palier en cours d'histoire :
+     * les anciens messages de la conversation sont dans l'ancien ton, et l'IA aurait tendance
+     * à les imiter plutôt qu'à suivre le nouveau cadre.
+     */
+    fun buildFrameChangeNote(newAge: Int): String {
+        val tier = when (PlayerAge.tierOf(newAge)) {
+            AgeTier.CHILD -> "enfant"
+            AgeTier.TEEN -> "adolescent"
+            AgeTier.ADULT -> "adulte"
+        }
+        return "CHANGEMENT DE CADRE : le palier de contenu de cette histoire vient d'être modifié, " +
+            "il est maintenant « $tier ». Applique le TON DU RÉCIT et le CADRE du contexte ci-dessus " +
+            "dès ta prochaine réponse : le niveau de peur, de violence, le vocabulaire et les emojis " +
+            "des réponses précédentes ne sont plus un modèle à suivre. Reste dans la continuité de " +
+            "l'intrigue, sans mentionner ce changement au joueur."
+    }
+
     /**
      * Ton du récit + cadre de contenu, selon le palier d'âge du plus jeune joueur (AgeTier.kt) :
      * enfant (moins de 12 ans, ou âge inconnu), adolescent (12 à 17 ans), adulte (18 ans et plus).

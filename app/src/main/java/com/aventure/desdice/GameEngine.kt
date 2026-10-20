@@ -54,6 +54,10 @@ class GameEngine(
     var session: DiceSession? = null
         private set
 
+    // Note de transition après un changement de palier en cours d'histoire (voir setPlayerAge) :
+    // transmise une seule fois à l'IA, au prochain échange réussi. Volontairement pas sauvegardée.
+    private var pendingFrameNote: String? = null
+
     /** Session "vide" utilisée avant toute sélection d'histoire (voir switchStory). */
     private fun emptySession(): DiceSession = DiceSession(File(baseDir, "dice_state.json"))
 
@@ -125,6 +129,7 @@ class GameEngine(
         currentStorySlug = slug
         currentStory = story
         session = newSession
+        pendingFrameNote = null
         return true
     }
 
@@ -347,7 +352,47 @@ class GameEngine(
         displayText: String = ""
     ): Pair<String?, String?> {
         val sess = session ?: return null to null
-        return narrator.runAiNarrator(sess, currentStory, currentStorySlug, eventText, visible, displayText)
+        val note = pendingFrameNote
+        val result = narrator.runAiNarrator(sess, currentStory, currentStorySlug, eventText, visible, displayText, note)
+        // La note n'est consommée que si l'échange a abouti : sinon elle repart au prochain essai.
+        if (note != null && result.second == null) pendingFrameNote = null
+        return result
+    }
+
+    /**
+     * Change le palier de contenu (via l'âge du plus jeune joueur, voir AgeTier.kt) de l'histoire
+     * en cours, y compris au milieu d'une partie. L'âge est enregistré dans l'histoire, puis le
+     * cadre déjà écrit dans la conversation avec l'IA est remplacé par le nouveau : sans cela,
+     * le message "system" figé au premier échange continuerait d'imposer l'ancien palier.
+     * Les réponses déjà écrites ne sont pas modifiées ; une note ponctuelle demande à l'IA
+     * d'appliquer le nouveau ton dès sa prochaine réponse.
+     */
+    fun setPlayerAge(age: Int): JSONObject {
+        val slug = currentStorySlug ?: return currentSessionJson()
+        val story = currentStory ?: return currentSessionJson()
+        val oldAge = story.playerAge
+        val newAge = PlayerAge.normalize(age)
+        if (newAge == oldAge) return currentSessionJson()
+        if (!storyRegistry.updatePlayerAge(slug, newAge)) return currentSessionJson()
+        val newStory = story.copy(playerAge = newAge)
+        currentStory = newStory
+
+        val sess = session
+        if (sess != null && sess.aiConversation.isNotEmpty()) {
+            val replaced = sess.replaceInConversation(
+                PromptBuilder.contentFrameText(oldAge),
+                PromptBuilder.contentFrameText(newAge)
+            )
+            // Sauvegarde d'une version plus ancienne de l'appli (texte du cadre différent) :
+            // le message "system" est alors reconstruit en entier, comme au premier échange.
+            if (replaced == 0) {
+                sess.replaceSystemMessage(PromptBuilder.buildMechanicsContext(sess, newStory, autoMode = true))
+            }
+            if (PlayerAge.tierOf(oldAge) != PlayerAge.tierOf(newAge)) {
+                pendingFrameNote = PromptBuilder.buildFrameChangeNote(newAge)
+            }
+        }
+        return currentSessionJson()
     }
 
     private fun maybeUpdateStoryDigest(
@@ -430,6 +475,7 @@ class GameEngine(
         }
         newSession.save()
         session = newSession
+        pendingFrameNote = null
     }
 
     // ------------------------------------------------------------------

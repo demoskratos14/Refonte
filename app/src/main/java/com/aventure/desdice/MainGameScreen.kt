@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,7 +61,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.semantics.Role
@@ -158,6 +161,8 @@ fun MainGameScreen(
     val fonts = rememberAppFonts()
 
     var showAllowedValues by remember { mutableStateOf(false) }
+    // Dialogue de changement du palier de contenu (enfant / adolescent / adulte) en cours d'histoire.
+    var showContentTier by remember { mutableStateOf(false) }
     // Totem dont la fiche (pouvoirs / capacite speciale) est affichee.
     var infoTotemKey by remember { mutableStateOf<String?>(null) }
 
@@ -294,6 +299,18 @@ fun MainGameScreen(
                     kind = ButtonKind.Secondary,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (currentSlug != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ComicButton(
+                        text = "Palier de contenu : " + tierLabel(
+                            PlayerAge.tierOf(sessionState?.optInt("player_age", PlayerAge.UNKNOWN) ?: PlayerAge.UNKNOWN)
+                        ),
+                        onClick = { showContentTier = true },
+                        fonts = fonts,
+                        kind = ButtonKind.Secondary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             TotemGaugesRow(viewModel = viewModel, onTotemClick = { infoTotemKey = it })
@@ -324,6 +341,143 @@ fun MainGameScreen(
             onDismiss = { showAllowedValues = false }
         )
     }
+
+    if (showContentTier) {
+        ContentTierDialog(
+            currentAge = sessionState?.optInt("player_age", PlayerAge.UNKNOWN) ?: PlayerAge.UNKNOWN,
+            fonts = fonts,
+            onDismiss = { showContentTier = false },
+            onConfirm = { age ->
+                showContentTier = false
+                viewModel.setPlayerAge(age)
+            }
+        )
+    }
+}
+
+private fun tierLabel(tier: AgeTier): String = when (tier) {
+    AgeTier.CHILD -> "enfant"
+    AgeTier.TEEN -> "adolescent"
+    AgeTier.ADULT -> "adulte"
+}
+
+/**
+ * Changement du palier de contenu (voir AgeTier.kt) en cours d'histoire, par exemple pour
+ * repasser à un palier plus doux si le récit ne convient pas. Trois raccourcis (enfant /
+ * adolescent / adulte) remplissent le champ d'âge, qui reste modifiable à la main. Le
+ * nouveau cadre s'applique dès la prochaine réponse de l'IA (GameEngine.setPlayerAge) ; ce
+ * qui est déjà écrit reste tel quel. Passer à « adulte » demande la même confirmation
+ * qu'à la création de l'histoire.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ContentTierDialog(
+    currentAge: Int,
+    fonts: AppFonts,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    val startAge = PlayerAge.normalize(currentAge)
+    val startTier = PlayerAge.tierOf(startAge)
+    var ageText by remember { mutableStateOf(if (startAge != PlayerAge.UNKNOWN) startAge.toString() else "") }
+    var adultConfirmed by remember { mutableStateOf(false) }
+    val newAge = PlayerAge.parse(ageText)
+    val newTier = PlayerAge.tierOf(newAge)
+
+    fun pick(tier: AgeTier) {
+        if (PlayerAge.tierOf(PlayerAge.parse(ageText)) == tier) return // déjà dans ce palier : on garde l'âge saisi
+        ageText = when (tier) {
+            AgeTier.CHILD -> ""
+            AgeTier.TEEN -> PlayerAge.TEEN_FROM.toString()
+            AgeTier.ADULT -> PlayerAge.ADULT_FROM.toString()
+        }
+    }
+
+    val needsAdultConfirm = newTier == AgeTier.ADULT && startTier != AgeTier.ADULT
+    val changed = newAge != startAge
+    val canConfirm = changed && (!needsAdultConfirm || adultConfirmed)
+    val bodyStyle = TextStyle(fontFamily = fonts.body, fontSize = 15.sp, color = Ink)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        title = {
+            Text(
+                "Palier de contenu",
+                style = TextStyle(fontFamily = fonts.display, fontSize = 22.sp, color = Ink)
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "Le ton et le niveau de peur de l'IA suivent ce palier. Le changement " +
+                        "s'applique dès sa prochaine réponse ; ce qui est déjà écrit ne change pas.",
+                    style = bodyStyle
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (tier in AgeTier.values()) {
+                        ComicButton(
+                            text = tierLabel(tier).replaceFirstChar { it.uppercase() },
+                            onClick = { pick(tier) },
+                            fonts = fonts,
+                            kind = if (newTier == tier) ButtonKind.Primary else ButtonKind.Secondary,
+                            compact = true
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = ageText,
+                    onValueChange = { ageText = it.filter { c -> c.isDigit() }.take(3) },
+                    label = { Text("Âge du plus jeune joueur (facultatif)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    when {
+                        newAge == PlayerAge.UNKNOWN -> "Palier : enfant (par défaut)."
+                        newTier == AgeTier.CHILD -> "Palier : enfant. Dangers et monstres rassurants, vocabulaire adapté à l'âge."
+                        newTier == AgeTier.TEEN -> "Palier : adolescent. Suspense et peur plus marqués, sans contenu sexuel."
+                        else -> "Palier : adulte. Thèmes sombres autorisés, sans contenu sexuel explicite."
+                    },
+                    style = bodyStyle.copy(fontFamily = fonts.bodyBold)
+                )
+                if (needsAdultConfirm) {
+                    ComicButton(
+                        text = if (adultConfirmed) "☑ Je confirme avoir 18 ans ou plus"
+                        else "☐ Je confirme avoir 18 ans ou plus",
+                        onClick = { adultConfirmed = !adultConfirmed },
+                        fonts = fonts,
+                        kind = if (adultConfirmed) ButtonKind.Primary else ButtonKind.Secondary,
+                        compact = true
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(newAge) }, enabled = canConfirm) {
+                Text(
+                    "Appliquer",
+                    style = TextStyle(
+                        fontFamily = fonts.display,
+                        fontSize = 18.sp,
+                        color = if (canConfirm) Ink else Ink.copy(alpha = 0.35f)
+                    )
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler", style = TextStyle(fontFamily = fonts.display, fontSize = 18.sp, color = Ink))
+            }
+        }
+    )
 }
 
 @Composable

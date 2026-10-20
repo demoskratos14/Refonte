@@ -88,6 +88,7 @@ object SessionJson {
             put("last_ai_sent_id", sess.lastAiSentId)
             put("all_symbols", JSONArray(sess.allSymbols().map { (k, v) -> symbolInfoJson(k, v) }))
             put("story_title", currentStory?.title ?: "")
+            put("player_age", currentStory?.playerAge ?: PlayerAge.UNKNOWN)
             put(
                 "header_title",
                 currentStory?.headerTitle?.ifEmpty { "Les Dés de l'Aventure" } ?: "Les Dés de l'Aventure"

@@ -401,6 +401,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun sendAiMessage(text: String = "") = runEngine { engine.sendAiMessage(text) }
     fun resetAiConversation() = runEngine { engine.resetAiConversation() }
 
+    /** Change le palier de contenu de l'histoire en cours (voir GameEngine.setPlayerAge). */
+    fun setPlayerAge(age: Int) = runEngine { engine.setPlayerAge(age) }
+
     /** Variante suspendue de sendAiMessage() : publie sessionState comme la
      * version normale, mais renvoie aussi le JSONObject à l'appelant pour
      * qu'il puisse lire "ai_error" avant de décider la suite (voir
