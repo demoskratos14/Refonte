@@ -10,6 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -573,9 +576,10 @@ fun CreateStoryScreen(
                                 style = TextStyle(shadow = TextShadow),
                                 modifier = Modifier
                                     .padding(start = 8.dp)
-                                    .clickable(enabled = !saving) {
+                                    .clickable(enabled = !saving, role = Role.Button) {
                                         protagonistNames = protagonistNames.toMutableList().also { it.removeAt(index) }
                                     }
+                                    .semantics { contentDescription = "Retirer le héros ${index + 1}" }
                                     .padding(8.dp)
                             )
                         }

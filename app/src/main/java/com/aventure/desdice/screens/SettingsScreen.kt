@@ -10,6 +10,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -1152,12 +1157,30 @@ private fun IconTile(
 ) {
     val shape = RoundedCornerShape(18.dp)
     val res = icon.previewRes
+    // Nom lu par TalkBack : « Icône d'origine », ou « Icône 3, filles » d'après le nom de l'entrée.
+    val label = if (icon == AppIcon.ORIGINAL) {
+        "Icône d'origine"
+    } else {
+        val parts = icon.name.split("_")
+        val number = parts.getOrNull(1).orEmpty()
+        val audience = when (parts.getOrNull(2)) {
+            "FILLES" -> ", filles"
+            "GARCONS" -> ", garçons"
+            "DUO" -> ", duo"
+            else -> ""
+        }
+        "Icône $number$audience"
+    }
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .clip(shape)
             .border(if (selected) 3.dp else 1.dp, if (selected) Color.White else SCardBorder, shape)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.RadioButton, onClickLabel = "Choisir cette icône", onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+                stateDescription = if (selected) "sélectionnée" else "non sélectionnée"
+            }
     ) {
         if (res != null) {
             Image(
@@ -1169,7 +1192,7 @@ private fun IconTile(
         } else if (originalPreview != null) {
             Image(
                 bitmap = originalPreview,
-                contentDescription = "Icône d'origine",
+                contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
@@ -1181,6 +1204,7 @@ private fun IconTile(
                 fontSize = 11.sp,
                 color = Color.White,
                 modifier = Modifier
+                    .clearAndSetSemantics { }
                     .align(Alignment.BottomStart)
                     .padding(6.dp)
                     .clip(RoundedCornerShape(6.dp))
@@ -1198,7 +1222,7 @@ private fun IconTile(
                     .clip(RoundedCornerShape(11.dp))
                     .background(SRed)
             ) {
-                Text(text = "\u2713", color = Color.White, fontSize = 14.sp)
+                Text(text = "\u2713", color = Color.White, fontSize = 14.sp, modifier = Modifier.clearAndSetSemantics { })
             }
         }
     }

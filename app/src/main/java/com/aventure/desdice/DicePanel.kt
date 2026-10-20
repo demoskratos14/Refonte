@@ -246,7 +246,8 @@ fun DiceResultCard(
                             background = Color.White,
                             size = dieSize,
                             onClick = { roll("success") },
-                            enabled = !rolling
+                            enabled = !rolling,
+                            description = "Dé de réussite : " + (successValue?.toString() ?: "pas encore lancé")
                         ) {
                             SymbolSuccessDieFace(
                                 value = successValue,
@@ -275,7 +276,8 @@ fun DiceResultCard(
                             background = FateDieBg,
                             size = dieSize,
                             onClick = { roll("fate") },
-                            enabled = !rolling
+                            enabled = !rolling,
+                            description = "Dé du destin : " + (fateFace?.label ?: "pas encore lancé")
                         ) {
                             FateDieFace(fateFace, fonts, textStyles)
                         }

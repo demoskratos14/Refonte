@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -764,7 +765,11 @@ private fun DiceTray(
                             background = background,
                             size = 150.dp,
                             onClick = { onRollOne(index) },
-                            enabled = !rolling
+                            enabled = !rolling,
+                            description = caption + " : " + when {
+                                isFate -> last?.fate?.label ?: "pas encore lancé"
+                                else -> last?.value?.toString() ?: "pas encore lancé"
+                            }
                         ) {
                             when {
                                 isFate -> FateDieFace(last?.fate, fonts, textStyles)
@@ -943,6 +948,8 @@ internal fun DieBox(
     size: Dp = 150.dp,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    // Lu par TalkBack à la place du dessin du dé (points, symboles) : ex. « Dé de réussite : 4 ».
+    description: String? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(14.dp)
@@ -960,10 +967,13 @@ internal fun DieBox(
                         interactionSource = interaction,
                         indication = null,
                         enabled = enabled,
+                        onClickLabel = "Lancer ce dé",
+                        role = Role.Button,
                         onClick = onClick
                     )
                 } else it
             }
+            .let { if (description != null) it.semantics { contentDescription = description } else it }
             .padding(10.dp),
         contentAlignment = Alignment.Center,
         content = content
