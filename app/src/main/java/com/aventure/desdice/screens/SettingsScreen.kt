@@ -1,51 +1,35 @@
 package com.aventure.desdice.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,39 +38,31 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
 import com.aventure.desdice.R
-import com.aventure.desdice.ThreatExplosion
 import com.aventure.desdice.ThreatExplosionOverlay
-import com.aventure.desdice.TotemEffect
 import com.aventure.desdice.TotemUseOverlay
-import org.json.JSONObject
 import com.aventure.desdice.ui.AppFonts
-import com.aventure.desdice.ui.AppIcon
 import com.aventure.desdice.ui.AppIconStore
 import com.aventure.desdice.ui.Audience
 import com.aventure.desdice.ui.AudiencePrefs
 import com.aventure.desdice.ui.BackgroundSlot
-import com.aventure.desdice.ui.iconsFor
 import com.aventure.desdice.ui.BackgroundStore
-import com.aventure.desdice.ui.DiceSoundPlayer
-import com.aventure.desdice.ui.MusicPlayer
-import com.aventure.desdice.ui.SoundPrefs
-import com.aventure.desdice.ui.rememberBackgroundPainter
 import com.aventure.desdice.ui.FontPrefs
+import com.aventure.desdice.ui.iconsFor
 import com.aventure.desdice.ui.listAssetFonts
 import com.aventure.desdice.ui.rememberAppFonts
+import com.aventure.desdice.ui.rememberBackgroundPainter
 import kotlinx.coroutines.launch
+
 
 /** Titres des pages, dans l'ordre. */
 private val PAGE_TITLES = listOf("Polices", "Photos", "Icône", "Sons", "Profil")
@@ -392,138 +368,6 @@ internal fun SettingsCard(
     }
 }
 
-/** Une ligne « page » : miniature du fond actuel + choisir une image / revenir à l'image par défaut. */
-@Composable
-private fun BackgroundRow(slot: BackgroundSlot, store: BackgroundStore, fonts: AppFonts) {
-    val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                message = "Chargement…"
-                message = if (store.setFromUri(slot, uri)) null else "Image illisible, essaie-en une autre."
-            }
-        }
-    }
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Image(
-            painter = rememberBackgroundPainter(slot),
-            contentDescription = slot.label,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(width = 60.dp, height = 100.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .border(2.dp, SCardBorder, RoundedCornerShape(8.dp))
-        )
-        Spacer(Modifier.size(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = slot.label,
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            SettingsButton(
-                text = "Choisir une image",
-                onClick = { launcher.launch("image/*") },
-                fonts = fonts
-            )
-            if (store.hasCustom(slot)) {
-                Spacer(Modifier.height(8.dp))
-                SettingsButton(
-                    text = "Image par défaut",
-                    onClick = { store.reset(slot); message = null },
-                    fonts = fonts,
-                    secondary = true
-                )
-            }
-            message?.let {
-                Text(
-                    text = it,
-                    fontSize = 13.sp,
-                    color = Color(0xFFFFC9C9),
-                    fontFamily = fonts.body,
-                    style = TextStyle(shadow = STextShadow),
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            }
-        }
-    }
-}
-
-/**
- * Page « Icône » : grille 3 x 3 des icônes proposées, un clic applique l'icône.
- * Les icônes proposées dépendent du public visé (page « Profil », voir
- * AudiencePrefs.kt et AppIconStore.iconsFor) : toujours 9 au total.
- */
-@Composable
-private fun AppIconCard(fonts: AppFonts) {
-    val context = LocalContext.current
-    val audiencePrefs = remember(context) { AudiencePrefs.get(context) }
-    val icons = remember(audiencePrefs.audience) { iconsFor(audiencePrefs.audience) }
-    var selected by remember { mutableStateOf(AppIconStore.current(context)) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // L'icône d'origine est dessinée depuis la ressource du lanceur (icône adaptative comprise).
-    val originalPreview = remember(context) {
-        try {
-            ContextCompat.getDrawable(context, R.mipmap.ic_launcher)?.toBitmap(256, 256)?.asImageBitmap()
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    SettingsCard(title = "\uD83C\uDFA8 Icône de l'application", fonts = fonts) {
-        Text(
-            text = "Touche une icône pour l'appliquer. Selon ton téléphone, le changement " +
-                "peut mettre quelques secondes à apparaître sur l'écran d'accueil. Les icônes " +
-                "proposées dépendent du public visé, réglable sur la page « Profil ».",
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.95f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(bottom = 14.dp)
-        )
-        icons.chunked(3).forEachIndexed { rowIndex, row ->
-            if (rowIndex > 0) Spacer(Modifier.height(12.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                row.forEach { icon ->
-                    IconTile(
-                        icon = icon,
-                        selected = icon == selected,
-                        originalPreview = originalPreview,
-                        fonts = fonts,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            try {
-                                AppIconStore.apply(context, icon)
-                                selected = icon
-                                error = null
-                            } catch (e: Exception) {
-                                error = "Impossible de changer l'icône : les alias du manifeste " +
-                                    "ne sont pas en place."
-                            }
-                        }
-                    )
-                }
-            }
-        }
-        error?.let {
-            Text(
-                text = it,
-                fontSize = 13.sp,
-                color = Color(0xFFFFC9C9),
-                fontFamily = fonts.body,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(top = 10.dp)
-            )
-        }
-    }
-}
 
 /**
  * Page « Profil » : public visé (filles / garçons / les 2), choisi une première
@@ -560,453 +404,7 @@ private fun ProfileCard(fonts: AppFonts) {
     }
 }
 
-/** Page « Sons », 2e carte : couper ou baisser la musique de fond, choisir les morceaux tirés au sort. */
-@Composable
-private fun MusicCard(fonts: AppFonts) {
-    val context = LocalContext.current
-    val soundPrefs = remember(context) { SoundPrefs.get(context) }
-    val hasTracks = remember { MusicPlayer.hasTracks() }
-    val muted = soundPrefs.musicMuted
-    val volume = soundPrefs.musicVolume
 
-    SettingsCard(title = "\uD83C\uDFB5 Musique", fonts = fonts) {
-        Text(
-            text = "Un morceau au hasard se lance à l'ouverture de l'appli et continue de jouer pendant " +
-                "les histoires. Dans la page de jeu, sous « Changer d'histoire », tu peux la couper, " +
-                "la relancer ou passer à un autre morceau.",
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.95f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(bottom = 14.dp)
-        )
-        if (!hasTracks) {
-            Text(
-                text = "Aucun morceau trouvé. Ajoute des fichiers nommés music_quelquechose.mp3 (ou .ogg) " +
-                    "dans app/src/main/res/raw.",
-                fontSize = 13.sp,
-                color = Color(0xFFFFC9C9),
-                fontFamily = fonts.body,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-        }
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = if (muted) "Musique coupée" else "Musique activée",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = !muted,
-                onCheckedChange = {
-                    soundPrefs.changeMusicMuted(!it)
-                    MusicPlayer.onMusicMutedChanged(context)
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = SRed,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp)
-                .height(2.dp)
-                .background(SLineColor)
-        )
-
-        Text(
-            text = "Volume : ${(volume * 100).toInt()} %",
-            fontFamily = fonts.bodyBold,
-            color = Color.White.copy(alpha = if (muted) 0.5f else 1f),
-            style = TextStyle(shadow = STextShadow)
-        )
-        Slider(
-            value = volume,
-            onValueChange = {
-                soundPrefs.changeMusicVolume(it)
-                MusicPlayer.updateVolume(context)
-            },
-            valueRange = 0f..1f,
-            enabled = !muted,
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = SRed,
-                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                disabledThumbColor = Color.White.copy(alpha = 0.5f),
-                disabledActiveTrackColor = Color.White.copy(alpha = 0.4f),
-                disabledInactiveTrackColor = Color.White.copy(alpha = 0.2f)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (hasTracks) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 14.dp)
-                    .height(2.dp)
-                    .background(SLineColor)
-            )
-            Text(
-                text = "Morceaux tirés au sort",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            Text(
-                text = "Décoche ceux que tu ne veux pas entendre : ils ne seront jamais tirés.",
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.85f),
-                fontFamily = fonts.body,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(bottom = 10.dp)
-            )
-            val tracks = remember { MusicPlayer.listTracks() }
-            tracks.forEach { track ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    val isThisPlaying = MusicPlayer.isPlaying && MusicPlayer.currentTrackName == track.name
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.18f))
-                            .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                            .clickable { MusicPlayer.togglePreview(context, track) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = if (isThisPlaying) "⏸" else "▶", fontSize = 14.sp, color = Color.White)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = track.label,
-                        fontFamily = fonts.body,
-                        color = Color.White,
-                        style = TextStyle(shadow = STextShadow),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = soundPrefs.isTrackEnabled(track.name),
-                        onCheckedChange = { soundPrefs.setTrackEnabled(track.name, it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = SRed,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-                        )
-                    )
-                }
-            }
-        }
-        if (hasTracks && !muted) {
-            Spacer(Modifier.height(6.dp))
-            SettingsButton(
-                text = if (MusicPlayer.isPlaying) "Autre morceau" else "Lancer la musique",
-                onClick = { MusicPlayer.startRandom(context) },
-                fonts = fonts,
-                secondary = true
-            )
-        }
-    }
-}
-
-/** Page « Sons » : effets quand la jauge de menace explose (vibration + animation). */
-@Composable
-private fun VibrationCard(fonts: AppFonts) {
-    val context = LocalContext.current
-    val soundPrefs = remember(context) { SoundPrefs.get(context) }
-    val vibration = soundPrefs.vibrationEnabled
-    val animation = soundPrefs.explosionAnimationEnabled
-    val totemAnimation = soundPrefs.totemAnimationEnabled
-    val switchColors = SwitchDefaults.colors(
-        checkedThumbColor = Color.White,
-        checkedTrackColor = SRed,
-        uncheckedThumbColor = Color.White,
-        uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-    )
-
-    SettingsCard(title = "\uD83D\uDCA5 Effets spéciaux", fonts = fonts) {
-        Text(
-            text = "Quand la jauge de menace explose, le téléphone peut vibrer et une explosion peut " +
-                "apparaître à l'écran, au moment où la réponse de l'IA s'affiche. Quand tu utilises " +
-                "un totem, son image peut apparaître en grand.",
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.95f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(bottom = 14.dp)
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = if (vibration) "Vibration activée" else "Vibration coupée",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = vibration,
-                onCheckedChange = { soundPrefs.changeVibrationEnabled(it) },
-                colors = switchColors
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = if (animation) "Animation activée" else "Animation coupée",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = animation,
-                onCheckedChange = { soundPrefs.changeExplosionAnimationEnabled(it) },
-                colors = switchColors
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = if (totemAnimation) "Animation des totems activée" else "Animation des totems coupée",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = totemAnimation,
-                onCheckedChange = { soundPrefs.changeTotemAnimationEnabled(it) },
-                colors = switchColors
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        SettingsButton(
-            text = "Essayer l'explosion",
-            onClick = { ThreatExplosion.fire(context, ignoreSettings = true) },
-            fonts = fonts,
-            secondary = true
-        )
-        Spacer(Modifier.height(6.dp))
-        SettingsButton(
-            text = "Essayer le totem",
-            onClick = {
-                TotemEffect.fire(
-                    context,
-                    JSONObject().put("label", "Totem").put("emoji", "\uD83E\uDD85"),
-                    ignoreSettings = true
-                )
-            },
-            fonts = fonts,
-            secondary = true
-        )
-        Text(
-            text = "L'animation est aussi supprimée si les animations sont désactivées dans les réglages d'Android.",
-            fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.8f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(top = 8.dp)
-        )
-    }
-}
-
-/** Page « Sons » : couper ou baisser le bruit des dés. */
-@Composable
-private fun SoundCard(fonts: AppFonts) {
-    val context = LocalContext.current
-    val soundPrefs = remember(context) { SoundPrefs.get(context) }
-    val muted = soundPrefs.diceMuted
-    val volume = soundPrefs.diceVolume
-
-    SettingsCard(title = "\uD83D\uDD0A Bruit des dés", fonts = fonts) {
-        Text(
-            text = "Coupe le bruit des dés, ou baisse-le pour jouer plus discrètement. " +
-                "Le volume choisi est conservé quand tu coupes le son.",
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.95f),
-            fontFamily = fonts.body,
-            style = TextStyle(shadow = STextShadow),
-            modifier = Modifier.padding(bottom = 14.dp)
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = if (muted) "Son coupé" else "Son activé",
-                fontFamily = fonts.bodyBold,
-                color = Color.White,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = !muted,
-                onCheckedChange = { soundPrefs.setMuted(!it) },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = SRed,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp)
-                .height(2.dp)
-                .background(SLineColor)
-        )
-
-        Text(
-            text = "Volume : ${(volume * 100).toInt()} %",
-            fontFamily = fonts.bodyBold,
-            color = Color.White.copy(alpha = if (muted) 0.5f else 1f),
-            style = TextStyle(shadow = STextShadow)
-        )
-        Slider(
-            value = volume,
-            onValueChange = { soundPrefs.setVolume(it) },
-            valueRange = 0f..1f,
-            enabled = !muted,
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = SRed,
-                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                disabledThumbColor = Color.White.copy(alpha = 0.5f),
-                disabledActiveTrackColor = Color.White.copy(alpha = 0.4f),
-                disabledInactiveTrackColor = Color.White.copy(alpha = 0.2f)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(6.dp))
-        SettingsButton(
-            text = "Écouter",
-            onClick = { DiceSoundPlayer.play(context) },
-            fonts = fonts,
-            secondary = true
-        )
-        if (muted) {
-            Text(
-                text = "Le son est coupé : rien ne sera joué tant que tu ne le réactives pas.",
-                fontSize = 13.sp,
-                color = Color(0xFFFFC9C9),
-                fontFamily = fonts.body,
-                style = TextStyle(shadow = STextShadow),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun IconTile(
-    icon: AppIcon,
-    selected: Boolean,
-    originalPreview: androidx.compose.ui.graphics.ImageBitmap?,
-    fonts: AppFonts,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val shape = RoundedCornerShape(18.dp)
-    val res = icon.previewRes
-    // Nom lu par TalkBack : « Icône d'origine », ou « Icône 3, filles » d'après le nom de l'entrée.
-    val label = if (icon == AppIcon.ORIGINAL) {
-        "Icône d'origine"
-    } else {
-        val parts = icon.name.split("_")
-        val number = parts.getOrNull(1).orEmpty()
-        val audience = when (parts.getOrNull(2)) {
-            "FILLES" -> ", filles"
-            "GARCONS" -> ", garçons"
-            "DUO" -> ", duo"
-            else -> ""
-        }
-        "Icône $number$audience"
-    }
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clip(shape)
-            .border(if (selected) 3.dp else 1.dp, if (selected) Color.White else SCardBorder, shape)
-            .clickable(role = Role.RadioButton, onClickLabel = "Choisir cette icône", onClick = onClick)
-            .semantics(mergeDescendants = true) {
-                contentDescription = label
-                stateDescription = if (selected) "sélectionnée" else "non sélectionnée"
-            }
-    ) {
-        if (res != null) {
-            Image(
-                painter = painterResource(id = res),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else if (originalPreview != null) {
-            Image(
-                bitmap = originalPreview,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        if (icon == AppIcon.ORIGINAL) {
-            Text(
-                text = "Origine",
-                fontFamily = fonts.body,
-                fontSize = 11.sp,
-                color = Color.White,
-                modifier = Modifier
-                    .clearAndSetSemantics { }
-                    .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
-        }
-        if (selected) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(22.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(SRed)
-            ) {
-                Text(text = "\u2713", color = Color.White, fontSize = 14.sp, modifier = Modifier.clearAndSetSemantics { })
-            }
-        }
-    }
-}
 
 /** Texte tourné de `degrees` (90 = lit de haut en bas, 270 = de bas en haut), avec la mise en page adaptée. */
 private fun Modifier.verticalText(degrees: Float): Modifier =
