@@ -19,7 +19,6 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -106,16 +105,6 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import kotlinx.coroutines.launch
-
-// Palette identique aux autres écrans. Noms préfixés "S" et privés pour ne pas
-// entrer en conflit avec les vals privées de ConfigureKeyScreen / StorySelectorScreen.
-private val SInk = Color(0xFF14161A)
-private val SRed = Color(0xFFE0263C)
-private val SPageBg = Color(0xFF1B140C)
-private val SCardBg = Color(0xBF14100C)          // carte sombre translucide (le fond est chargé)
-private val SCardBorder = Color(0x4DFFFFFF)
-private val SLineColor = Color(0x4DFFFFFF)
-private val STextShadow = Shadow(Color.Black.copy(alpha = 0.85f), Offset(1.5f, 2f), 6f)
 
 /** Titres des pages, dans l'ordre. */
 private val PAGE_TITLES = listOf("Polices", "Photos", "Icône", "Sons", "Profil")
