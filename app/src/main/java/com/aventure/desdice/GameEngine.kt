@@ -114,6 +114,7 @@ class GameEngine(
         val newSession = DiceSession(saveFile)
         val wasLoaded = newSession.load()
         newSession.setStoryLength(story.storyLength)
+        newSession.applyThreatThreshold(PlayerAge.threatThreshold(story.playerAge))
 
         val defaultTotem = story.defaultTotem
         if (!wasLoaded && defaultTotem != null && defaultTotem.label.isNotEmpty()) {
@@ -376,6 +377,7 @@ class GameEngine(
         if (!storyRegistry.updatePlayerAge(slug, newAge)) return currentSessionJson()
         val newStory = story.copy(playerAge = newAge)
         currentStory = newStory
+        session?.applyThreatThreshold(PlayerAge.threatThreshold(newAge))
 
         val sess = session
         if (sess != null && sess.aiConversation.isNotEmpty()) {
@@ -424,12 +426,23 @@ class GameEngine(
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
+    /**
+     * Texte du lancer en attente pour l'IA, précédé d'un rappel si un lancer précédent resté sans
+     * réponse avait fait exploser la jauge de menace (sinon cette complication serait perdue).
+     */
+    private fun pendingRollParts(sess: DiceSession, pending: RollRecord): List<String> {
+        val parts = mutableListOf<String>()
+        if (sess.missedThreatEvents() > 0) parts += PromptBuilder.buildMissedThreatNote()
+        parts += PromptBuilder.buildAiEventText(sess, pending)
+        return parts
+    }
+
     /** Envoie le lancer en attente (s'il y en a un) + un texte libre optionnel. */
     fun sendAiMessage(text: String = ""): JSONObject {
         val sess = session ?: return currentSessionJson()
         val pending = sess.pendingRoll()
         val parts = mutableListOf<String>()
-        if (pending != null) parts += PromptBuilder.buildAiEventText(sess, pending)
+        if (pending != null) parts += pendingRollParts(sess, pending)
         val trimmedText = text.trim()
         if (trimmedText.isNotEmpty()) parts += trimmedText
         val combined = parts.joinToString("\n")
@@ -462,6 +475,7 @@ class GameEngine(
         val newSession = DiceSession(saveFile)
         val wasLoaded = newSession.load()
         newSession.setStoryLength(story.storyLength)
+        newSession.applyThreatThreshold(PlayerAge.threatThreshold(story.playerAge))
         val defaultTotem = story.defaultTotem
         if (!wasLoaded && defaultTotem != null && defaultTotem.label.isNotEmpty()) {
             val key = newSession.addCustomTotem(
@@ -583,7 +597,7 @@ class GameEngine(
         if (spent && effectText.isNotEmpty()) {
             val pending = sess.pendingRoll()
             val parts = mutableListOf<String>()
-            if (pending != null) parts += PromptBuilder.buildAiEventText(sess, pending)
+            if (pending != null) parts += pendingRollParts(sess, pending)
             if (text.isNotEmpty()) parts += text
             parts += effectText
             val (_, err) = runAiNarrator(parts.joinToString("\n"))

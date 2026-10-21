@@ -4,6 +4,9 @@
     <!-- Necessaire pour les appels HTTPS a l'API Mistral (console.mistral.ai). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Vibration quand la jauge de menace explose (voir Haptics.kt). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

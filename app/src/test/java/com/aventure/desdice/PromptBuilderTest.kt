@@ -413,4 +413,27 @@ class PromptBuilderTest {
         assertLacks(prompt, "jamais de fin d'histoire même sur un 1")
         assertLacks(prompt, "jamais la fin de l'histoire")
     }
+
+    @Test
+    fun threatGauge_isFeltInTheNarrativeAndExplodesVisibly() {
+        val prompt = PromptBuilder.buildMechanicsContext(sess, story(playerAge = 14), true)
+        assertHas(prompt, "fais SENTIR la tension qui monte")
+        assertHas(prompt, "sans jamais citer la jauge ni ses chiffres")
+        assertHas(prompt, "IMMÉDIATEMENT et visiblement")
+    }
+
+    @Test
+    fun threatComplication_severityFollowsTheTier() {
+        assertHas(PromptBuilder.buildContentFrame(8).joinToString("\n"), "jamais effrayante")
+        assertHas(PromptBuilder.buildContentFrame(14).joinToString("\n"), "vraie difficulté")
+        assertHas(PromptBuilder.buildContentFrame(30).joinToString("\n"), "danger sérieux aux conséquences durables")
+    }
+
+    @Test
+    fun threatThreshold_growsWithTheTier() {
+        assertEquals(THREAT_THRESHOLD, PlayerAge.threatThreshold(PlayerAge.UNKNOWN))
+        assertEquals(THREAT_THRESHOLD, PlayerAge.threatThreshold(8))
+        assertEquals(8, PlayerAge.threatThreshold(14))
+        assertEquals(6, PlayerAge.threatThreshold(30))
+    }
 }

@@ -35,6 +35,18 @@ object PlayerAge {
         }
     }
 
+    /**
+     * Seuil de la jauge de menace selon le palier : plus l'âge est élevé, plus la complication
+     * arrive souvent (en tirages normaux du dé de réussite : en moyenne tous les ~42 lancers pour
+     * un enfant, ~31 pour un adolescent, ~20 pour un adulte). THREAT_THRESHOLD reste la valeur
+     * par défaut d'une session sans histoire.
+     */
+    fun threatThreshold(playerAge: Int): Int = when (tierOf(playerAge)) {
+        AgeTier.CHILD -> THREAT_THRESHOLD
+        AgeTier.TEEN -> 8
+        AgeTier.ADULT -> 6
+    }
+
     /** Résumé affiché au joueur pour un palier (création d'histoire, changement de palier). */
     fun describe(tier: AgeTier): String = when (tier) {
         AgeTier.CHILD -> "Palier : enfant. Peur faible, monstres rassurants, jamais d'échec définitif, problèmes simples."

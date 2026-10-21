@@ -671,4 +671,16 @@ class GameEngineTest {
 
         assertEquals("Message inchangé", sess.aiConversation[0].content)
     }
+
+    @Test
+    fun threatThreshold_followsTheStoryTier_andChangesWithSetPlayerAge() {
+        writeStories(meta().copy(playerAge = 8))
+        engine.switchStory("aventure")
+        assertEquals(10, engine.session!!.threatThreshold)
+
+        val json = engine.setPlayerAge(30)
+
+        assertEquals(6, engine.session!!.threatThreshold)
+        assertEquals(6, json.getInt("threat_threshold"))
+    }
 }

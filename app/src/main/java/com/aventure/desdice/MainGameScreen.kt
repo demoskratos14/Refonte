@@ -324,6 +324,9 @@ fun MainGameScreen(
             HistoryList(viewModel = viewModel)
             JournalSection(viewModel = viewModel, isCustomStory = isCustomStory, hasKey = hasKey)
         }
+    
+        // Explosion de la jauge de menace (voir ThreatExplosion.kt) : au-dessus de tout le contenu.
+        ThreatExplosionOverlay()
     }
 
     infoTotemKey?.let { key ->
@@ -631,19 +634,29 @@ fun ThreatGauge(
     val sessionState by viewModel.sessionState.collectAsState()
     val fonts = rememberAppFonts()
     val threatLevel = sessionState?.optInt("threat_level", 0) ?: 0
-    val reached = threatLevel >= THREAT_THRESHOLD
+    // La jauge retombe à 0 dès que le seuil est atteint : on lit donc l'explosion sur le dernier
+    // lancer (« threat_triggered »), sinon l'alerte ne s'afficherait jamais.
+    val reached = sessionState?.optJSONObject("last_result")?.optBoolean("threat_triggered", false) == true
+    val threshold = sessionState?.optInt("threat_threshold", THREAT_THRESHOLD) ?: THREAT_THRESHOLD
+    val imminent = !reached && threatLevel * 3 > threshold * 2
 
     Section(modifier) {
         SectionTitle("Jauge de menace", fonts)
         Text(
-            text = "Niveau actuel : $threatLevel/$THREAT_THRESHOLD",
+            text = "Niveau actuel : $threatLevel/$threshold",
             style = bodyStyle(fonts, 15.sp)
         )
         Spacer(modifier = Modifier.height(8.dp))
-        ThreatGaugeCells(level = threatLevel, max = THREAT_THRESHOLD)
+        ThreatGaugeCells(level = threatLevel, max = threshold)
         if (reached) {
             Text(
-                text = "⚠️ Seuil atteint : complication secondaire !",
+                text = "⚠️ Seuil atteint au dernier lancer : complication secondaire !",
+                style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        } else if (imminent) {
+            Text(
+                text = "⚠️ Le danger approche…",
                 style = bodyStyle(fonts, 14.sp, ErrorOnPhoto),
                 modifier = Modifier.padding(top = 6.dp)
             )

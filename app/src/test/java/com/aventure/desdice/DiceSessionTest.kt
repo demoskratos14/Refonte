@@ -138,6 +138,32 @@ class DiceSessionTest {
     }
 
     @Test
+    fun missedThreatEvents_countsAnExplosionThatWasNeverSentToTheAi() {
+        for (v in 2..6) session.toggleAllowedValue(v) // seul le 1 reste
+        // 4 échecs de suite : le 4e fait exploser la jauge. Un 5e lancer ensuite, sans rien envoyer.
+        repeat(4) { session.rollSuccess() }
+        assertEquals(0, session.missedThreatEvents()) // l'explosion est le dernier lancer : elle part avec lui
+        session.rollSuccess()
+        assertEquals(1, session.missedThreatEvents())
+        session.markLastRollAsSent()
+        assertEquals(0, session.missedThreatEvents())
+    }
+
+    @Test
+    fun threat_lowerThresholdExplodesSooner_andIsClampedBelowTheNewThreshold() {
+        for (v in 2..6) session.toggleAllowedValue(v) // seul le 1 reste
+        session.applyThreatThreshold(6)
+        assertFalse(session.rollSuccess().threatTriggered == true) // 3/6
+        assertTrue(session.rollSuccess().threatTriggered == true)  // 6/6 : explose dès le 2e échec
+
+        session.rollSuccess() // 3
+        session.rollSuccess() // 6 -> explose, retombe à 0
+        session.rollSuccess() // 3
+        session.applyThreatThreshold(3) // seuil sous le niveau actuel : jauge ramenée à 2
+        assertEquals(2, session.threatLevel)
+    }
+
+    @Test
     fun threat_staysAtZeroOnGreatSuccesses() {
         for (v in 1..5) session.toggleAllowedValue(v) // seul le 6 reste
         repeat(20) { session.rollSuccess() }

@@ -319,6 +319,31 @@ fun AiPanel(
         isLoading = false
     }
 
+    // Vibration + animation d'explosion quand la réponse de l'IA qui suit une explosion de la jauge de menace s'affiche.
+    // Une seule fois par explosion (lastVibratedThreatId) ; jamais au chargement de l'écran ni au
+    // changement d'histoire : on exige exactement UNE nouvelle réponse par rapport à l'état précédent.
+    var knownAssistantCount by remember { mutableStateOf(-1) }
+    var lastVibratedThreatId by remember { mutableStateOf(-1) }
+    LaunchedEffect(sessionState) {
+        val state = sessionState ?: return@LaunchedEffect
+        val conv = state.optJSONArray("ai_conversation")
+        var count = 0
+        if (conv != null) {
+            for (i in 0 until conv.length()) {
+                val entry = conv.getJSONObject(i)
+                if (entry.optString("role") == "assistant" && entry.optBoolean("visible", true)) count++
+            }
+        }
+        val last = state.optJSONObject("last_result")
+        val threatId = if (last != null && last.optBoolean("threat_triggered", false)) last.optInt("id", -1) else -1
+        val alreadySent = threatId != -1 && threatId == state.optInt("last_ai_sent_id", -1)
+        if (knownAssistantCount >= 0 && count == knownAssistantCount + 1 && alreadySent && threatId != lastVibratedThreatId) {
+            lastVibratedThreatId = threatId
+            ThreatExplosion.fire(context)
+        }
+        knownAssistantCount = count
+    }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)

@@ -38,6 +38,24 @@ class SoundPrefs private constructor(context: Context) {
     var musicMuted by mutableStateOf(prefs.getBoolean(KEY_MUSIC_MUTED, false))
         private set
 
+    /** true = le téléphone vibre quand la jauge de menace explose (Réglages > Sons). */
+    var vibrationEnabled by mutableStateOf(prefs.getBoolean(KEY_VIBRATION, true))
+        private set
+
+    fun changeVibrationEnabled(enabled: Boolean) {
+        vibrationEnabled = enabled
+        prefs.edit { putBoolean(KEY_VIBRATION, enabled) }
+    }
+
+    /** true = animation d'explosion plein écran quand la jauge de menace explose (Réglages > Sons). */
+    var explosionAnimationEnabled by mutableStateOf(prefs.getBoolean(KEY_EXPLOSION_ANIM, true))
+        private set
+
+    fun changeExplosionAnimationEnabled(enabled: Boolean) {
+        explosionAnimationEnabled = enabled
+        prefs.edit { putBoolean(KEY_EXPLOSION_ANIM, enabled) }
+    }
+
     val effectiveMusicVolume: Float
         get() = if (musicMuted) 0f else musicVolume
 
@@ -91,6 +109,8 @@ class SoundPrefs private constructor(context: Context) {
         private const val KEY_MUTED = "dice_muted"
         private const val KEY_MUSIC_VOLUME = "music_volume"
         private const val KEY_MUSIC_MUTED = "music_muted"
+        private const val KEY_VIBRATION = "vibration_enabled"
+        private const val KEY_EXPLOSION_ANIM = "explosion_animation_enabled"
         private const val KEY_DISABLED_TRACKS = "disabled_music_tracks"
 
         @Volatile

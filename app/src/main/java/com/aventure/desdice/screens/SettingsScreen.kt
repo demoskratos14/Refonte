@@ -79,6 +79,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.aventure.desdice.R
+import com.aventure.desdice.ThreatExplosion
+import com.aventure.desdice.ThreatExplosionOverlay
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppIcon
 import com.aventure.desdice.ui.AppIconStore
@@ -340,6 +342,7 @@ fun SettingsScreen(
                             AppIconCard(fonts = fonts)
                         } else if (page == 3) {
                             SoundCard(fonts = fonts)
+                            VibrationCard(fonts = fonts)
                             MusicCard(fonts = fonts)
                         } else {
                             ProfileCard(fonts = fonts)
@@ -377,6 +380,9 @@ fun SettingsScreen(
                 }
             }
         }
+    
+        // Pour le bouton « Essayer » de la carte des effets de menace.
+        ThreatExplosionOverlay()
     }
 }
 
@@ -740,6 +746,84 @@ private fun MusicCard(fonts: AppFonts) {
                 secondary = true
             )
         }
+    }
+}
+
+/** Page « Sons » : effets quand la jauge de menace explose (vibration + animation). */
+@Composable
+private fun VibrationCard(fonts: AppFonts) {
+    val context = LocalContext.current
+    val soundPrefs = remember(context) { SoundPrefs.get(context) }
+    val vibration = soundPrefs.vibrationEnabled
+    val animation = soundPrefs.explosionAnimationEnabled
+    val switchColors = SwitchDefaults.colors(
+        checkedThumbColor = Color.White,
+        checkedTrackColor = SRed,
+        uncheckedThumbColor = Color.White,
+        uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
+    )
+
+    SettingsCard(title = "\uD83D\uDCA5 Effets de la menace", fonts = fonts) {
+        Text(
+            text = "Quand la jauge de menace explose, le téléphone peut vibrer et une explosion peut " +
+                "apparaître à l'écran, au moment où la réponse de l'IA s'affiche.",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.95f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(bottom = 14.dp)
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (vibration) "Vibration activée" else "Vibration coupée",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = vibration,
+                onCheckedChange = { soundPrefs.changeVibrationEnabled(it) },
+                colors = switchColors
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (animation) "Animation activée" else "Animation coupée",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = animation,
+                onCheckedChange = { soundPrefs.changeExplosionAnimationEnabled(it) },
+                colors = switchColors
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        SettingsButton(
+            text = "Essayer l'effet",
+            onClick = { ThreatExplosion.fire(context, ignoreSettings = true) },
+            fonts = fonts,
+            secondary = true
+        )
+        Text(
+            text = "L'animation est aussi supprimée si les animations sont désactivées dans les réglages d'Android.",
+            fontSize = 13.sp,
+            color = Color.White.copy(alpha = 0.8f),
+            fontFamily = fonts.body,
+            style = TextStyle(shadow = STextShadow),
+            modifier = Modifier.padding(top = 8.dp)
+        )
     }
 }
 

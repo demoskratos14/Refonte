@@ -176,7 +176,7 @@ Le bouton « Configurer les valeurs autorisées » permet de choisir quelles fac
 
 LA JAUGE DE MENACE
 
-Elle monte de 3 points quand le dé de réussite donne 1, et redescend d'un point sur un 5 ou un 6. Quand elle atteint 10 points, une complication inattendue survient dans l'histoire, puis la jauge retombe à zéro.
+Elle monte de 3 points quand le dé de réussite donne 1, et redescend d'un point sur un 5 ou un 6. Quand elle atteint son seuil, une complication inattendue survient dans l'histoire, puis la jauge retombe à zéro. Le seuil dépend du palier de contenu : 10 points pour un enfant, 8 pour un adolescent, 6 pour un adulte (la complication arrive donc plus souvent, et plus fort, quand l'âge est élevé). Quand la réponse de l'IA qui suit l'explosion s'affiche, le téléphone vibre et une explosion apparaît à l'écran (les deux se règlent dans Réglages > Sons).
 
 LES TOTEMS
 

@@ -123,8 +123,15 @@ object PromptBuilder {
             "chaque lancer concerné -> pleine à $TOTEM_ENERGY_THRESHOLD points, alors utilisable " +
             "(capacité ou aide correspondante)."
         lines += ""
-        lines += "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. À $THREAT_THRESHOLD points, " +
-            "complication secondaire inattendue puis retombe à 0."
+        lines += "JAUGE DE MENACE : +3 sur un 1, -1 sur un 5 ou 6. Son niveau actuel t'est donné à " +
+            "chaque message : fais SENTIR la tension qui monte dans l'ambiance et les détails de la " +
+            "scène (signes inquiétants, bruits, présence qui se rapproche, temps qui se gâte...), sans " +
+            "jamais citer la jauge ni ses chiffres. En dessous du tiers : rien d'anormal ; entre le " +
+            "tiers et les deux tiers : des signes nets ; au-delà des deux tiers : le danger est " +
+            "imminent. À ${sess.threatThreshold} points, une complication secondaire inattendue éclate (le " +
+            "message du lancer te le signale) : elle doit se produire IMMÉDIATEMENT et visiblement dans " +
+            "ta réponse suivante, jamais être repoussée ni passée sous silence, puis la tension retombe " +
+            "à 0. Sa gravité suit le palier de contenu ci-dessous."
         lines += ""
         lines += "RÈGLE ABSOLUE SUR LES JAUGES : les jauges (totems, alliés, menace) sont calculées et " +
             "tenues à jour UNIQUEMENT par l'application, à partir des lancers réels du joueur. Tu ne " +
@@ -249,7 +256,8 @@ object PromptBuilder {
                 "humiliant : il crée un contretemps, un détour ou une situation cocasse, et il y a toujours " +
                 "un moyen de se rattraper. Personne ne meurt ni n'est perdu pour de bon, pas même un allié " +
                 "(un personnage qui s'éloigne peut revenir). Plusieurs échecs de suite ne mènent jamais à " +
-                "une fin de l'histoire : ils rendent seulement le chemin plus long.",
+                "une fin de l'histoire : ils rendent seulement le chemin plus long. Quand la jauge de menace " +
+                "éclate, la complication est un obstacle ou une surprise amusante ou dépaysante, jamais effrayante.",
             "",
             "PROBLÈMES ET ÉNIGMES : simples et concrets, une seule idée à la fois, avec une solution " +
                 "faisable grâce aux indices déjà donnés. Si le joueur hésite ou se trompe, glisse un indice " +
@@ -270,7 +278,9 @@ object PromptBuilder {
                 "toujours précédée de signes clairs que le danger devient pressant, pour laisser au joueur " +
                 "une vraie chance de réagir. Préfère alors un sacrifice, une défaite partielle ou un " +
                 "basculement de l'histoire à une fin brutale ; si l'histoire s'achève ainsi, conclus-la proprement. S'il y a plusieurs héros, un héros qui tombe " +
-                "n'arrête pas l'histoire tant que les autres peuvent continuer.",
+                "n'arrête pas l'histoire tant que les autres peuvent continuer. Quand la jauge de menace éclate, " +
+                "la complication est une vraie difficulté (poursuite, piège qui se referme, adversaire " +
+                "qui surgit, ressource perdue).",
             "",
             "PROBLÈMES ET ÉNIGMES : un peu plus élaborés : un choix délicat, deux ou trois indices à " +
                 "relier, une énigme en deux étapes, un dilemme entre deux options qui ont chacune un prix. " +
@@ -291,7 +301,9 @@ object PromptBuilder {
                 "apparaître le danger avant, mais ne la retiens pas par complaisance. Si elle arrive, " +
                 "raconte-la jusqu'au bout et conclus l'histoire. S'il y a plusieurs héros, un héros qui tombe n'arrête pas " +
                 "l'histoire tant que d'autres peuvent continuer. Récompense en retour les bons choix et " +
-                "la prudence : un bon plan peut compenser un mauvais jet.",
+                "la prudence : un bon plan peut compenser un mauvais jet. Quand la jauge de menace éclate, la " +
+                "complication est un danger sérieux aux conséquences durables (embuscade, trahison, " +
+                "blessure, perte), qui peut aggraver une situation déjà mauvaise.",
             "",
             "PROBLÈMES ET ÉNIGMES : de vraies énigmes et de vrais dilemmes : logique, indices dispersés " +
                 "à recouper, fausses pistes, informations incomplètes, choix sans bonne réponse évidente " +
@@ -477,7 +489,7 @@ object PromptBuilder {
         }
         return "ÉTAT ACTUEL DES JAUGES (ne mentionne jamais ce rappel technique au joueur -- utilise-le " +
             "seulement pour savoir où en sont réellement les jauges, ne les invente jamais) : " +
-            "Jauge de menace : ${sess.threatLevel}/$THREAT_THRESHOLD. " +
+            "Jauge de menace : ${sess.threatLevel}/${sess.threatThreshold}. " +
             "Jauges totémiques : $totemLines. " +
             "Ces niveaux sont calculés par l'application : tu n'as PAS le droit de les modifier, d'y " +
             "ajouter ou d'y retirer des points, ni d'annoncer un nouveau niveau ; ils ne changent " +
@@ -566,6 +578,11 @@ object PromptBuilder {
     }
 
     /** Texte d'événement envoyé à l'IA pour un lancer. */
+    /** Explosion de la jauge de menace sur un lancer précédent jamais transmis à l'IA (voir DiceSession.missedThreatEvents). */
+    fun buildMissedThreatNote(): String =
+        "\u26A0\uFE0F La jauge de menace a explosé lors d'un lancer précédent resté sans réponse : " +
+            "une complication secondaire inattendue doit survenir dans la scène maintenant."
+
     fun buildAiEventText(sess: DiceSession, record: RollRecord): String {
         val parts = mutableListOf(sess.describeRecord(record))
         val note = narratorNoteForRecord(record)

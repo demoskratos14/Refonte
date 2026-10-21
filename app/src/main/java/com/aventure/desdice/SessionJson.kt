@@ -79,6 +79,7 @@ object SessionJson {
             put("allowed_fate_keys", JSONArray(sess.allowedFateKeys))
             put("totem_energy", totemEnergyJson)
             put("threat_level", sess.threatLevel)
+            put("threat_threshold", sess.threatThreshold)
             put("side_quests", JSONArray(sess.sideQuests.map { it.toJson() }))
             put("next_quest_id", sess.nextQuestId)
             put("story_log", JSONArray(sess.storyLog))

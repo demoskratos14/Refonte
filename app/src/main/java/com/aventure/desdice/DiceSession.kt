@@ -72,6 +72,16 @@ class DiceSession(private var saveFile: File) {
 
     var totemEnergy: MutableMap<String, Int> = mutableMapOf()
     var threatLevel: Int = 0
+
+    /** Seuil d'explosion de la jauge : dépend du palier de l'histoire (PlayerAge.threatThreshold), réglé par GameEngine. */
+    var threatThreshold: Int = THREAT_THRESHOLD
+        private set
+
+    /** Change le seuil ; si la jauge est déjà au-dessus du nouveau seuil, elle est ramenée juste en dessous. */
+    fun applyThreatThreshold(value: Int) {
+        threatThreshold = value.coerceAtLeast(2)
+        if (threatLevel >= threatThreshold) threatLevel = threatThreshold - 1
+    }
         private set
 
     var sideQuests: MutableList<SideQuest> = mutableListOf()
@@ -286,7 +296,7 @@ class DiceSession(private var saveFile: File) {
     private fun applyThreat(value: Int): Boolean {
         if (value == 1) threatLevel += 3
         else if (value >= 5) threatLevel = maxOf(0, threatLevel - 1)
-        if (threatLevel >= THREAT_THRESHOLD) {
+        if (threatLevel >= threatThreshold) {
             threatLevel = 0
             return true
         }
@@ -883,6 +893,17 @@ class DiceSession(private var saveFile: File) {
             lastAiSentId = history.last().id
             save()
         }
+    }
+
+    /**
+     * Nombre de lancers, AUTRES que le dernier, qui ont fait exploser la jauge de menace sans avoir
+     * été transmis à l'IA (seul le dernier lancer part avec le message suivant : si le joueur lance
+     * plusieurs fois de suite, l'explosion d'un lancer précédent serait sinon perdue, la jauge étant
+     * déjà retombée à 0).
+     */
+    fun missedThreatEvents(): Int {
+        val last = history.lastOrNull() ?: return 0
+        return history.count { it.id > lastAiSentId && it.id != last.id && it.threatTriggered == true }
     }
 
     /** Le dernier lancer effectué s'il n'a pas encore été transmis à l'IA narratrice, sinon null. */
