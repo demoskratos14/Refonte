@@ -58,6 +58,20 @@ class GameEngine(
     // transmise une seule fois à l'IA, au prochain échange réussi. Volontairement pas sauvegardée.
     private var pendingFrameNote: String? = null
 
+    /**
+     * Dernier envoi à l'IA qui a échoué, pour le bouton « Réessayer » (retryAiRequest). Seul ce qui
+     * ne se retrouve pas dans la partie est gardé : le texte libre du joueur, la quête à terminer
+     * quand l'envoi aboutira, ou le démarrage de l'histoire. Le lancer de dé, lui, reste « en
+     * attente » dans la session et repart de lui-même avec le réessai. Non sauvegardé : après un
+     * redémarrage de l'appli, il ne reste que le lancer en attente.
+     */
+    private data class FailedAiRequest(
+        val text: String = "",
+        val questId: Int = 0,
+        val kickoff: Boolean = false
+    )
+    private var failedAiRequest: FailedAiRequest? = null
+
     /** Session "vide" utilisée avant toute sélection d'histoire (voir switchStory). */
     private fun emptySession(): DiceSession = DiceSession(File(baseDir, "dice_state.json"))
 
@@ -131,6 +145,7 @@ class GameEngine(
         currentStory = story
         session = newSession
         pendingFrameNote = null
+        failedAiRequest = null
         return true
     }
 
@@ -423,6 +438,7 @@ class GameEngine(
         // Prompt de mécaniques + instructions à l'IA : jamais affiché tel quel dans AiPanel.kt,
         // seule sa réponse (le début du chapitre) doit apparaître au joueur.
         val (_, aiError) = runAiNarrator(PromptBuilder.buildAiKickoffMessage(sess, currentStory), visible = false)
+        failedAiRequest = if (aiError != null) FailedAiRequest(kickoff = true) else null
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
     }
 
@@ -437,8 +453,14 @@ class GameEngine(
         return parts
     }
 
-    /** Envoie le lancer en attente (s'il y en a un) + un texte libre optionnel. */
-    fun sendAiMessage(text: String = ""): JSONObject {
+    /**
+     * Envoie le lancer en attente (s'il y en a un) + un texte libre optionnel.
+     * Le lancer n'est marqué « transmis » que si l'IA l'a bien reçu : après une erreur il reste en
+     * attente, et le réessai (retryAiRequest) le renvoie sans qu'il faille relancer le dé.
+     * @param questId quête secondaire à terminer quand cet envoi aboutira lors d'un réessai
+     *   (0 = aucune) ; en temps normal, c'est l'interface qui la termine après un envoi réussi.
+     */
+    fun sendAiMessage(text: String = "", questId: Int = 0): JSONObject {
         val sess = session ?: return currentSessionJson()
         val pending = sess.pendingRoll()
         val parts = mutableListOf<String>()
@@ -453,9 +475,28 @@ class GameEngine(
             // libre, seul CE texte est montré ; sans lui, le message reste entièrement masqué.
             val (_, err) = runAiNarrator(combined, visible = trimmedText.isNotEmpty(), displayText = trimmedText)
             aiError = err
-            if (pending != null) sess.markLastRollAsSent()
+            if (pending != null && aiError == null) sess.markLastRollAsSent()
         }
+        failedAiRequest = if (aiError != null) FailedAiRequest(text = trimmedText, questId = questId) else null
         return sessionToJson(sess).apply { if (aiError != null) put("ai_error", aiError) }
+    }
+
+    /**
+     * Relance le dernier envoi à l'IA qui a échoué (bouton « Réessayer ») : démarrage de l'histoire,
+     * ou message du joueur avec le lancer resté en attente. Si l'appli a été redémarrée entre-temps
+     * (la requête n'est pas sauvegardée), on repart de l'état de la partie : démarrage si
+     * l'histoire n'a pas encore commencé, sinon renvoi du lancer en attente.
+     */
+    fun retryAiRequest(): JSONObject {
+        val sess = session ?: return currentSessionJson()
+        val failed = failedAiRequest
+        val kickoff = failed?.kickoff ?: sess.aiConversation.none { it.role != "system" }
+        if (kickoff) return sendFullPrompt()
+        val questId = failed?.questId ?: 0
+        val result = sendAiMessage(failed?.text.orEmpty(), questId)
+        // « Commencer » une quête secondaire avait échoué : la demande est partie, la quête est donc terminée.
+        if (questId != 0 && !result.has("ai_error")) return completeSideQuest(questId)
+        return result
     }
 
     /** Réinitialise TOUTE la partie (reset_story_to_origin), pas seulement la conversation IA. */
@@ -489,6 +530,7 @@ class GameEngine(
         newSession.save()
         session = newSession
         pendingFrameNote = null
+        failedAiRequest = null
     }
 
     // ------------------------------------------------------------------
@@ -602,7 +644,11 @@ class GameEngine(
             parts += effectText
             val (_, err) = runAiNarrator(parts.joinToString("\n"))
             aiError = err
-            if (pending != null) sess.markLastRollAsSent()
+            if (pending != null && aiError == null) sess.markLastRollAsSent()
+            // L'énergie du totem est déjà dépensée : le réessai renvoie son effet à l'IA sans la dépenser de nouveau.
+            failedAiRequest = if (aiError != null) {
+                FailedAiRequest(text = listOf(text, effectText).filter { it.isNotEmpty() }.joinToString("\n"))
+            } else null
         }
         return sessionToJson(sess).apply {
             put("spent", spent)

@@ -285,7 +285,9 @@ fun SideQuestsList(
             info = null
             try {
                 if (hasKey) {
-                    val sent = viewModel.sendAiMessageAwait(request)
+                    // L'id de la quête permet au bouton « Réessayer » du panneau de narration de la
+                    // terminer aussi, si c'est lui qui renvoie la demande après un échec.
+                    val sent = viewModel.sendAiMessageAwait(request, quest.optInt("id"))
                     val aiError = sent.str("ai_error")
                     if (aiError.isNotEmpty()) {
                         error = aiError

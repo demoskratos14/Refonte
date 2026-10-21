@@ -101,6 +101,21 @@ class DiceSession(private var saveFile: File) {
     var lastAiSentId: Int = 0
     var lastJournalIndex: Int = 0
 
+    // ---- Bilan de fin d'histoire (voir BilanDialog.kt) ----
+    // Compteurs propres à la partie : l'historique des lancers peut être effacé ou annulé par le
+    // joueur, ce qui ne doit pas changer son bilan.
+    /** Nombre de lancers effectués (un lancer annulé ou relancé par un totem ne compte pas). */
+    var totalRolls: Int = 0
+        private set
+
+    /** Nombre de fois où un totem a été utilisé (énergie dépensée). */
+    var totemsUsed: Int = 0
+        private set
+
+    /** true une fois que l'IA a posé la balise de fin définitive de l'histoire. */
+    var storyEnded: Boolean = false
+        private set
+
     init {
         resetState()
     }
@@ -125,6 +140,9 @@ class DiceSession(private var saveFile: File) {
         storySummary = ""
         lastAiSentId = 0
         lastJournalIndex = 0
+        totalRolls = 0
+        totemsUsed = 0
+        storyEnded = false
     }
 
     // ---------- persistance ----------
@@ -149,6 +167,9 @@ class DiceSession(private var saveFile: File) {
             put("story_summary", storySummary)
             put("last_ai_sent_id", lastAiSentId)
             put("last_journal_index", lastJournalIndex)
+            put("total_rolls", totalRolls)
+            put("totems_used", totemsUsed)
+            put("story_ended", storyEnded)
             put("custom_totems", JSONArray(customTotems.map { it.toJson() }))
         }
         // Écriture atomique + copie de la version précédente (voir SafeFile.kt) :
@@ -242,6 +263,10 @@ class DiceSession(private var saveFile: File) {
         lastAiSentId = data.optInt("last_ai_sent_id", 0)
         val jidx = data.optInt("last_journal_index", 0)
         lastJournalIndex = maxOf(0, minOf(jidx, restLen))
+        // Sauvegardes d'avant le bilan : à défaut de compteur, on part de l'historique conservé.
+        totalRolls = maxOf(0, data.optInt("total_rolls", history.size))
+        totemsUsed = maxOf(0, data.optInt("totems_used", 0))
+        storyEnded = data.optBoolean("story_ended", false)
     }
 
     // ---------- totems : lecture seule nécessaire aux lancers (la gestion complète est plus bas) ----------
@@ -333,6 +358,25 @@ class DiceSession(private var saveFile: File) {
 
     fun openSideQuests(): List<SideQuest> = sideQuests.filter { it.status == "ouverte" }
 
+    /** Nombre de quêtes secondaires accomplies (pour le bilan de fin d'histoire). */
+    fun completedQuestCount(): Int = sideQuests.count { it.status == "terminee" }
+
+    // ---------- bilan de fin d'histoire ----------
+
+    /** Appelé quand l'IA conclut l'histoire (balise de fin définitive). Sans effet s'il l'est déjà. */
+    fun markStoryEnded() {
+        if (storyEnded) return
+        storyEnded = true
+        save()
+    }
+
+    /**
+     * Le bilan est proposé seulement si l'histoire est terminée ET n'est pas courte : une histoire
+     * courte se termine d'un seul trait, un bilan n'y apporterait rien. Pour une histoire longue,
+     * qui n'a pas de fin prévue, la balise n'arrive qu'après une défaite définitive.
+     */
+    fun bilanAvailable(): Boolean = storyEnded && storyLength != LENGTH_SHORT
+
     /** Quêtes d'histoire longue qui attendent la fin du chapitre pour se lancer. */
     fun pendingSideQuests(): List<SideQuest> = sideQuests.filter { it.status == "en_attente" }
 
@@ -371,6 +415,19 @@ class DiceSession(private var saveFile: File) {
         return "\uD83D\uDCDC Fin de chapitre : une quête secondaire COURTE se lance maintenant ($kindTxt). " +
             "Ouvre le nouveau chapitre en la lançant naturellement, avec un objectif simple et clair, " +
             "à résoudre en quelques échanges seulement, puis reprends le fil de l'histoire principale."
+    }
+
+    /** Id de la quête dont la consigne de lancement attend d'être envoyée à l'IA (0 = aucune). */
+    fun pendingQuestAnnouncementId(): Int = questToAnnounceId
+
+    /**
+     * Remet en attente la consigne de lancement d'une quête, quand l'envoi à l'IA qui la portait
+     * a échoué (sinon elle serait perdue : consumeQuestAnnouncement() ne la rend qu'une fois).
+     */
+    fun rearmQuestAnnouncement(questId: Int) {
+        if (questId == 0 || questToAnnounceId != 0) return
+        questToAnnounceId = questId
+        save()
     }
 
     /** Description de la face du destin, adaptée à la longueur de l'histoire pour le symbole ❓. */
@@ -438,6 +495,7 @@ class DiceSession(private var saveFile: File) {
         )
         nextId += 1
         history.add(record)
+        totalRolls += 1
         save()
         return record
     }
@@ -453,6 +511,7 @@ class DiceSession(private var saveFile: File) {
         )
         nextId += 1
         history.add(record)
+        totalRolls += 1
         save()
         return record
     }
@@ -473,6 +532,7 @@ class DiceSession(private var saveFile: File) {
         )
         nextId += 1
         history.add(record)
+        totalRolls += 1
         save()
         return record
     }
@@ -487,6 +547,7 @@ class DiceSession(private var saveFile: File) {
         for (i in history.indices.reversed()) {
             if (history[i].type == "success" || history[i].type == "both") {
                 history.removeAt(i)
+                totalRolls = maxOf(0, totalRolls - 1) // remplacé par le nouveau lancer ci-dessous
                 break
             }
         }
@@ -496,6 +557,7 @@ class DiceSession(private var saveFile: File) {
     fun undoLast(): RollRecord? {
         if (history.isEmpty()) return null
         val record = history.removeAt(history.size - 1)
+        totalRolls = maxOf(0, totalRolls - 1)
         save()
         return record
     }
@@ -759,6 +821,7 @@ class DiceSession(private var saveFile: File) {
     fun spendTotemEnergy(key: String): Boolean {
         if (key !in allSymbolKeys() || !isTotemReady(key)) return false
         totemEnergy[key] = 0
+        totemsUsed += 1
         save()
         return true
     }
@@ -814,6 +877,18 @@ class DiceSession(private var saveFile: File) {
     }
 
     /**
+     * Retire les messages ajoutés après les [size] premiers : sert à défaire un envoi à l'IA qui
+     * a échoué, pour que la conversation retrouve exactement son état d'avant (sinon le message
+     * du joueur resterait sans réponse et ne repartirait pas au réessai). Sans effet si la
+     * conversation n'a pas dépassé [size] messages.
+     */
+    fun truncateAiConversation(size: Int) {
+        if (size < 0 || size >= aiConversation.size) return
+        aiConversation = aiConversation.take(size).toMutableList()
+        save()
+    }
+
+    /**
      * Efface uniquement la conversation avec l'IA narratrice (elle sera
      * régénérée, mécaniques comprises, au prochain lancer) -- le reste de la
      * partie (jauges, quêtes, historique des dés...) n'est pas touché.
@@ -823,6 +898,7 @@ class DiceSession(private var saveFile: File) {
         storySummary = ""
         lastJournalIndex = 0
         lastAiSentId = 0
+        storyEnded = false
         save()
     }
 

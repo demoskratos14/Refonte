@@ -252,6 +252,13 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun chapterEndNote_reservesTheEndTagForADefinitiveDefeat() {
+        val note = PromptBuilder.buildChapterEndNote(story("long"))!!
+        assertHas(note, PromptBuilder.storyEndedTag)
+        assertHas(note, "défaite définitive")
+    }
+
+    @Test
     fun pendingQuestNote_askForTheQuestAtTheEndOfTheChapter() {
         sess.sideQuests.add(SideQuest(1, "ami", "en_attente", QUEST_MODE_END_OF_CHAPTER))
         val note = PromptBuilder.buildPendingQuestNote(sess, story("long"))

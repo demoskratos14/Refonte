@@ -514,7 +514,9 @@ object PromptBuilder {
             "(problématique résolue, message où tu proposes la suite au joueur), termine ce message " +
             "par la balise exacte $chapterEndedTag, seule sur sa propre ligne, à la toute fin du " +
             "message. N'utilise cette balise que pour la conclusion d'un chapitre, jamais en cours " +
-            "de chapitre."
+            "de chapitre. Cette histoire n'a pas de fin prévue : n'emploie JAMAIS la balise " +
+            "$storyEndedTag pour conclure un chapitre ; elle est réservée au cas où le héros subit " +
+            "une défaite définitive (jamais rattrapable) qui met réellement fin à l'aventure."
     }
 
     /**

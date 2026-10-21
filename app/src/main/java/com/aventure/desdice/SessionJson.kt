@@ -94,6 +94,16 @@ object SessionJson {
                 "header_title",
                 currentStory?.headerTitle?.ifEmpty { "Les Dés de l'Aventure" } ?: "Les Dés de l'Aventure"
             )
+            put("story_ended", sess.storyEnded)
+            put("bilan_available", sess.bilanAvailable())
+            put(
+                "bilan",
+                JSONObject().apply {
+                    put("rolls", sess.totalRolls)
+                    put("totems_used", sess.totemsUsed)
+                    put("quests_done", sess.completedQuestCount())
+                }
+            )
             put("totem_info", totemInfoJson(sess))
             put("last_result", lastResult ?: JSONObject.NULL)
         }

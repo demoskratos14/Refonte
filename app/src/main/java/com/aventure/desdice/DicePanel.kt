@@ -100,6 +100,9 @@ fun DiceResultCard(
     var rolling by remember { mutableStateOf(false) }
     var sendingToAi by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // true quand l'erreur vient de l'envoi à l'IA (le lancer, lui, a bien eu lieu et reste en
+    // attente) : le bouton « Réessayer » est alors proposé.
+    var errorFromAi by remember { mutableStateOf(false) }
 
     // Animation de lancer : memes des 3D que la page "Des classiques". Le resultat
     // est deja tire ; l'etat de session n'est publie qu'a la fin de l'animation
@@ -109,11 +112,35 @@ fun DiceResultCard(
     var spinGlyphs by remember { mutableStateOf<List<List<PipGlyph>>?>(null) }
     val progress = remember { Animatable(0f) }
 
+    // « Réessayer » après une erreur d'envoi à l'IA : le lancer est resté en attente dans la session,
+    // il repart tel quel (GameEngine.retryAiRequest) -- inutile de relancer le dé.
+    fun retryAi() {
+        if (rolling || sendingToAi) return
+        scope.launch {
+            sendingToAi = true
+            error = null
+            errorFromAi = false
+            try {
+                val sent = viewModel.retryAiAwait()
+                val aiError = sent.str("ai_error")
+                if (aiError.isNotEmpty()) {
+                    error = aiError
+                    errorFromAi = true
+                }
+            } catch (e: Exception) {
+                error = "Erreur : ${e.message}"
+            } finally {
+                sendingToAi = false
+            }
+        }
+    }
+
     fun roll(kind: String) {
         if (rolling) return
         scope.launch {
             rolling = true
             error = null
+            errorFromAi = false
             try {
                 // rollAwaitingAnimation() calcule le resultat sans le publier tout de
                 // suite dans sessionState -- on ne le fait qu'apres l'animation
@@ -173,7 +200,10 @@ fun DiceResultCard(
                     try {
                         val sent = viewModel.sendAiMessageAwait("")
                         val aiError = sent.str("ai_error")
-                        if (aiError.isNotEmpty()) error = aiError
+                        if (aiError.isNotEmpty()) {
+                            error = aiError
+                            errorFromAi = true
+                        }
                     } finally {
                         sendingToAi = false
                     }
@@ -362,6 +392,19 @@ fun DiceResultCard(
         error?.let {
             Spacer(modifier = Modifier.height(8.dp))
             Text(text = it, style = bodyStyle(fonts, 14.sp, ErrorOnPhoto))
+            // Le lancer est conservé : « Réessayer » renvoie le même lancer à l'IA, sans relancer le dé.
+            if (hasKey && errorFromAi) {
+                Spacer(modifier = Modifier.height(8.dp))
+                ComicButton(
+                    text = "🔄 Réessayer",
+                    onClick = { retryAi() },
+                    fonts = fonts,
+                    kind = ButtonKind.Secondary,
+                    enabled = !rolling && !sendingToAi,
+                    compact = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

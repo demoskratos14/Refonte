@@ -12,6 +12,13 @@
 // termine son texte (jusqu'à MAX_CONTINUATIONS fois) et recolle les morceaux.
 // Le reste de l'appli ne voit donc qu'une réponse complète (fin de chapitre,
 // lignes "OPTION:", balise de fin, résumés du journal...).
+//
+// Réessai automatique : un appel qui échoue sur une erreur réseau (coupure, délai dépassé...)
+// ou sur une limite de débit (429) est retenté jusqu'à MAX_ATTEMPTS fois, avec une attente
+// croissante (ou celle demandée par l'en-tête Retry-After, si elle reste raisonnable).
+// Les autres erreurs (clé refusée, modèle invalide, panne 5xx...) ne sont jamais retentées.
+// Si tous les essais échouent, le message d'erreur est renvoyé tel quel : c'est à
+// l'interface de proposer un bouton « Réessayer » (voir GameEngine.retryAiRequest).
 
 package com.aventure.desdice
 
@@ -33,6 +40,21 @@ object MistralClient {
 
     /** Nombre maximum de relances pour terminer une réponse coupée (garde-fou de coût). */
     private const val MAX_CONTINUATIONS = 3
+
+    /** Nombre maximum d'essais pour un même appel (le premier compris) sur erreur réseau ou 429. */
+    private const val MAX_ATTEMPTS = 3
+
+    /** Après un délai dépassé, un seul réessai : chaque essai peut déjà durer [DEFAULT_TIMEOUT_MS]. */
+    private const val MAX_ATTEMPTS_AFTER_TIMEOUT = 2
+
+    /** Attente avant le 2e essai ; doublée à chaque essai suivant. */
+    private const val BASE_RETRY_DELAY_MS = 1_500L
+
+    /** Au-delà, on n'attend pas : l'erreur est rendue au joueur, qui réessaiera à son rythme. */
+    private const val MAX_RETRY_WAIT_MS = 10_000L
+
+    /** Pause entre deux essais ; remplaçable dans les tests pour ne pas attendre vraiment. */
+    internal var sleeper: (Long) -> Unit = { ms -> Thread.sleep(ms) }
 
     private const val CONTINUE_PROMPT =
         "Ta réponse précédente a été coupée par une limite de longueur. Continue EXACTEMENT " +
@@ -61,14 +83,21 @@ object MistralClient {
     private data class RawReply(
         val text: String?,
         val truncated: Boolean,
-        val error: String?
+        val error: String?,
+        /** true : l'échec vaut la peine d'être retenté (erreur réseau ou 429). */
+        val retryable: Boolean = false,
+        /** Attente demandée par le serveur (en-tête Retry-After), 0 si aucune. */
+        val retryAfterMs: Long = 0L,
+        /** true : l'échec est un délai dépassé (réessayé moins souvent, voir MAX_ATTEMPTS_AFTER_TIMEOUT). */
+        val timedOut: Boolean = false
     )
 
     /**
      * Envoie une conversation à l'API Mistral. Ne lève jamais d'exception :
      * toute erreur réseau/HTTP/format est convertie en message clair.
      * Si la réponse est coupée par la limite de longueur, elle est complétée
-     * automatiquement par des appels de continuation.
+     * automatiquement par des appels de continuation. Une erreur réseau ou un 429 est
+     * retenté automatiquement (voir singleCallWithRetry).
      * @return (texte, erreur) — succès : (texte, null) ; échec : (null, message lisible).
      */
     fun chat(
@@ -82,7 +111,7 @@ object MistralClient {
         if (apiKey.isEmpty()) return null to "Aucune clé API Mistral configurée."
         if (messages.isEmpty()) return null to "Rien à envoyer à l'IA."
 
-        val first = singleCall(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
+        val first = singleCallWithRetry(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
         if (first.error != null) return null to first.error
         var full = first.text.orEmpty()
         var truncated = first.truncated
@@ -93,7 +122,7 @@ object MistralClient {
             val followUp = messages +
                 AiMessage("assistant", full) +
                 AiMessage("user", CONTINUE_PROMPT)
-            val next = singleCall(apiKey, followUp, model, maxTokens, timeoutMs, promptCacheKey)
+            val next = singleCallWithRetry(apiKey, followUp, model, maxTokens, timeoutMs, promptCacheKey)
             if (next.error != null) {
                 // On garde ce qu'on a déjà plutôt que de tout perdre : mieux vaut un texte
                 // un peu court qu'une erreur alors que 95 % de la réponse est là.
@@ -105,6 +134,67 @@ object MistralClient {
 
         val clean = full.trim()
         return if (clean.isEmpty()) null to "Réponse vide renvoyée par l'API Mistral." else clean to null
+    }
+
+    /**
+     * singleCall() avec réessai automatique sur erreur réseau ou 429. Les autres erreurs sont
+     * rendues immédiatement. Ne lève jamais d'exception.
+     */
+    private fun singleCallWithRetry(
+        apiKey: String,
+        messages: List<AiMessage>,
+        model: String,
+        maxTokens: Int,
+        timeoutMs: Int,
+        promptCacheKey: String?
+    ): RawReply {
+        var attempt = 1
+        while (true) {
+            val reply = singleCall(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
+            if (!reply.retryable) return reply
+            val maxAttempts = if (reply.timedOut) MAX_ATTEMPTS_AFTER_TIMEOUT else MAX_ATTEMPTS
+            val wait = retryDelayMs(attempt, reply.retryAfterMs)
+            if (attempt >= maxAttempts || wait < 0L || !pause(wait)) {
+                return if (attempt > 1) {
+                    reply.copy(error = reply.error + " ($attempt essais effectués.)")
+                } else {
+                    reply
+                }
+            }
+            attempt++
+        }
+    }
+
+    /** Attend [ms] millisecondes ; false si le thread a été interrompu (on abandonne alors les essais). */
+    private fun pause(ms: Long): Boolean = try {
+        sleeper(ms)
+        true
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        false
+    }
+
+    /** Seule la limite de débit (429) est retentée côté HTTP ; les autres codes sont définitifs. */
+    internal fun isRetryableHttpCode(code: Int): Boolean = code == 429
+
+    /** Les erreurs réseau (coupure, DNS, délai dépassé, connexion interrompue...) sont toutes des IOException. */
+    internal fun isRetryableException(e: Exception): Boolean = e is IOException
+
+    /**
+     * Attente avant l'essai suivant. [attempt] : numéro de l'essai qui vient d'échouer (à partir de 1).
+     * Attente croissante (1,5 s, 3 s...), au moins égale à celle demandée par le serveur ([retryAfterMs]).
+     * @return la durée en ms, ou -1 si elle dépasserait MAX_RETRY_WAIT_MS (on renonce alors à réessayer).
+     */
+    internal fun retryDelayMs(attempt: Int, retryAfterMs: Long): Long {
+        val backoff = BASE_RETRY_DELAY_MS * (1L shl (attempt - 1).coerceIn(0, 10))
+        val wait = maxOf(backoff, retryAfterMs)
+        return if (wait > MAX_RETRY_WAIT_MS) -1L else wait
+    }
+
+    /** Valeur de l'en-tête Retry-After (en secondes) convertie en ms ; 0 si absente ou illisible. */
+    internal fun parseRetryAfterMs(header: String?): Long {
+        val seconds = header?.trim()?.toLongOrNull() ?: return 0L
+        return if (seconds <= 0L) 0L else minOf(seconds, 3_600L) * 1_000L
     }
 
     /** Un seul appel HTTP à l'API. Ne lève jamais d'exception. */
@@ -144,10 +234,18 @@ object MistralClient {
             } else {
                 val errorRaw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 val detailMsg = parseErrorDetail(errorRaw) ?: (connection.responseMessage ?: "erreur inconnue")
-                RawReply(null, false, httpErrorMessage(code, detailMsg))
+                RawReply(
+                    null, false, httpErrorMessage(code, detailMsg),
+                    retryable = isRetryableHttpCode(code),
+                    retryAfterMs = parseRetryAfterMs(connection.getHeaderField("Retry-After"))
+                )
             }
         } catch (e: Exception) {
-            RawReply(null, false, networkErrorMessage(e))
+            RawReply(
+                null, false, networkErrorMessage(e),
+                retryable = isRetryableException(e),
+                timedOut = e is SocketTimeoutException
+            )
         } finally {
             connection?.disconnect()
         }

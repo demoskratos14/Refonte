@@ -35,6 +35,10 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
      * elle-même, donc jamais sauvegardé ni affiché au joueur (AiPanel.kt
      * n'affiche que ce qui est dans aiConversation).
      *
+     * En cas d'erreur, la conversation retrouve exactement son état d'avant l'appel (message du
+     * joueur et message système retirés, consigne de quête remise en attente) : rien n'est perdu,
+     * et un réessai renvoie le même contenu sans créer de doublon.
+     *
      * @param visible false : le message "user" envoyé (lancer de dés, prompt de mécaniques...)
      *   ne sera jamais montré dans AiPanel.kt (mais reste envoyé à l'IA et sauvegardé).
      * @param displayText si `visible` est vrai et ce paramètre non vide : c'est lui qui est
@@ -51,6 +55,9 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
         extraNote: String? = null
     ): Pair<String?, String?> {
         if (!mistralConfig.hasMistralKey() || eventText.isEmpty()) return null to null
+        // Mémorisés pour pouvoir défaire l'envoi si l'API répond par une erreur (voir plus bas).
+        val sizeBefore = sess.aiConversation.size
+        val announcementId = sess.pendingQuestAnnouncementId()
         if (sess.aiConversation.isEmpty()) {
             sess.addAiMessage("system", PromptBuilder.buildMechanicsContext(sess, currentStory, autoMode = true), visible = false)
         }
@@ -85,7 +92,11 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
             model = mistralConfig.getMistralModel(),
             promptCacheKey = currentStorySlug
         )
-        if (error != null) return null to error
+        if (error != null) {
+            sess.truncateAiConversation(sizeBefore)
+            sess.rearmQuestAnnouncement(announcementId)
+            return null to error
+        }
         var replyText = text ?: ""
         // Fin d'un chapitre (pas de l'histoire entière) : le journal est digéré tout de suite,
         // même s'il reste moins de 6 échanges depuis le dernier résumé.
@@ -110,6 +121,7 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
             storyEnded = true
         }
         sess.addAiMessage("assistant", replyText)
+        if (storyEnded) sess.markStoryEnded() // débloque le bilan (voir DiceSession.bilanAvailable)
         maybeUpdateStoryDigest(sess, currentStorySlug, finalChapter = storyEnded, chapterEnd = chapterEnded)
         return replyText to null
     }

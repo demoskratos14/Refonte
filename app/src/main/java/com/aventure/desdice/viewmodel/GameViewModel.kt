@@ -408,8 +408,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * version normale, mais renvoie aussi le JSONObject à l'appelant pour
      * qu'il puisse lire "ai_error" avant de décider la suite (voir
      * DiceResultCard et SideQuestsList dans MainGameScreen.kt). */
-    suspend fun sendAiMessageAwait(text: String = ""): JSONObject =
-        withContext(Dispatchers.IO) { mutex.withLock { engine.sendAiMessage(text).also { loadSessionState(it) } } }
+    suspend fun sendAiMessageAwait(text: String = "", questId: Int = 0): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.sendAiMessage(text, questId).also { loadSessionState(it) } } }
+
+    /** Bouton « Réessayer » : relance le dernier envoi à l'IA qui a échoué, lancer en attente compris
+     * (voir GameEngine.retryAiRequest). Le résultat, "ai_error" compris, est publié dans sessionState. */
+    fun retryAi() = runEngine { engine.retryAiRequest() }
+
+    /** Variante suspendue de retryAi() : renvoie aussi le JSONObject, pour lire "ai_error" (voir DiceResultCard). */
+    suspend fun retryAiAwait(): JSONObject =
+        withContext(Dispatchers.IO) { mutex.withLock { engine.retryAiRequest().also { loadSessionState(it) } } }
 
     // ------------------------------------------------------------------
     // Configuration Mistral

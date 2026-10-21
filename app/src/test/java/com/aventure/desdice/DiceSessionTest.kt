@@ -288,4 +288,174 @@ class DiceSessionTest {
 
         assertFalse(DiceSession(saveFile).load())
     }
+
+    // ---- envoi à l'IA qui échoue : la conversation et le lancer retrouvent leur état d'avant ----
+
+    @Test
+    fun truncateAiConversation_removesTheMessagesAddedAfterTheGivenSize() {
+        session.addAiMessage("system", "règles", visible = false)
+        session.addAiMessage("user", "Je lance le dé")
+        session.addAiMessage("assistant", "Le dé roule...")
+
+        session.truncateAiConversation(1)
+
+        assertEquals(1, session.aiConversation.size)
+        assertEquals("system", session.aiConversation[0].role)
+    }
+
+    @Test
+    fun truncateAiConversation_toZero_emptiesTheConversation() {
+        session.addAiMessage("system", "règles", visible = false)
+        session.addAiMessage("user", "Je lance le dé")
+
+        session.truncateAiConversation(0)
+
+        assertTrue(session.aiConversation.isEmpty())
+    }
+
+    @Test
+    fun truncateAiConversation_isANoOpWhenNothingWasAddedAfterTheSize() {
+        session.addAiMessage("system", "règles", visible = false)
+
+        session.truncateAiConversation(1)
+        session.truncateAiConversation(5)
+        session.truncateAiConversation(-1)
+
+        assertEquals(1, session.aiConversation.size)
+    }
+
+    @Test
+    fun truncateAiConversation_isSaved() {
+        session.addAiMessage("system", "règles", visible = false)
+        session.addAiMessage("user", "Je lance le dé")
+        session.truncateAiConversation(1)
+
+        val reloaded = DiceSession(saveFile)
+        assertTrue(reloaded.load())
+        assertEquals(1, reloaded.aiConversation.size)
+    }
+
+    @Test
+    fun pendingRoll_staysPendingUntilTheAiHasReceivedIt() {
+        session.rollSuccess()
+        // Envoi échoué : rien n'est marqué comme transmis, le lancer repartira au réessai.
+        assertTrue(session.pendingRoll() != null)
+
+        session.markLastRollAsSent()
+        assertNull(session.pendingRoll())
+    }
+
+    @Test
+    fun rearmQuestAnnouncement_putsBackTheAnnouncementOfAFailedSend() {
+        assertEquals(0, session.pendingQuestAnnouncementId())
+
+        session.rearmQuestAnnouncement(7)
+        assertEquals(7, session.pendingQuestAnnouncementId())
+
+        // Quête inconnue : rien à annoncer, mais l'attente est bien levée.
+        assertNull(session.consumeQuestAnnouncement())
+        assertEquals(0, session.pendingQuestAnnouncementId())
+    }
+
+    @Test
+    fun rearmQuestAnnouncement_ignoresZeroAndNeverOverwritesAPendingOne() {
+        session.rearmQuestAnnouncement(0)
+        assertEquals(0, session.pendingQuestAnnouncementId())
+
+        session.rearmQuestAnnouncement(3)
+        session.rearmQuestAnnouncement(9)
+        assertEquals(3, session.pendingQuestAnnouncementId())
+    }
+
+    // ---- bilan de fin d'histoire ----
+
+    @Test
+    fun totalRolls_countsEveryRollKind() {
+        session.rollSuccess()
+        session.rollFate()
+        session.rollBoth()
+        assertEquals(3, session.totalRolls)
+    }
+
+    @Test
+    fun totalRolls_survivesClearHistory_butNotUndo() {
+        session.rollSuccess()
+        session.rollSuccess()
+        session.undoLast()
+        assertEquals(1, session.totalRolls)
+
+        session.clearHistory() // effacer l'historique ne change pas le bilan de la partie
+        assertEquals(1, session.totalRolls)
+    }
+
+    @Test
+    fun totalRolls_secondSouffleReplacesTheRollInsteadOfAddingOne() {
+        session.rollSuccess()
+        session.secondSouffle()
+        assertEquals(1, session.totalRolls)
+    }
+
+    @Test
+    fun totalRolls_andTotemsUsed_areSavedAndReloaded() {
+        session.rollSuccess()
+        session.rollFate()
+
+        val reloaded = DiceSession(saveFile)
+        assertTrue(reloaded.load())
+        assertEquals(2, reloaded.totalRolls)
+        assertEquals(0, reloaded.totemsUsed)
+    }
+
+    @Test
+    fun spendTotemEnergy_withoutEnoughEnergy_isNotCounted() {
+        assertFalse(session.spendTotemEnergy("patte"))
+        assertEquals(0, session.totemsUsed)
+    }
+
+    @Test
+    fun resetAll_clearsTheBilanCounters() {
+        session.rollSuccess()
+        session.markStoryEnded()
+        session.resetAll()
+        assertEquals(0, session.totalRolls)
+        assertEquals(0, session.totemsUsed)
+        assertFalse(session.storyEnded)
+    }
+
+    @Test
+    fun bilan_isAvailableOnlyOnceTheStoryHasEnded() {
+        session.setStoryLength("moyenne")
+        assertFalse(session.bilanAvailable())
+        session.markStoryEnded()
+        assertTrue(session.bilanAvailable())
+    }
+
+    @Test
+    fun bilan_isNeverOfferedForShortStories() {
+        session.setStoryLength("courte")
+        session.markStoryEnded()
+        assertTrue(session.storyEnded)
+        assertFalse(session.bilanAvailable())
+    }
+
+    @Test
+    fun bilan_isOfferedForALongStoryOnlyOnceItHasEnded() {
+        session.setStoryLength("longue")
+        assertFalse(session.bilanAvailable())
+        session.markStoryEnded() // défaite définitive : la seule façon de terminer une histoire longue
+        assertTrue(session.bilanAvailable())
+    }
+
+    @Test
+    fun storyEnded_isSaved() {
+        session.markStoryEnded()
+        val reloaded = DiceSession(saveFile)
+        assertTrue(reloaded.load())
+        assertTrue(reloaded.storyEnded)
+    }
+
+    @Test
+    fun completedQuestCount_countsOnlyFinishedQuests() {
+        assertEquals(0, session.completedQuestCount())
+    }
 }

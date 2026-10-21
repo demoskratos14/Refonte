@@ -205,6 +205,7 @@ fun AiPanel(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var showBilan by remember { mutableStateOf(false) }
 
     val sessionState by viewModel.sessionState.collectAsState()
 
@@ -357,6 +358,15 @@ fun AiPanel(
         isLoading = true
         error = null
         viewModel.sendAiMessage(trimmed)
+    }
+
+    // « Réessayer » : relance exactement l'envoi qui a échoué (le lancer de dé en attente repart
+    // avec) -- inutile de relancer le dé ni de retaper son message.
+    fun retryAi() {
+        if (isLoading) return
+        isLoading = true
+        error = null
+        viewModel.retryAi()
     }
 
     // Choix cliquables du tout dernier message assistant (une histoire déjà relancée
@@ -531,6 +541,17 @@ fun AiPanel(
             }
         }
 
+        // Histoire conclue par l'IA : le bilan est proposé (jamais imposé, pour laisser lire la fin).
+        if (sessionState?.optBoolean("bilan_available", false) == true) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = { showBilan = true },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text("🏆 Voir le bilan de l'aventure")
+            }
+        }
+
         if (isLoading) {
             Spacer(modifier = Modifier.height(8.dp))
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -543,10 +564,15 @@ fun AiPanel(
                 color = Color(0xFFFFB4AB), // rouge clair, lisible sur la photo
                 style = MaterialTheme.typography.bodySmall
             )
-            // Clé refusée : raccourci direct vers l'écran de la clé.
-            if (onConfigureKey != null && MistralClient.isKeyRefusedMessage(it)) {
-                TextButton(onClick = onConfigureKey) {
-                    Text("🔑 Vérifier ma clé API")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { retryAi() }, enabled = !isLoading) {
+                    Text("🔄 Réessayer")
+                }
+                // Clé refusée : raccourci direct vers l'écran de la clé.
+                if (onConfigureKey != null && MistralClient.isKeyRefusedMessage(it)) {
+                    TextButton(onClick = onConfigureKey) {
+                        Text("🔑 Vérifier ma clé API")
+                    }
                 }
             }
         }
@@ -593,6 +619,17 @@ fun AiPanel(
                 )
             }
         }
+    }
+
+    if (showBilan) {
+        val bilan = sessionState?.optJSONObject("bilan")
+        BilanDialog(
+            storyTitle = sessionState?.optString("story_title").orEmpty(),
+            rolls = bilan?.optInt("rolls", 0) ?: 0,
+            totemsUsed = bilan?.optInt("totems_used", 0) ?: 0,
+            questsDone = bilan?.optInt("quests_done", 0) ?: 0,
+            onDismiss = { showBilan = false }
+        )
     }
 
     if (showResetConfirm) {
