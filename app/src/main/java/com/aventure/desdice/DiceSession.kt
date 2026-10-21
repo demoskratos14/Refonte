@@ -82,7 +82,6 @@ class DiceSession(private var saveFile: File) {
         threatThreshold = value.coerceAtLeast(2)
         if (threatLevel >= threatThreshold) threatLevel = threatThreshold - 1
     }
-        private set
 
     var sideQuests: MutableList<SideQuest> = mutableListOf()
         private set
