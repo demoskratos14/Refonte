@@ -7,7 +7,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,7 +15,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -66,7 +64,6 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -112,7 +109,7 @@ private val ScrimMid = Color(0x14000000)
 private val ScrimBottom = Color(0x59000000)
 private val DividerColor = Color(0x4DFFFFFF)
 // Ombre portee des textes poses directement sur la photo.
-private val TextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
+internal val ClassicTextShadow = Shadow(Color(0xCC000000), Offset(1.5f, 2f), 6f)
 
 /** Un dé tiré : `faces` = nombre de faces (0 pour le dé du destin), `value` = nombre obtenu, `fate` = face du destin. */
 private data class DieResult(val faces: Int, val value: Int?, val fate: FateFace?)
@@ -427,7 +424,7 @@ fun ClassicDiceScreen(
                         fontFamily = fonts.bodyBold,
                         fontSize = textStyles.bodySp(16f),
                         color = textStyles.bodyColor ?: Color.White,
-                        shadow = TextShadow
+                        shadow = ClassicTextShadow
                     )
                 )
                 Spacer(Modifier.height(8.dp))
@@ -444,7 +441,7 @@ fun ClassicDiceScreen(
                             fontFamily = fonts.body,
                             fontSize = textStyles.bodySp(14.4f),
                             color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.9f),
-                            shadow = TextShadow
+                            shadow = ClassicTextShadow
                         )
                     )
                     else -> Column(
@@ -469,7 +466,7 @@ fun ClassicDiceScreen(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 15.2.sp,
                                     color = Color.White,
-                                    shadow = TextShadow
+                                    shadow = ClassicTextShadow
                                 )
                             )
                             if (index < history.lastIndex) {
@@ -504,7 +501,7 @@ fun ClassicDiceScreen(
                         fontFamily = fonts.body,
                         fontSize = textStyles.bodySp(14f),
                         color = Color(0xFFFFC9C9),
-                        shadow = TextShadow
+                        shadow = ClassicTextShadow
                     )
                 )
             }
@@ -587,7 +584,7 @@ private fun rememberDiceRollSound(): () -> Unit {
 // ----------------------------------------------------------------------
 
 /** Ombre pleine decalee vers le bas/droite, comme `box-shadow: Xpx Xpx 0 couleur` en CSS. */
-private fun Modifier.hardShadow(offset: Dp, radius: Dp, color: Color): Modifier =
+internal fun Modifier.hardShadow(offset: Dp, radius: Dp, color: Color): Modifier =
     this.drawBehind {
         val o = offset.toPx()
         drawRoundRect(
@@ -680,7 +677,7 @@ private fun DiceTray(
                 fontFamily = fonts.body,
                 fontSize = textStyles.bodySp(15f),
                 color = textStyles.bodyColor ?: Color.White,
-                shadow = TextShadow
+                shadow = ClassicTextShadow
             )
         )
         return
@@ -750,7 +747,7 @@ private fun DiceTray(
             fontFamily = fonts.body,
             fontSize = textStyles.bodySp(13f),
             color = textStyles.bodyColor ?: Color.White.copy(alpha = 0.9f),
-            shadow = TextShadow
+            shadow = ClassicTextShadow
         )
     )
 }
@@ -795,7 +792,7 @@ private fun AddDieSection(
             fontFamily = fonts.bodyBold,
             fontSize = textStyles.bodySp(16f),
             color = textStyles.bodyColor ?: Color.White,
-            shadow = TextShadow
+            shadow = ClassicTextShadow
         )
     )
     Spacer(Modifier.height(8.dp))
@@ -846,7 +843,7 @@ private fun AddDieSection(
                     fontFamily = fonts.body,
                     fontSize = textStyles.bodySp(14f),
                     color = textStyles.bodyColor ?: Color.White,
-                    shadow = TextShadow
+                    shadow = ClassicTextShadow
                 )
             )
             ComicButton(
@@ -871,115 +868,8 @@ private fun AddDieSection(
                 fontFamily = fonts.body,
                 fontSize = textStyles.bodySp(13f),
                 color = textStyles.bodyColor ?: Color.White,
-                shadow = TextShadow
+                shadow = ClassicTextShadow
             )
-        )
-    }
-}
-
-@Composable
-private fun DieWithCaption(caption: String, fonts: AppFonts, textStyles: AppTextStyles, die: @Composable () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        die()
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = caption,
-            style = TextStyle(
-                fontFamily = fonts.display,
-                fontSize = textStyles.titleSp(13.6f),
-                color = textStyles.titleColor ?: Color.White,
-                shadow = TextShadow
-            )
-        )
-    }
-}
-
-@Composable
-internal fun DieBox(
-    rotation: Float,
-    background: Color,
-    size: Dp = 150.dp,
-    onClick: (() -> Unit)? = null,
-    enabled: Boolean = true,
-    // Lu par TalkBack à la place du dessin du dé (points, symboles) : ex. « Dé de réussite : 4 ».
-    description: String? = null,
-    content: @Composable BoxScope.() -> Unit
-) {
-    val shape = RoundedCornerShape(14.dp)
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier = Modifier
-            .size(size)
-            .graphicsLayer { rotationZ = rotation }
-            .hardShadow(5.dp, 14.dp, ClassicInk)
-            .background(background, shape)
-            .border(4.dp, ClassicInk, shape)
-            .let {
-                if (onClick != null) {
-                    it.clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        enabled = enabled,
-                        onClickLabel = "Lancer ce dé",
-                        role = Role.Button,
-                        onClick = onClick
-                    )
-                } else it
-            }
-            .let { if (description != null) it.semantics { contentDescription = description } else it }
-            .padding(10.dp),
-        contentAlignment = Alignment.Center,
-        content = content
-    )
-}
-
-@Composable
-private fun SuccessDieFace(value: Int?) {
-    val pips = value?.let { PIP_POSITIONS[it] }
-    if (pips == null) {
-        Text(
-            text = "⚡",
-            modifier = Modifier.alpha(0.55f),
-            style = TextStyle(fontSize = 54.sp)
-        )
-    } else {
-        Canvas(Modifier.fillMaxSize()) {
-            val cellW = size.width / 3f
-            val cellH = size.height / 3f
-            val radius = 11.dp.toPx()
-            pips.forEach { (row, col) ->
-                drawCircle(
-                    color = ClassicInk,
-                    radius = radius,
-                    center = Offset((col - 0.5f) * cellW, (row - 0.5f) * cellH)
-                )
-            }
-        }
-    }
-}
-
-/** Face a plat d'un de de reussite autre qu'un d6 : le nombre tire, en grand (ou "⚡" avant tout lancer). */
-@Composable
-private fun NumberDieFace(value: Int?, fonts: AppFonts) {
-    if (value == null) {
-        Text(
-            text = "⚡",
-            modifier = Modifier.alpha(0.55f),
-            style = TextStyle(fontSize = 54.sp)
-        )
-    } else {
-        val text = value.toString()
-        val size = when {
-            text.length >= 3 -> 46.sp
-            text.length == 2 -> 64.sp
-            else -> 80.sp
-        }
-        Text(
-            text = text,
-            maxLines = 1,
-            softWrap = false,
-            textAlign = TextAlign.Center,
-            style = TextStyle(fontFamily = fonts.display, fontSize = size, color = ClassicInk)
         )
     }
 }
@@ -1049,21 +939,4 @@ private fun CustomFacesField(
             .border(3.dp, ClassicInk, shape)
             .padding(horizontal = 10.dp, vertical = 8.dp)
     )
-}
-
-@Composable
-internal fun FateDieFace(fate: FateFace?, fonts: AppFonts, textStyles: AppTextStyles) {
-    if (fate == null) {
-        Text(text = "🔮", style = TextStyle(fontSize = 54.sp))
-    } else {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = fate.emoji, style = TextStyle(fontSize = 58.sp))
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = fate.label,
-                textAlign = TextAlign.Center,
-                style = TextStyle(fontFamily = fonts.display, fontSize = textStyles.titleSp(16f), color = ClassicPurple)
-            )
-        }
-    }
 }
