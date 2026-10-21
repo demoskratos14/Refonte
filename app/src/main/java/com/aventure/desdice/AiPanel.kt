@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,6 +89,14 @@ import kotlinx.coroutines.launch
  * du dernier message ; le joueur garde toujours le champ de saisie pour répondre
  * librement au lieu d'en choisir une.
  *
+ * Affichage au fil de l'eau : pendant que l'IA écrit, GameViewModel.streamingReply fournit le texte
+ * reçu jusqu'ici, montré dans une bulle provisoire au bout de la liste (avec la bulle du joueur
+ * qui l'a provoquée, si elle sera visible). Règles de lecture : la liste défile UNE fois, au
+ * premier mot, pour mettre le haut de la réponse en haut de la zone, puis ne bouge plus tant que
+ * l'IA écrit (le texte grandit vers le bas) ; et quand l'échange terminé remplace la bulle
+ * provisoire, la mise en page est identique, donc rien ne saute. Une marge vide permanente en
+ * bas de la liste (TAIL_SPACE) rend possible d'aligner en haut même une réponse encore courte.
+ *
  * Relie au moteur Kotlin (GameEngine, via GameViewModel).
  * GameViewModel.sendFullPrompt(),
  * .sendAiMessage() et .resetAiConversation() ecrivent elles-memes le
@@ -112,7 +121,9 @@ private data class ChatEntry(
     val content: String,
     val choices: List<String> = emptyList(),
     /** Texte brut envoyé à la voix (avec les séparateurs "---", que SpeechText transforme en « À toi ! »). */
-    val speech: String = content
+    val speech: String = content,
+    /** true : bulle provisoire d'une réponse encore en cours d'écriture (pas de bouton « Écouter »). */
+    val streaming: Boolean = false
 )
 
 // Ligne de séparation seule ("---", "***", "___") que l'IA glisse avant/après son appel à agir :
@@ -178,6 +189,43 @@ private fun extractChoices(content: String): Pair<String, List<String>> {
     return lines.subList(0, cut).joinToString("\n").trimEnd() to choices
 }
 
+/** Hauteur de la zone de conversation. */
+private val LIST_HEIGHT = 320.dp
+
+/**
+ * Marge vide au bout de la liste : sans elle, la liste ne pourrait pas faire remonter une réponse
+ * courte tout en haut de la zone (elle s'arrêterait en bas du contenu), et le texte qui s'écrit
+ * sortirait par le bas de la zone, hors de vue.
+ */
+private val TAIL_SPACE = LIST_HEIGHT
+
+/**
+ * Début de ligne qui ne doit pas encore s'afficher pendant l'écriture : ce sera peut-être une ligne
+ * "OPTION: ..." (retirée de l'affichage final, voir extractChoices) ou un séparateur "---".
+ */
+private fun isPartialTechnicalLine(line: String): Boolean {
+    val t = line.trim()
+    if (t.isEmpty()) return false
+    if (t.all { it == '-' || it == '*' || it == '_' }) return true
+    val core = t.trimStart('-', '•', '*', ' ').lowercase()
+    return core.isNotEmpty() && "option".startsWith(core)
+}
+
+/**
+ * Texte d'une réponse encore en cours d'écriture, nettoyé comme le sera la réponse terminée
+ * (extractChoices + hideSeparators), pour que rien de technique ne s'affiche, même une seconde :
+ * balises de fin "[[...]]", lignes OPTION (et leur début), séparateurs.
+ */
+internal fun streamingDisplayText(raw: String): String {
+    var text = raw.trimStart()
+    val tag = text.indexOf("[[")
+    if (tag >= 0) text = text.substring(0, tag)
+    else if (text.endsWith("[")) text = text.dropLast(1)
+    val lastBreak = text.lastIndexOf('\n')
+    if (isPartialTechnicalLine(text.substring(lastBreak + 1))) text = text.substring(0, lastBreak + 1)
+    return hideSeparators(extractChoices(text).first)
+}
+
 @Composable
 fun AiPanel(
     viewModel: GameViewModel,
@@ -208,6 +256,10 @@ fun AiPanel(
     var showBilan by remember { mutableStateOf(false) }
 
     val sessionState by viewModel.sessionState.collectAsState()
+    val streaming by viewModel.streamingReply.collectAsState()
+    // Taille de la conversation IA dans l'état affiché par `messages` (mise à jour au même moment
+    // que lui) : sert à savoir si l'échange en cours d'écriture y est déjà.
+    var messagesConvSize by remember { mutableIntStateOf(0) }
 
     // ---- Sauvegarde / reprise de l'histoire (résumé IA + journal + quêtes) ----
     // Histoire "entamée" = au moins un échange avec l'IA, un chapitre au journal ou un résumé.
@@ -308,6 +360,7 @@ fun AiPanel(
                 speech = lastEntry.speech + "\n\n" + buildChoicesSpeech(lastEntry.choices)
             )
         }
+        messagesConvSize = conv?.length() ?: 0
         messages = list
         // opt() (et non optString) : une valeur JSONObject.NULL explicite ne doit jamais
         // s'afficher comme le texte "null" (optString la confondrait avec une vraie erreur).
@@ -345,7 +398,40 @@ fun AiPanel(
         knownAssistantCount = count
     }
 
+    // Réponse en cours d'écriture : bulle provisoire (et bulle du joueur qui l'a provoquée) après
+    // les messages. Masquée dès que l'état affiché contient l'échange terminé (conversation plus
+    // longue qu'avant l'appel) : le remplacement est alors immédiat, sans image intermédiaire.
+    val streamEntries = remember(streaming, messagesConvSize) {
+        val reply = streaming
+        if (reply == null || reply.text.isBlank() || messagesConvSize > reply.baseSize) {
+            emptyList<ChatEntry>()
+        } else {
+            val shownText = streamingDisplayText(reply.text)
+            buildList {
+                reply.userText?.let { add(ChatEntry("user", it)) }
+                if (shownText.isNotBlank()) add(ChatEntry("assistant", shownText, streaming = true))
+            }
+        }
+    }
+    val shownMessages = remember(messages, streamEntries) { messages + streamEntries }
+    val streamActive = streamEntries.any { it.streaming }
+
+    // Défilement : une seule fois au premier mot d'une réponse (le haut de la réponse se place en
+    // haut de la zone), puis plus jamais tant que le texte s'écrit -- ni pendant, ni au moment où
+    // l'échange terminé remplace la bulle provisoire (streamShown saute alors le défilement
+    // ci-dessous). Un défilement pendant la lecture ferait perdre sa ligne au lecteur.
+    var streamShown by remember { mutableStateOf(false) }
+    LaunchedEffect(streamActive) {
+        if (streamActive) {
+            streamShown = true
+            listState.animateScrollToItem(shownMessages.lastIndex)
+        }
+    }
     LaunchedEffect(messages.size) {
+        if (streamShown) {
+            streamShown = false
+            return@LaunchedEffect
+        }
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
@@ -464,7 +550,7 @@ fun AiPanel(
             return@Column
         }
 
-        if (messages.isEmpty() && !isLoading) {
+        if (shownMessages.isEmpty() && !isLoading) {
             // Le bouton pour demarrer/relancer un chapitre (envoi du prompt
             // complet) est dans MainGameScreen.kt, juste sous
             // "Changer d'histoire" -- il n'est donc pas duplique ici.
@@ -478,10 +564,10 @@ fun AiPanel(
                 state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(320.dp),
+                    .height(LIST_HEIGHT),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { entry ->
+                items(shownMessages) { entry ->
                     val role = entry.role
                     val content = entry.content
                     val isAssistant = role == "assistant"
@@ -500,7 +586,7 @@ fun AiPanel(
                                 .padding(10.dp)
                         ) {
                             Text(text = content, style = MaterialTheme.typography.bodyMedium.merge(replyStyle))
-                            if (isAssistant && speechManager != null) {
+                            if (isAssistant && !entry.streaming && speechManager != null) {
                                 // Même bouton pour lancer et arrêter la lecture de CE message.
                                 val isSpeakingThis = speechManager.speakingText == entry.speech
                                 TextButton(
@@ -515,6 +601,7 @@ fun AiPanel(
                         }
                     }
                 }
+                item(key = "tail-space") { Spacer(modifier = Modifier.height(TAIL_SPACE)) }
             }
         }
 

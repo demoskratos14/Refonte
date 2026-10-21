@@ -19,6 +19,17 @@
 // Les autres erreurs (clé refusée, modèle invalide, panne 5xx...) ne sont jamais retentées.
 // Si tous les essais échouent, le message d'erreur est renvoyé tel quel : c'est à
 // l'interface de proposer un bouton « Réessayer » (voir GameEngine.retryAiRequest).
+//
+// Affichage au fil de l'eau (streaming) : si chat() reçoit un rappel onPartial, l'appel se fait en
+// mode "stream" (événements SSE) et le rappel reçoit le texte reçu jusqu'ici (cumulatif, y compris
+// les morceaux des éventuelles relances), au plus une quinzaine de fois par seconde. Sans rappel,
+// rien ne change : une seule réponse complète, comme avant. Le résultat final de chat() est le
+// même dans les deux modes. Particularités du mode stream :
+//   - un réessai automatique n'a lieu que tant qu'aucun texte n'a été reçu (sinon le texte déjà
+//     affiché repartirait de zéro) ;
+//   - une coupure en plein milieu de la réponse est traitée comme une réponse coupée par la limite
+//     de longueur : l'IA est relancée pour finir son texte (voir MAX_CONTINUATIONS), et si cela
+//     échoue aussi, on garde le texte déjà reçu.
 
 package com.aventure.desdice
 
@@ -52,6 +63,9 @@ object MistralClient {
 
     /** Au-delà, on n'attend pas : l'erreur est rendue au joueur, qui réessaiera à son rythme. */
     private const val MAX_RETRY_WAIT_MS = 10_000L
+
+    /** Mode stream : délai minimal entre deux appels du rappel onPartial (~15 mises à jour par seconde). */
+    private const val STREAM_EMIT_INTERVAL_MS = 60L
 
     /** Pause entre deux essais ; remplaçable dans les tests pour ne pas attendre vraiment. */
     internal var sleeper: (Long) -> Unit = { ms -> Thread.sleep(ms) }
@@ -98,6 +112,8 @@ object MistralClient {
      * Si la réponse est coupée par la limite de longueur, elle est complétée
      * automatiquement par des appels de continuation. Une erreur réseau ou un 429 est
      * retenté automatiquement (voir singleCallWithRetry).
+     * @param onPartial si non nul : mode stream, appelé (depuis le thread de l'appel) avec le texte
+     *   reçu jusqu'ici, au fur et à mesure. Le texte n'est pas nettoyé (balises de fin, lignes OPTION...).
      * @return (texte, erreur) — succès : (texte, null) ; échec : (null, message lisible).
      */
     fun chat(
@@ -106,12 +122,13 @@ object MistralClient {
         model: String = DEFAULT_MODEL,
         maxTokens: Int = DEFAULT_MAX_TOKENS,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS,
-        promptCacheKey: String? = null
+        promptCacheKey: String? = null,
+        onPartial: ((String) -> Unit)? = null
     ): Pair<String?, String?> {
         if (apiKey.isEmpty()) return null to "Aucune clé API Mistral configurée."
         if (messages.isEmpty()) return null to "Rien à envoyer à l'IA."
 
-        val first = singleCallWithRetry(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
+        val first = singleCallWithRetry(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey, onPartial)
         if (first.error != null) return null to first.error
         var full = first.text.orEmpty()
         var truncated = first.truncated
@@ -122,7 +139,12 @@ object MistralClient {
             val followUp = messages +
                 AiMessage("assistant", full) +
                 AiMessage("user", CONTINUE_PROMPT)
-            val next = singleCallWithRetry(apiKey, followUp, model, maxTokens, timeoutMs, promptCacheKey)
+            // Le texte déjà reçu précède celui de la relance : le rappel reçoit toujours le total.
+            val alreadyReceived = full
+            val next = singleCallWithRetry(
+                apiKey, followUp, model, maxTokens, timeoutMs, promptCacheKey,
+                onPartial?.let { callback -> { piece: String -> callback(alreadyReceived + piece) } }
+            )
             if (next.error != null) {
                 // On garde ce qu'on a déjà plutôt que de tout perdre : mieux vaut un texte
                 // un peu court qu'une erreur alors que 95 % de la réponse est là.
@@ -146,11 +168,16 @@ object MistralClient {
         model: String,
         maxTokens: Int,
         timeoutMs: Int,
-        promptCacheKey: String?
+        promptCacheKey: String?,
+        onText: ((String) -> Unit)? = null
     ): RawReply {
         var attempt = 1
         while (true) {
-            val reply = singleCall(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
+            val reply = if (onText != null) {
+                singleStreamCall(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey, onText)
+            } else {
+                singleCall(apiKey, messages, model, maxTokens, timeoutMs, promptCacheKey)
+            }
             if (!reply.retryable) return reply
             val maxAttempts = if (reply.timedOut) MAX_ATTEMPTS_AFTER_TIMEOUT else MAX_ATTEMPTS
             val wait = retryDelayMs(attempt, reply.retryAfterMs)
@@ -197,6 +224,51 @@ object MistralClient {
         return if (seconds <= 0L) 0L else minOf(seconds, 3_600L) * 1_000L
     }
 
+    /** Corps JSON de la requête ; `stream` demande une réponse en événements SSE. */
+    private fun buildPayload(
+        messages: List<AiMessage>,
+        model: String,
+        maxTokens: Int,
+        promptCacheKey: String?,
+        stream: Boolean
+    ): JSONObject = JSONObject().apply {
+        put("model", LEGACY_MODEL_IDS[model] ?: model)
+        put("messages", JSONArray(messages.map { it.toApiJson() }))
+        put("temperature", 0.9)
+        put("max_tokens", maxTokens)
+        if (stream) put("stream", true)
+        if (!promptCacheKey.isNullOrEmpty()) put("prompt_cache_key", promptCacheKey)
+    }
+
+    private fun openConnection(apiKey: String, timeoutMs: Int, stream: Boolean): HttpURLConnection =
+        (URL(API_URL).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
+            setRequestProperty("Authorization", "Bearer $apiKey")
+            setRequestProperty("Content-Type", "application/json")
+            if (stream) {
+                setRequestProperty("Accept", "text/event-stream")
+                // Sans compression : un flux gzip peut être livré par paquets, ce qui ferait
+                // arriver le texte d'un coup au lieu de mot à mot.
+                setRequestProperty("Accept-Encoding", "identity")
+            } else {
+                setRequestProperty("Accept", "application/json")
+            }
+        }
+
+    /** Réponse d'erreur HTTP (code hors 200..299) convertie en RawReply. */
+    private fun httpFailure(connection: HttpURLConnection, code: Int): RawReply {
+        val errorRaw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+        val detailMsg = parseErrorDetail(errorRaw) ?: (connection.responseMessage ?: "erreur inconnue")
+        return RawReply(
+            null, false, httpErrorMessage(code, detailMsg),
+            retryable = isRetryableHttpCode(code),
+            retryAfterMs = parseRetryAfterMs(connection.getHeaderField("Retry-After"))
+        )
+    }
+
     /** Un seul appel HTTP à l'API. Ne lève jamais d'exception. */
     private fun singleCall(
         apiKey: String,
@@ -206,25 +278,11 @@ object MistralClient {
         timeoutMs: Int,
         promptCacheKey: String?
     ): RawReply {
-        val payload = JSONObject().apply {
-            put("model", LEGACY_MODEL_IDS[model] ?: model)
-            put("messages", JSONArray(messages.map { it.toApiJson() }))
-            put("temperature", 0.9)
-            put("max_tokens", maxTokens)
-            if (!promptCacheKey.isNullOrEmpty()) put("prompt_cache_key", promptCacheKey)
-        }
+        val payload = buildPayload(messages, model, maxTokens, promptCacheKey, stream = false)
 
         var connection: HttpURLConnection? = null
         return try {
-            connection = (URL(API_URL).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                connectTimeout = timeoutMs
-                readTimeout = timeoutMs
-                setRequestProperty("Authorization", "Bearer $apiKey")
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Accept", "application/json")
-            }
+            connection = openConnection(apiKey, timeoutMs, stream = false)
             connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
 
             val code = connection.responseCode
@@ -232,13 +290,7 @@ object MistralClient {
                 val raw = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 parseChatResponse(raw)
             } else {
-                val errorRaw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                val detailMsg = parseErrorDetail(errorRaw) ?: (connection.responseMessage ?: "erreur inconnue")
-                RawReply(
-                    null, false, httpErrorMessage(code, detailMsg),
-                    retryable = isRetryableHttpCode(code),
-                    retryAfterMs = parseRetryAfterMs(connection.getHeaderField("Retry-After"))
-                )
+                httpFailure(connection, code)
             }
         } catch (e: Exception) {
             RawReply(
@@ -249,6 +301,156 @@ object MistralClient {
         } finally {
             connection?.disconnect()
         }
+    }
+
+    /**
+     * Comme singleCall(), mais en mode stream : lit les événements SSE au fur et à mesure et
+     * appelle [onText] avec le texte reçu jusqu'ici (au plus une fois tous les
+     * STREAM_EMIT_INTERVAL_MS, plus un dernier appel garanti avec le texte complet).
+     * Ne lève jamais d'exception.
+     *
+     * Une coupure après le début du texte n'est pas une erreur : le texte reçu est rendu comme une
+     * réponse coupée (truncated = true), que chat() fait terminer par l'IA. Une erreur avant le
+     * premier mot est rendue comme dans singleCall() (donc retentée si c'est une erreur réseau).
+     */
+    private fun singleStreamCall(
+        apiKey: String,
+        messages: List<AiMessage>,
+        model: String,
+        maxTokens: Int,
+        timeoutMs: Int,
+        promptCacheKey: String?,
+        onText: (String) -> Unit
+    ): RawReply {
+        val payload = buildPayload(messages, model, maxTokens, promptCacheKey, stream = true)
+        val text = StringBuilder()
+        var lastEmitNs = 0L
+        var unsent = false
+
+        fun emitIfDue() {
+            val now = System.nanoTime()
+            if (lastEmitNs == 0L || now - lastEmitNs >= STREAM_EMIT_INTERVAL_MS * 1_000_000L) {
+                lastEmitNs = now
+                unsent = false
+                onText(text.toString())
+            } else {
+                unsent = true
+            }
+        }
+
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = openConnection(apiKey, timeoutMs, stream = true)
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+
+            val code = connection.responseCode
+            if (code !in 200..299) return httpFailure(connection, code)
+
+            var finishReason: String? = null
+            var sawDone = false
+            var streamError: String? = null
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    val chunk = parseStreamLine(line) ?: continue
+                    if (chunk.error != null) {
+                        streamError = chunk.error
+                        break
+                    }
+                    if (chunk.text.isNotEmpty()) {
+                        text.append(chunk.text)
+                        emitIfDue()
+                    }
+                    if (chunk.finishReason != null) finishReason = chunk.finishReason
+                    if (chunk.done) {
+                        sawDone = true
+                        break
+                    }
+                }
+            }
+            if (unsent) onText(text.toString())
+
+            when {
+                text.isBlank() ->
+                    RawReply(null, false, streamError ?: "Réponse vide renvoyée par l'API Mistral.")
+                // Fin normale : finish_reason reçu, ou marqueur [DONE]. Sinon le flux s'est arrêté
+                // en route (ou Mistral a signalé une erreur) : réponse à faire terminer.
+                else -> RawReply(
+                    text.toString(),
+                    truncated = finishReason == "length" ||
+                        streamError != null ||
+                        (finishReason == null && !sawDone),
+                    error = null
+                )
+            }
+        } catch (e: Exception) {
+            if (text.isBlank()) {
+                RawReply(
+                    null, false, networkErrorMessage(e),
+                    retryable = isRetryableException(e),
+                    timedOut = e is SocketTimeoutException
+                )
+            } else {
+                if (unsent) onText(text.toString())
+                RawReply(text.toString(), truncated = true, error = null)
+            }
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    /** Un événement du flux SSE de Mistral, déjà décodé (voir parseStreamLine). */
+    internal data class StreamChunk(
+        /** Morceau de texte de cet événement (peut être vide). */
+        val text: String = "",
+        /** "stop", "length"... : renseigné sur le dernier événement de contenu, sinon null. */
+        val finishReason: String? = null,
+        /** true : marqueur de fin de flux (data: [DONE]). */
+        val done: Boolean = false,
+        /** Message d'erreur envoyé par Mistral au milieu du flux, sinon null. */
+        val error: String? = null
+    )
+
+    /**
+     * Décode une ligne du flux SSE. Seules les lignes "data: ..." comptent ; commentaires, lignes
+     * vides, "event: ..." et événements illisibles (ou sans contenu, comme celui des statistiques
+     * d'usage) rendent null et sont ignorés.
+     */
+    internal fun parseStreamLine(line: String): StreamChunk? {
+        if (!line.startsWith("data:")) return null
+        val data = line.substring(5).trim()
+        if (data.isEmpty()) return null
+        if (data == "[DONE]") return StreamChunk(done = true)
+        return try {
+            val obj = JSONObject(data)
+            val choices = obj.optJSONArray("choices")
+            if (choices == null || choices.length() == 0) {
+                return if (obj.has("error") || obj.optString("object") == "error") {
+                    StreamChunk(error = parseErrorDetail(data) ?: "Erreur Mistral pendant la réponse.")
+                } else {
+                    null
+                }
+            }
+            val choice = choices.getJSONObject(0)
+            val text = deltaText(choice.optJSONObject("delta")?.opt("content"))
+            val finish = if (choice.isNull("finish_reason")) null
+            else choice.optString("finish_reason", "").ifEmpty { null }
+            StreamChunk(text = text, finishReason = finish)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Le contenu d'un delta est une chaîne, ou (certains modèles) une liste de morceaux typés. */
+    private fun deltaText(content: Any?): String = when (content) {
+        is String -> content
+        is JSONArray -> buildString {
+            for (i in 0 until content.length()) {
+                val part = content.optJSONObject(i) ?: continue
+                if (part.optString("type", "text") == "text") append(part.optString("text", ""))
+            }
+        }
+        else -> ""
     }
 
     /** Message lisible pour un code HTTP d'erreur renvoyé par Mistral. */

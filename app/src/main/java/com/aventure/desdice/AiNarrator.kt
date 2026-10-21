@@ -12,6 +12,24 @@
 
 package com.aventure.desdice
 
+/**
+ * Réponse de l'IA en cours d'écriture (mode stream), transmise à l'interface avant que l'échange
+ * ne soit enregistré dans la session. Rien de tout cela n'est sauvegardé : à la fin de l'appel,
+ * l'échange complet arrive par l'état de la session et remplace cet aperçu.
+ *
+ * @param baseSize taille de la conversation IA AVANT cet échange. L'interface s'en sert pour savoir
+ *   si l'état de session qu'elle affiche contient déjà l'échange terminé (conversation plus longue
+ *   que baseSize) : l'aperçu est alors masqué, sans attendre qu'il soit effacé.
+ * @param userText message du joueur tel qu'il sera affiché, null s'il reste masqué (lancer de dés,
+ *   démarrage de l'histoire...).
+ * @param text texte de l'IA reçu jusqu'ici, tel quel (balises de fin et lignes OPTION comprises).
+ */
+data class StreamingReply(
+    val baseSize: Int,
+    val userText: String?,
+    val text: String
+)
+
 class AiNarrator(private val mistralConfig: MistralConfig) {
 
     // Balises que l'IA ajoute à ses réponses : définies avec les consignes qui les demandent
@@ -43,6 +61,9 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
      *   ne sera jamais montré dans AiPanel.kt (mais reste envoyé à l'IA et sauvegardé).
      * @param displayText si `visible` est vrai et ce paramètre non vide : c'est lui qui est
      *   affiché au joueur à la place du texte technique complet (ex. son propre message libre).
+     * @param onStream si non nul : la réponse est demandée en mode stream et ce rappel reçoit le
+     *   texte au fur et à mesure (voir StreamingReply). Il n'est appelé que depuis le thread qui
+     *   appelle cette fonction ; le résultat final est identique avec ou sans lui.
      * @return (texte de la réponse, erreur) — comme MistralClient.chat().
      */
     fun runAiNarrator(
@@ -52,7 +73,8 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
         eventText: String,
         visible: Boolean = true,
         displayText: String = "",
-        extraNote: String? = null
+        extraNote: String? = null,
+        onStream: ((StreamingReply) -> Unit)? = null
     ): Pair<String?, String?> {
         if (!mistralConfig.hasMistralKey() || eventText.isEmpty()) return null to null
         // Mémorisés pour pouvoir défaire l'envoi si l'API répond par une erreur (voir plus bas).
@@ -86,11 +108,18 @@ class AiNarrator(private val mistralConfig: MistralConfig) {
         extraNote?.let { note ->
             messagesToSend.add((messagesToSend.size - 1).coerceAtLeast(0), AiMessage("system", note))
         }
+        // Ce que l'interface affichera pour le message du joueur (même règle que dans AiPanel :
+        // display_content s'il existe, sinon le contenu), pour que l'aperçu ait la même mise en page
+        // que l'échange terminé.
+        val userShown = if (visible) displayText.ifEmpty { fullText } else null
         val (text, error) = MistralClient.chat(
             mistralConfig.getMistralKey(),
             messagesToSend,
             model = mistralConfig.getMistralModel(),
-            promptCacheKey = currentStorySlug
+            promptCacheKey = currentStorySlug,
+            onPartial = onStream?.let { callback ->
+                { partial: String -> callback(StreamingReply(sizeBefore, userShown, partial)) }
+            }
         )
         if (error != null) {
             sess.truncateAiConversation(sizeBefore)

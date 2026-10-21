@@ -84,6 +84,8 @@ import com.aventure.desdice.ui.HelpTexts
 import com.aventure.desdice.ui.rememberAppFonts
 import com.aventure.desdice.viewmodel.GameViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -229,10 +231,34 @@ fun MainGameScreen(
     var aiPanelOffset by remember { mutableIntStateOf(0) }
     val scrollState = rememberScrollState()
 
+    // Réponse de l'IA affichée au fil de l'eau : la page remonte sur le panneau de narration dès les
+    // premiers mots (et non à la fin de la réponse, ce qui ferait défiler la page en pleine
+    // lecture). Quand la réponse terminée arrive ensuite, la page ne bouge pas : elle est déjà en
+    // place. streamScrolledFrom retient la dernière réponse connue à ce moment-là, pour ne sauter
+    // QUE le défilement de la réponse qui vient d'être montrée en aperçu.
+    // Seul le passage « ça écrit / ça n'écrit pas » compte ici : on ne suit pas le texte lui-même,
+    // sinon tout l'écran serait recomposé à chaque mise à jour de la réponse.
+    val streamActive by remember(viewModel) {
+        viewModel.streamingReply.map { it?.text?.isNotBlank() == true }.distinctUntilChanged()
+    }.collectAsState(initial = false)
+    var streamScrolled by remember { mutableStateOf(false) }
+    var streamScrolledFrom by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(streamActive) {
+        if (streamActive) {
+            streamScrolled = true
+            streamScrolledFrom = lastAssistantMessage
+            scrollState.animateScrollTo(aiPanelOffset.coerceIn(0, scrollState.maxValue))
+        }
+    }
+
     LaunchedEffect(lastAssistantMessage) {
         if (lastAssistantMessage != previousAssistantMessage) {
+            val alreadyPositioned = streamScrolled && streamScrolledFrom == previousAssistantMessage
             previousAssistantMessage = lastAssistantMessage
-            scrollState.animateScrollTo(aiPanelOffset.coerceIn(0, scrollState.maxValue))
+            streamScrolled = false
+            if (!alreadyPositioned) {
+                scrollState.animateScrollTo(aiPanelOffset.coerceIn(0, scrollState.maxValue))
+            }
         }
     }
 

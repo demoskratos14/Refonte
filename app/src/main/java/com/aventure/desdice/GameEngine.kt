@@ -369,7 +369,10 @@ class GameEngine(
     ): Pair<String?, String?> {
         val sess = session ?: return null to null
         val note = pendingFrameNote
-        val result = narrator.runAiNarrator(sess, currentStory, currentStorySlug, eventText, visible, displayText, note)
+        val result = narrator.runAiNarrator(
+            sess, currentStory, currentStorySlug, eventText, visible, displayText, note,
+            onStream = onAiStream
+        )
         // La note n'est consommée que si l'échange a abouti : sinon elle repart au prochain essai.
         if (note != null && result.second == null) pendingFrameNote = null
         return result
@@ -540,6 +543,13 @@ class GameEngine(
     private val mistralConfig = MistralConfig(baseDir, secretCipher)
 
     private val narrator = AiNarrator(mistralConfig)
+
+    /**
+     * Rappel de l'interface pour afficher la réponse de l'IA au fur et à mesure (mode stream, voir
+     * StreamingReply). Posé par GameViewModel ; null = réponse demandée en une seule fois, comme
+     * avant. Appelé depuis le thread de l'appel à l'IA, pendant que le moteur est verrouillé.
+     */
+    var onAiStream: ((StreamingReply) -> Unit)? = null
 
     fun getMistralKey(): String = mistralConfig.getMistralKey()
 
