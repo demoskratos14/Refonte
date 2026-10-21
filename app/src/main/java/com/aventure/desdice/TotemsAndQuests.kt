@@ -6,6 +6,7 @@ package com.aventure.desdice
 
 import android.content.ClipData
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import com.aventure.desdice.screens.TotemManagementDialog
@@ -66,6 +67,7 @@ fun TotemGaugesRow(
     val sessionState by viewModel.sessionState.collectAsState()
     val scope = rememberCoroutineScope()
     val fonts = rememberAppFonts()
+    val context = LocalContext.current
 
     var symbols by remember { mutableStateOf<Map<String, JSONObject>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -96,6 +98,9 @@ fun TotemGaugesRow(
                 val result = viewModel.useTotemEnergyAwait(key)
                 val effect = result.str("effect")
                 val aiError = result.str("ai_error")
+                // Le totem a bien été utilisé (énergie dépensée) : son image apparaît en grand, au
+                // moment où la réponse de l'IA, déjà publiée par useTotemEnergyAwait, s'affiche.
+                if (result.optBoolean("spent", false)) TotemEffect.fire(context, symbols[key])
                 if (effect.isNotEmpty()) effectMessage = effect
                 if (aiError.isNotEmpty()) error = aiError
             } catch (e: Exception) {

@@ -56,6 +56,15 @@ class SoundPrefs private constructor(context: Context) {
         prefs.edit { putBoolean(KEY_EXPLOSION_ANIM, enabled) }
     }
 
+    /** true = l'image du totem apparaît en grand à l'écran quand on l'utilise (Réglages > Sons). */
+    var totemAnimationEnabled by mutableStateOf(prefs.getBoolean(KEY_TOTEM_ANIM, true))
+        private set
+
+    fun changeTotemAnimationEnabled(enabled: Boolean) {
+        totemAnimationEnabled = enabled
+        prefs.edit { putBoolean(KEY_TOTEM_ANIM, enabled) }
+    }
+
     val effectiveMusicVolume: Float
         get() = if (musicMuted) 0f else musicVolume
 
@@ -111,6 +120,7 @@ class SoundPrefs private constructor(context: Context) {
         private const val KEY_MUSIC_MUTED = "music_muted"
         private const val KEY_VIBRATION = "vibration_enabled"
         private const val KEY_EXPLOSION_ANIM = "explosion_animation_enabled"
+        private const val KEY_TOTEM_ANIM = "totem_animation_enabled"
         private const val KEY_DISABLED_TRACKS = "disabled_music_tracks"
 
         @Volatile

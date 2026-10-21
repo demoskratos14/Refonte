@@ -81,6 +81,9 @@ import androidx.core.graphics.drawable.toBitmap
 import com.aventure.desdice.R
 import com.aventure.desdice.ThreatExplosion
 import com.aventure.desdice.ThreatExplosionOverlay
+import com.aventure.desdice.TotemEffect
+import com.aventure.desdice.TotemUseOverlay
+import org.json.JSONObject
 import com.aventure.desdice.ui.AppFonts
 import com.aventure.desdice.ui.AppIcon
 import com.aventure.desdice.ui.AppIconStore
@@ -383,6 +386,7 @@ fun SettingsScreen(
     
         // Pour le bouton « Essayer » de la carte des effets de menace.
         ThreatExplosionOverlay()
+        TotemUseOverlay()
     }
 }
 
@@ -756,6 +760,7 @@ private fun VibrationCard(fonts: AppFonts) {
     val soundPrefs = remember(context) { SoundPrefs.get(context) }
     val vibration = soundPrefs.vibrationEnabled
     val animation = soundPrefs.explosionAnimationEnabled
+    val totemAnimation = soundPrefs.totemAnimationEnabled
     val switchColors = SwitchDefaults.colors(
         checkedThumbColor = Color.White,
         checkedTrackColor = SRed,
@@ -763,10 +768,11 @@ private fun VibrationCard(fonts: AppFonts) {
         uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
     )
 
-    SettingsCard(title = "\uD83D\uDCA5 Effets de la menace", fonts = fonts) {
+    SettingsCard(title = "\uD83D\uDCA5 Effets spéciaux", fonts = fonts) {
         Text(
             text = "Quand la jauge de menace explose, le téléphone peut vibrer et une explosion peut " +
-                "apparaître à l'écran, au moment où la réponse de l'IA s'affiche.",
+                "apparaître à l'écran, au moment où la réponse de l'IA s'affiche. Quand tu utilises " +
+                "un totem, son image peut apparaître en grand.",
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.95f),
             fontFamily = fonts.body,
@@ -810,9 +816,40 @@ private fun VibrationCard(fonts: AppFonts) {
             )
         }
         Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = if (totemAnimation) "Animation des totems activée" else "Animation des totems coupée",
+                fontFamily = fonts.bodyBold,
+                color = Color.White,
+                style = TextStyle(shadow = STextShadow),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = totemAnimation,
+                onCheckedChange = { soundPrefs.changeTotemAnimationEnabled(it) },
+                colors = switchColors
+            )
+        }
+        Spacer(Modifier.height(6.dp))
         SettingsButton(
-            text = "Essayer l'effet",
+            text = "Essayer l'explosion",
             onClick = { ThreatExplosion.fire(context, ignoreSettings = true) },
+            fonts = fonts,
+            secondary = true
+        )
+        Spacer(Modifier.height(6.dp))
+        SettingsButton(
+            text = "Essayer le totem",
+            onClick = {
+                TotemEffect.fire(
+                    context,
+                    JSONObject().put("label", "Totem").put("emoji", "\uD83E\uDD85"),
+                    ignoreSettings = true
+                )
+            },
             fonts = fonts,
             secondary = true
         )

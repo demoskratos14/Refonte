@@ -182,7 +182,7 @@ LES TOTEMS
 
 Chaque totem a sa fiche (pouvoirs, capacité spéciale), consultable en touchant son badge sous le titre. Chaque totem a aussi une jauge : à chaque lancer qui le concerne, elle se remplit du score obtenu (totem à symbole unique) ou d'un point par symbole (mélange).
 
-Arrivée à 15 points, le bouton « Utiliser » du totem s'active : il déclenche sa capacité ou son aide, l'IA en tient compte dans le récit, et la jauge repart à zéro.
+Arrivée à 15 points, le bouton « Utiliser » du totem s'active : il déclenche sa capacité ou son aide, l'IA en tient compte dans le récit, et la jauge repart à zéro. À ce moment, l'image du totem apparaît en grand à l'écran (réglable dans Réglages > Sons).
 
 Les symboles patte et baguette portent le pouvoir « Second Souffle » : le dernier lancer du dé de réussite est annulé et relancé sur-le-champ.
 

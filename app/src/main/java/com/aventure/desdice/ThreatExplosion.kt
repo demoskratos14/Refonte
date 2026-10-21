@@ -52,7 +52,7 @@ object ThreatExplosion {
     }
 
     /** Respecte le réglage Android « supprimer les animations » (échelle de durée à 0). */
-    private fun animationsAllowed(context: Context): Boolean = try {
+    internal fun animationsAllowed(context: Context): Boolean = try {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
     } catch (_: Exception) {
         true

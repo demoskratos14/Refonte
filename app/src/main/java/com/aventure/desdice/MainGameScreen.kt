@@ -327,6 +327,8 @@ fun MainGameScreen(
     
         // Explosion de la jauge de menace (voir ThreatExplosion.kt) : au-dessus de tout le contenu.
         ThreatExplosionOverlay()
+        // Image du totem utilisé (voir TotemUseEffect.kt).
+        TotemUseOverlay()
     }
 
     infoTotemKey?.let { key ->
