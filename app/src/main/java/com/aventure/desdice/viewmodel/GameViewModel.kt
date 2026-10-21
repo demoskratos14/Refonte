@@ -7,6 +7,7 @@ import com.aventure.desdice.FATE_FACES
 import com.aventure.desdice.GameEngine
 import com.aventure.desdice.KeystoreSecretCipher
 import com.aventure.desdice.PlayerAge
+import com.aventure.desdice.StreamingReply
 import com.aventure.desdice.model.Story
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +56,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val mutex = Mutex()
 
+    // Réponse de l'IA en cours d'écriture (mode stream) : non nulle seulement pendant un appel à
+    // l'IA, une fois les premiers mots reçus. Purement visuelle, jamais sauvegardée : l'échange
+    // complet arrive ensuite par sessionState (voir publishAiResult).
+    private val _streamingReply = MutableStateFlow<StreamingReply?>(null)
+    val streamingReply = _streamingReply.asStateFlow()
+
     init {
+        engine.onAiStream = { reply -> _streamingReply.value = reply }
         loadStories()
     }
 
@@ -277,6 +285,43 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Publie le résultat d'un échange avec l'IA PUIS efface l'aperçu de la réponse en cours :
+     * dans cet ordre, l'interface ne passe jamais par un instant où la réponse n'est affichée
+     * ni en aperçu ni dans la conversation (le texte clignoterait au milieu de la lecture).
+     */
+    private fun publishAiResult(result: JSONObject) {
+        try {
+            loadSessionState(result)
+        } finally {
+            _streamingReply.value = null
+        }
+    }
+
+    /** Comme runEngine(), pour les appels à l'IA (qui affichent la réponse au fil de l'eau). */
+    private fun runAiEngine(block: () -> JSONObject) {
+        viewModelScope.launch(Dispatchers.IO) {
+            mutex.withLock {
+                try {
+                    publishAiResult(block())
+                } finally {
+                    _streamingReply.value = null // même si le moteur a levé une exception
+                }
+            }
+        }
+    }
+
+    /** Comme runAiEngine(), mais suspendue : renvoie aussi le résultat à l'appelant. */
+    private suspend fun aiCallAwait(block: () -> JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                block().also { publishAiResult(it) }
+            } finally {
+                _streamingReply.value = null
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Des classiques
     // ------------------------------------------------------------------
@@ -392,13 +437,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // Narration IA
     // ------------------------------------------------------------------
 
-    fun sendFullPrompt() = runEngine { engine.sendFullPrompt() }
+    fun sendFullPrompt() = runAiEngine { engine.sendFullPrompt() }
 
     /** Texte du prompt complet à copier (mode manuel, sans clé Mistral). Voir ContinueSection. */
     suspend fun buildFullPromptText(): String =
         withContext(Dispatchers.IO) { mutex.withLock { engine.buildFullPromptText() } }
 
-    fun sendAiMessage(text: String = "") = runEngine { engine.sendAiMessage(text) }
+    fun sendAiMessage(text: String = "") = runAiEngine { engine.sendAiMessage(text) }
     fun resetAiConversation() = runEngine { engine.resetAiConversation() }
 
     /** Change le palier de contenu de l'histoire en cours (voir GameEngine.setPlayerAge). */
@@ -409,15 +454,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      * qu'il puisse lire "ai_error" avant de décider la suite (voir
      * DiceResultCard et SideQuestsList dans MainGameScreen.kt). */
     suspend fun sendAiMessageAwait(text: String = "", questId: Int = 0): JSONObject =
-        withContext(Dispatchers.IO) { mutex.withLock { engine.sendAiMessage(text, questId).also { loadSessionState(it) } } }
+        aiCallAwait { engine.sendAiMessage(text, questId) }
 
     /** Bouton « Réessayer » : relance le dernier envoi à l'IA qui a échoué, lancer en attente compris
      * (voir GameEngine.retryAiRequest). Le résultat, "ai_error" compris, est publié dans sessionState. */
-    fun retryAi() = runEngine { engine.retryAiRequest() }
+    fun retryAi() = runAiEngine { engine.retryAiRequest() }
 
     /** Variante suspendue de retryAi() : renvoie aussi le JSONObject, pour lire "ai_error" (voir DiceResultCard). */
     suspend fun retryAiAwait(): JSONObject =
-        withContext(Dispatchers.IO) { mutex.withLock { engine.retryAiRequest().also { loadSessionState(it) } } }
+        aiCallAwait { engine.retryAiRequest() }
 
     // ------------------------------------------------------------------
     // Configuration Mistral
