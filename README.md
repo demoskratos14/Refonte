@@ -8,11 +8,29 @@ L'application démarre vierge (aucune histoire codée en dur) : on crée ses
 propres histoires depuis l'appli, ou on réimporte un fichier d'identité
 précédemment exporté.
 
+Les principales mécaniques, détaillées plus bas :
+
+- **deux dés** : réussite (1 à 6, avec symboles de totems sur les points) et
+  destin (6 symboles dont le ❓, qui change d'effet selon la **longueur** de
+  l'histoire) ;
+- **paliers de contenu** (enfant / adolescent / adulte) déduits de l'âge du
+  plus jeune joueur : ils règlent le ton, la peur, la gravité des échecs, la
+  difficulté des énigmes et le **seuil de la jauge de menace** ;
+- **jauge de menace** (explosion = complication, avec vibration et animation),
+  **jauges de totems** (15 points, capacité spéciale, « Second Souffle ») et
+  **quêtes secondaires** ;
+- **un ou plusieurs héros** par histoire, chacun avec ses propres choix et
+  lancers ;
+- **fin d'histoire et bilan de l'aventure** (défaite définitive possible aux
+  paliers adolescent et adulte) ;
+- réponses de l'IA **affichées au fil de l'eau**, relance automatique en cas
+  d'erreur réseau, bouton « Réessayer », lecture vocale.
+
 L'appli est écrite entièrement en **Kotlin / Jetpack Compose**, y compris le
 moteur de jeu. Un écran **Réglages** permet de personnaliser les polices
 (avec couleur et taille), les images de fond des pages, l'icône de
-l'application, les sons (dés et musique) et le public visé. Des **boutons
-d'aide** expliquent, écran par écran, comment s'en servir.
+l'application, les sons (dés, musique, vibration et animations) et le public
+visé. Des **boutons d'aide** expliquent, écran par écran, comment s'en servir.
 
 ## Historique : pourquoi cette architecture
 
@@ -34,6 +52,16 @@ d'aide** expliquent, écran par écran, comment s'en servir.
    « Réglages » plus bas).
 4. **Boutons d'aide** : un petit bouton rond ouvre une fenêtre d'explication
    propre à l'écran où l'on se trouve (voir « Aides intégrées » plus bas).
+5. **Paliers de contenu** : l'âge du plus jeune joueur, saisi à la création
+   de l'histoire, choisit le cadre de contenu donné à l'IA et le seuil de la
+   jauge de menace (voir « Paliers de contenu »).
+6. **Fin d'histoire et bilan** : l'IA signale la conclusion de l'histoire par
+   une balise ; un bilan chiffré est alors proposé (voir « Fin d'histoire et
+   bilan »).
+7. **Robustesse** : réponses de l'IA en streaming, réessais automatiques,
+   sauvegardes écrites de façon atomique avec copie de secours
+   (`SafeFile.kt`), clé API chiffrée (`SecretCipher.kt`), tests unitaires et
+   tests d'écrans exécutés à chaque build (voir « Tests et qualité »).
 
 ## Comment Kotlin et le moteur de jeu communiquent
 
@@ -62,7 +90,17 @@ d'aide** expliquent, écran par écran, comment s'en servir.
   (`AiNarrator.kt`), clé et modèle (`MistralConfig.kt`), exports et import
   (`StoryTransfer.kt`), dés classiques (`ClassicDiceEngine.kt`).
 - Les erreurs de l'IA ne font jamais perdre un lancer : elles reviennent
-  dans le champ `ai_error` du JSON et s'affichent sous la narration.
+  dans le champ `ai_error` du JSON et s'affichent sous la narration. Le
+  lancer reste « en attente » dans la session, et le bouton **« 🔄 Réessayer »**
+  (`GameEngine.retryAiRequest()`) renvoie exactement le même envoi (même
+  lancer, même consigne de quête, sans dépenser de nouveau l'énergie d'un
+  totem). En cas d'échec, la conversation retrouve l'état d'avant l'appel :
+  aucun doublon.
+- **Affichage au fil de l'eau** : `GameViewModel.streamingReply` (un
+  `StateFlow<StreamingReply?>`) reçoit le texte de l'IA au fur et à mesure
+  (`AiNarrator.runAiNarrator(onStream = …)`). `AiPanel` le montre dans une
+  bulle provisoire, qui est remplacée par l'échange terminé sans changement de
+  mise en page. Rien de cet aperçu n'est sauvegardé.
 - **Exception** : `exportJournal()` et `exportIdentity()` renvoient des
   octets (PDF/JSON, pas du JSON de session) via des fonctions `suspend`
   dédiées de `GameViewModel`, pour que l'écran obtienne le résultat
@@ -72,7 +110,14 @@ d'aide** expliquent, écran par écran, comment s'en servir.
 - **Les réglages** (polices, fonds, icône, sons, public visé) ne passent pas
   par `GameEngine` : ils sont gérés par de petits objets du package `ui`
   (`FontPrefs`, `BackgroundStore`, `AppIconStore`, `SoundPrefs`,
-  `AudiencePrefs`), voir plus bas.
+  `AudiencePrefs`, `ClassicDicePrefs`), voir plus bas.
+- **Changer le palier de contenu en cours d'histoire** passe par
+  `GameEngine.setPlayerAge()` (voir « Paliers de contenu »).
+- **Clé API** : `MistralConfig` chiffre la clé avec `SecretCipher`
+  (`KeystoreSecretCipher`, AES-256-GCM, clé gardée dans l'Android Keystore) ;
+  les tests utilisent `SecretCipher.None`.
+- **Sauvegardes** : toutes les écritures JSON importantes passent par
+  `SafeFile` (voir « Fichiers stockés sur l'appareil »).
 
 ## Navigation (MainActivity.kt → `AppNavigation`)
 
@@ -98,19 +143,23 @@ revient à la page de la clé. Depuis la partie, le chemin est donc :
 ### L'écran de jeu, de haut en bas
 
 1. En-tête : titre de l'histoire avec, en haut à droite, le **bouton d'aide** « Comment fonctionne le jeu ? » ; lien « Changer d'histoire » ; liens musique (couper / lancer / autre morceau, visibles s'il existe des morceaux) ; bouton « 🚀 Démarrer l'histoire » (avec clé API, tant que l'IA n'a rien répondu). Puis les badges des totems (touche = fiche du totem).
-2. `AiPanel` : conversation avec l'IA (fil complet, message libre, lecture vocale du dernier message, réinitialisation avec confirmation) ; masqué (message + bouton vers la configuration) tant qu'aucune clé Mistral n'est enregistrée. Remonté juste sous l'en-tête (au-dessus des dés) pour rester bien visible ; dès qu'une nouvelle réponse de l'IA arrive, l'écran défile automatiquement pour l'amener en haut (position mesurée via `onGloballyPositioned`, dans `MainGameScreen.kt`).
-3. `DiceResultCard` : lancers de dés (dés 3D animés), résultat, note pour l'IA.
-4. `ThreatGauge` : jauge de menace.
+2. `AiPanel` : conversation avec l'IA (fil complet, réponse écrite **au fil de l'eau**, message libre, lecture vocale du dernier message, réinitialisation avec confirmation) ; masqué (message + bouton vers la configuration) tant qu'aucune clé Mistral n'est enregistrée. Quand la réponse se termine par des lignes `OPTION: …`, elles sont retirées du texte et proposées en **boutons d'actions** sous le dernier message (le champ libre reste disponible, et les choix peuvent être lus à voix haute). En cas d'erreur d'envoi, un bouton « 🔄 Réessayer » apparaît. Quand l'IA conclut l'histoire, un bouton « 🏆 Voir le bilan de l'aventure » apparaît (jamais d'office, pour ne pas cacher le texte de fin). C'est aussi ici que vibration et explosion se déclenchent après une explosion de la jauge de menace. Remonté juste sous l'en-tête (au-dessus des dés) pour rester bien visible ; dès qu'une nouvelle réponse de l'IA arrive, l'écran défile automatiquement pour l'amener en haut (position mesurée via `onGloballyPositioned`, dans `MainGameScreen.kt`).
+3. `DiceResultCard` (`DicePanel.kt`) : lancers de dés (dés 3D animés), résultat, note pour l'IA, « Réessayer » si l'envoi à l'IA a échoué.
+4. `ThreatGauge` : jauge de menace, dont le **seuil dépend du palier de contenu** (voir « La jauge de menace »).
 5. `SymbolPicker` : symbole affiché sur le dé de réussite (mode unique / aléatoire / mixte).
-6. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent.
-7. `TotemGaugesRow` : une jauge par totem (15 points pour la remplir), bouton « Utiliser » actif quand elle est pleine (la jauge repart alors à zéro ; les symboles patte et baguette relancent le dernier lancer de réussite : « Second Souffle ») ; bouton « ➕ Ajouter / gérer les totems » (`TotemManagementDialog` : nom, pouvoirs, capacité spéciale, emoji ou image, suppression).
-8. `SideQuestsList` : quêtes secondaires (voir « Le symbole ❓ du dé du destin selon la longueur »).
+6. Bouton « Configurer les valeurs autorisées » (`AllowedValuesDialog`) : quelles faces du dé de réussite et du dé du destin comptent. Dessous, le bouton « **Palier de contenu : enfant / adolescent / adulte** » (`ContentTierDialog`) permet de changer le palier en cours d'histoire (voir « Paliers de contenu »).
+7. `TotemGaugesRow` (`TotemsAndQuests.kt`) : une jauge par totem (15 points pour la remplir), bouton « Utiliser » actif quand elle est pleine (la jauge repart alors à zéro, l'image du totem apparaît en grand à l'écran, et les symboles patte et baguette relancent le dernier lancer de réussite : « Second Souffle ») ; bouton « ➕ Ajouter / gérer les totems » (`TotemManagementDialog` : nom, pouvoirs, capacité spéciale, emoji ou image, suppression).
+8. `SideQuestsList` (`TotemsAndQuests.kt`) : quêtes secondaires (voir « Le symbole ❓ du dé du destin selon la longueur »).
 9. `ContinueSection` : démarrer ou relancer un chapitre, ou copier le prompt complet (mode manuel).
 10. `HistoryList` : historique des lancers (annuler le dernier, tout effacer).
 11. `JournalSection` : journal de l'histoire (masqué quand la narration automatique est active).
 
 Le fond de l'écran de jeu est l'image de l'histoire en cours (elle se choisit
 à la création de l'histoire) ; il n'est pas modifiable depuis les Réglages.
+
+Par-dessus tout le contenu, deux couches d'effets (`ThreatExplosionOverlay`
+et `TotemUseOverlay`, posées dans `MainGameScreen`) affichent l'explosion de
+la jauge de menace et l'image du totem utilisé (voir plus bas).
 
 ### La page « Des classiques » (`ClassicDiceScreen`)
 
@@ -140,7 +189,8 @@ sous-titre, description de l'univers (texte de lore envoyé à l'IA), **héros**
 (optionnel : un ou plusieurs prénoms, « + Ajouter un héros » et ✕ pour en
 retirer un ; les champs laissés vides sont ignorés, et sans héros l'IA
 s'adresse à « le personnage principal »), longueur de l'histoire, objectif
-moral (optionnel), image de fond (optionnelle), totem de départ
+moral (optionnel), **âge du plus jeune joueur** (voir « Paliers de contenu »),
+image de fond (optionnelle), totem de départ
 (nom / pouvoirs séparés par des virgules / capacité spéciale + image
 optionnelle). Une image venue d'un import d'identité est utilisée tant que
 l'utilisateur n'en choisit pas une autre. Le bouton « Créer l'histoire »
@@ -224,10 +274,140 @@ vide, aucune instruction n'est envoyée : comportement inchangé pour toute
 histoire qui n'en définit pas. Restauré lui aussi par un import d'identité
 (`moral_goal` dans le JSON exporté).
 
+**Plusieurs héros** (`protagonist_names`, tableau ; l'ancien champ
+`protagonist_name` est conservé pour les anciennes versions et sert de repli à
+la lecture). Avec un seul héros, l'IA le tutoie. Avec plusieurs, elle vouvoie
+le groupe quand il agit ensemble et tutoie chacun par son prénom quand l'un
+d'eux agit ou choisit seul ; elle demande à chacun son propre lancer à tour de
+rôle et préfixe chaque ligne `OPTION:` du prénom du héros concerné
+(`PromptBuilder.protagonistAddressing()`).
+
 Le bloc « importer une identité exportée (JSON) » (collage manuel ou choix
 d'un fichier) pré-remplit tous les champs ci-dessus, y compris les totems
 supplémentaires, quêtes secondaires et journal, appliqués à part juste après
-la création (`addCustomTotemAwait` puis `applyImportedProgress`).
+la création (`addCustomTotemAwait` puis `applyImportedProgress`). L'âge
+(`player_age`) est exporté avec l'identité, mais la case de confirmation
+« 18 ans ou plus » n'est **jamais reprise d'un import** : elle est à recocher.
+
+## Paliers de contenu (`AgeTier.kt`)
+
+À la création, on indique l'**âge du plus jeune joueur** (champ `playerAge` de
+`StoryEntry`, clé `player_age` dans les fichiers ; `PlayerAge.normalize()` le
+ramène entre 3 et 110 ans, `0` = inconnu). Il détermine un **palier** (`AgeTier`) :
+
+| Palier | Âge | Seuil de menace | Peur et monstres | Échecs | Énigmes |
+|---|---|---|---|---|---|
+| `CHILD` (enfant) | moins de 12 ans, ou âge inconnu | 10 | basse : créatures drôles, rassurantes | jamais définitifs ni humiliants, personne ne meurt, on peut toujours se rattraper | simples, un seul indice à la fois, indices plus évidents si le joueur hésite |
+| `TEEN` (adolescent) | 12 à 17 ans | 8 | moyenne : ambiances tendues, frissons, jamais gore | vraies conséquences, un échec critique isolé n'est jamais fatal ; défaite définitive possible mais **rare**, toujours annoncée par des signes clairs ; sans contenu sexuel | plus élaborées (deux ou trois indices à relier, dilemmes) |
+| `ADULT` (adulte) | 18 ans et plus | 6 | élevée quand l'univers s'y prête : horreur, danger mortel | conséquences lourdes et durables ; défaite définitive possible quand les mauvais choix et les mauvais jets s'accumulent (jamais sur un seul échec critique) ; sans contenu sexuel explicite | vraies énigmes, fausses pistes, dilemmes sans bonne réponse évidente |
+
+Ce sont des **plafonds, pas des obligations** : l'univers décrit par le joueur
+garde la main (une histoire douce reste douce même pour des adultes). Avec
+plusieurs héros, un héros qui tombe n'arrête pas l'histoire tant que d'autres
+peuvent continuer. Dans tous les paliers, l'IA ne demande jamais
+d'information personnelle, de secret ni de quitter l'histoire.
+
+- **Confirmation adulte** : pour un âge de 18 ans ou plus, la création (et le
+  passage au palier adulte en cours d'histoire) exige de cocher « Je confirme
+  avoir 18 ans ou plus ». L'âge est seulement déclaré, jamais vérifié.
+- **Texte envoyé à l'IA** : `PromptBuilder.buildContentFrame(playerAge)` =
+  « TON DU RÉCIT » (`buildToneAndLimits`) + « PEUR ET MONSTRES », « ENJEUX ET
+  ÉCHECS » et « PROBLÈMES ET ÉNIGMES » (`buildStakesFrame`). Il est inclus dans
+  le message système initial.
+- **Changer de palier en cours d'histoire** : bouton « Palier de contenu » de
+  l'écran de jeu → `GameViewModel` → `GameEngine.setPlayerAge()`. Trois
+  raccourcis (enfant / adolescent / adulte) remplissent le champ d'âge, qui
+  reste modifiable à la main. Le moteur met à jour l'histoire
+  (`StoryRegistry.updatePlayerAge`), le seuil de la jauge de menace
+  (`DiceSession.applyThreatThreshold`, qui ramène la jauge juste sous le nouveau
+  seuil si elle le dépassait) et remplace le cadre de contenu dans le message
+  système déjà envoyé (`DiceSession.replaceInConversation`, ou reconstruction
+  complète pour une conversation écrite par une ancienne version). Si le
+  **palier** change, une note ponctuelle (`buildFrameChangeNote`, envoyée une
+  seule fois, jamais sauvegardée) demande à l'IA d'appliquer le nouveau ton
+  dès sa prochaine réponse, sans le mentionner au joueur. Ce qui est déjà
+  écrit ne change pas.
+- **Histoires créées avant ce réglage** : âge inconnu = palier enfant, le plus
+  prudent.
+
+## La jauge de menace
+
+Gérée par `DiceSession.applyThreat()` à chaque lancer du dé de réussite :
+
+- **1** : +3 points ; **5 ou 6** : −1 point (jamais sous zéro) ;
+- quand la jauge atteint le **seuil du palier** (10 enfant, 8 adolescent, 6
+  adulte, voir `PlayerAge.threatThreshold()`), une **complication** survient
+  puis la jauge retombe à zéro ; le lancer porte `RollRecord.threatTriggered =
+  true`. La gravité de la complication suit le palier (surprise amusante pour
+  un enfant, danger sérieux aux conséquences durables pour un adulte).
+- `PromptBuilder.buildGaugeStateNote()` rappelle à l'IA, **à chaque appel**, le
+  niveau réel de la menace (`n/seuil`) et des jauges de totems, avec
+  l'interdiction de les modifier ou de les inventer.
+- Si le joueur enchaîne plusieurs lancers avant d'écrire, seul le dernier part
+  avec le message suivant : `DiceSession.missedThreatEvents()` compte les
+  explosions des lancers précédents non transmises, pour que l'IA ne les perde
+  pas (`buildMissedThreatNote()`).
+- **Effets** (`ThreatExplosion.kt`, `Haptics.kt`) : quand la réponse de l'IA
+  qui suit l'explosion s'affiche, le téléphone vibre (deux secousses, permission
+  `VIBRATE`) et une explosion plein écran s'anime (`ThreatExplosionOverlay`).
+  Les deux se règlent dans Réglages > Sons ; l'animation respecte le réglage
+  Android « supprimer les animations ».
+
+## Fin d'histoire et bilan (`BilanDialog.kt`)
+
+L'IA signale par des **balises** en fin de message (définies dans
+`PromptBuilder`, retirées du texte affiché par `AiNarrator.runAiNarrator()`) :
+
+| Balise | Sens | Effet côté appli |
+|---|---|---|
+| `[[FIN_CHAPITRE]]` | conclusion d'un chapitre (histoire longue) | digest immédiat du journal, sans attendre 6 échanges |
+| `[[QUETE_LANCEE]]` | la quête courte en attente est lancée (histoire longue) | quête `en_attente` → `ouverte`, fin de chapitre implicite |
+| `[[HISTOIRE_TERMINEE]]` | fin **définitive** de l'histoire | `DiceSession.markStoryEnded()`, dernier digest du journal, bilan débloqué |
+
+- Une histoire **courte** ou **moyenne** s'achève naturellement vers le 10ᵉ ou
+  le 20ᵉ–30ᵉ échange. Une histoire **longue** n'a pas de fin prévue : la balise
+  `[[HISTOIRE_TERMINEE]]` est réservée à une défaite définitive (jamais pour
+  conclure un chapitre).
+- **Bilan** : `DiceSession.bilanAvailable()` = histoire terminée **et** non
+  courte. Le bouton « 🏆 Voir le bilan de l'aventure » (`AiPanel`) ouvre
+  `BilanDialog` : nombre de lancers (`totalRolls`), de totems utilisés
+  (`totemsUsed`) et de quêtes accomplies (`completedQuestCount()`), transmis par
+  la clé `bilan` de `SessionJson`.
+- Ces compteurs sont propres à la partie : annuler ou effacer l'historique des
+  lancers ne les change pas (un lancer annulé ou relancé par « Second Souffle »
+  est en revanche décompté).
+
+## Réponses de l'IA : envoi, réessais, rappels
+
+- **Modèle** : `mistral-small-2603` par défaut (`MistralClient.DEFAULT_MODEL`),
+  modifiable sur l'écran de la clé API. `promptCacheKey` = identifiant de
+  l'histoire.
+- **Streaming** : `MistralClient.chat(onPartial = …)` lit les événements SSE et
+  appelle le rappel au plus ~15 fois par seconde. Le résultat final est le même
+  avec ou sans streaming.
+- **Réponse coupée** (`finish_reason = "length"`, ou coupure en plein stream) :
+  l'IA est relancée pour finir son texte, jusqu'à 3 fois, et les morceaux sont
+  recollés.
+- **Réessai automatique** : erreur réseau ou limite de débit (429), jusqu'à 3
+  essais avec attente croissante (ou `Retry-After`) ; après un délai dépassé, un
+  seul réessai ; en streaming, seulement tant qu'aucun texte n'a été reçu. Les
+  autres erreurs (clé refusée, modèle invalide, panne 5xx) ne sont pas
+  retentées ; le joueur voit le message et le bouton « 🔄 Réessayer ».
+- **Rappels recalculés à chaque appel** (ajoutés à la copie envoyée à l'API,
+  jamais sauvegardés ni affichés) : progression de l'histoire courte ou
+  moyenne (`buildStoryProgressNote`), état des jauges et pouvoirs actuels des
+  totems (`buildGaugeStateNote`), fin de chapitre (`buildChapterEndNote`) et
+  quête en attente (`buildPendingQuestNote`) pour l'histoire longue, et, une
+  fois, la note de changement de palier.
+- **Fenêtre de contexte** : le message système, le résumé long terme et les 24
+  derniers messages (`AI_HISTORY_WINDOW`) partent à l'API ; la conversation
+  complète reste sauvegardée et affichée.
+- **Journal automatique** : un chapitre de journal et un résumé long terme sont
+  écrits tous les 6 échanges environ, et tout de suite en fin de chapitre ou
+  d'histoire (appel « fantôme » qui n'écrit jamais dans la conversation).
+- **Lecture vocale** (`SpeechManager`, `SpeechText`) : le texte lu est épuré
+  (astérisques, titres, puces, émojis retirés ; le dernier séparateur `---`
+  devient « À toi ! ») ; le texte affiché ne change pas.
 
 ## Réglages (`screens/SettingsScreen.kt`)
 
@@ -343,9 +523,10 @@ miniature `icon_preview_…`), un `<activity-alias android:name=".NomAlias"
 android:enabled="false" …>` dans le manifeste, et une entrée dans
 l'énumération `AppIcon` (avec son public, ou `null` si elle est commune).
 
-### Page 4 — Sons (`ui/SoundPrefs.kt`, `ui/MusicPlayer.kt`)
+### Page 4 — Sons et effets (`ui/SoundPrefs.kt`, `ui/MusicPlayer.kt`)
 
-Deux cartes, mémorisées dans les `SharedPreferences` `app_sound_prefs` :
+Trois cartes, mémorisées dans les `SharedPreferences` `app_sound_prefs`
+(`screens/SettingsSoundCards.kt`) :
 
 - **Bruit des dés** : curseur de volume (0 à 100 %) et interrupteur pour le
   couper ; le volume choisi est conservé quand le son est coupé. Le son est
@@ -359,6 +540,14 @@ Deux cartes, mémorisées dans les `SharedPreferences` `app_sound_prefs` :
   au sort. Les morceaux sont découverts tout seuls : tout fichier
   `res/raw/music_*.mp3` (ou `.ogg`) entre dans la liste, sans rien déclarer
   dans le code.
+
+- **Effets** : trois interrupteurs — **vibration** quand la jauge de menace
+  explose, **animation d'explosion** de la menace (`ThreatExplosion.kt`) et
+  **animation des totems** (`TotemUseEffect.kt` : l'image du totem, ou son
+  emoji, apparaît petite au centre de l'écran, grossit avec un léger rebond dans
+  un halo doré à rayons, puis s'efface quand on utilise un totem). Deux boutons
+  « Essayer » montrent l'effet même s'il est désactivé. Valeurs par défaut :
+  tout activé.
 
 Comportement de la musique (`MusicPlayer`, `MusicHost` posé dans
 `AppNavigation`) :
@@ -396,11 +585,14 @@ lui passe son propre titre et son propre texte, pris dans l'objet
 | `MainGameScreen` (en-tête, en haut à droite) | Comment fonctionne le jeu ? | `GAME_MECHANICS_TITLE` / `GAME_MECHANICS` |
 
 `GAME_MECHANICS` décrit les deux dés (faces, combinaisons 1 / 6), les valeurs
-autorisées, la menace (10 points), les totems (15 points, « Utiliser », Second
-Souffle, ajout de totems), les quêtes, l'historique, la narration, le mode
-sans clé, le journal, la musique et les Réglages. Les seuils (10 et 15) et
-les règles viennent de `DiceSession.kt` : **si on les change, mettre le texte
-à jour à la main**.
+autorisées, la menace (seuil de 10, 8 ou 6 points selon le palier, vibration et
+explosion), les totems (15 points, « Utiliser », animation, Second Souffle,
+ajout de totems), les quêtes, l'historique, la narration (boutons d'actions,
+résumé automatique), le mode sans clé, le journal, la musique et les Réglages.
+`CREATE_STORY` décrit aussi l'âge du plus jeune joueur et les trois paliers. Les
+seuils (10 / 8 / 6 pour la menace, 15 pour les totems) et les règles viennent
+de `AgeTier.kt`, `DiceSessionModels.kt` et `DiceSession.kt` : **si on les change,
+mettre les textes d'aide à jour à la main**.
 
 Pour **ajouter l'aide d'un nouvel écran** : ajouter un couple `XXX_TITLE` /
 `XXX` dans `HelpTexts`, puis poser
@@ -412,14 +604,24 @@ voulu de l'écran.
 | Fichier / dossier | Contenu |
 |---|---|
 | `app_config.json` | modèle choisi et clé Mistral **chiffrée** (Android Keystore, champ `mistral_api_key_enc`), communs à toutes les histoires. Exclu des sauvegardes Android (`res/xml/data_extraction_rules.xml`, `backup_rules.xml`) : après une restauration sur un autre téléphone, la clé est à ressaisir. Une ancienne clé en clair est chiffrée automatiquement au premier lancement. |
-| `dice_state_<slug>.json` | la partie de chaque histoire (dont la longueur `story_length` et l'état des quêtes secondaires) |
-| `custom_stories.json`, `custom_story_bg/` | histoires personnalisées et leurs images de fond |
+| `dice_state_<slug>.json` | la partie de chaque histoire (dont la longueur `story_length`, l'état des quêtes secondaires, les compteurs du bilan `total_rolls` / `totems_used` et l'indicateur de fin d'histoire) |
+| `custom_stories.json`, `custom_story_bg/` | histoires personnalisées (dont `player_age` et `protagonist_names`) et leurs images de fond |
 | `totem_images/` | images des totems ajoutés |
 | `classic_dice_state.json` | historique de la page « Des classiques » |
 | `backgrounds/<emplacement>.jpg` | fonds de pages personnalisés (Réglages > Photos) |
 | `SharedPreferences` `app_font_prefs` | polices, couleurs et tailles choisies (titres, texte courant, réponses de l'IA) |
-| `SharedPreferences` `app_sound_prefs` | volumes et coupures (dés, musique), morceaux décochés |
+| `SharedPreferences` `app_sound_prefs` | volumes et coupures (dés, musique), vibration, animations d'explosion et de totem, morceaux décochés |
 | `SharedPreferences` `app_audience_prefs` | public visé (filles / garçons / les 2) |
+
+**Écriture sécurisée** (`SafeFile.kt`) : les sauvegardes de parties et la liste
+des histoires sont écrites dans `F.tmp` (avec `fsync`), puis renommées en `F` :
+le fichier est donc toujours soit l'ancienne version complète, soit la nouvelle,
+même si l'appli est tuée en pleine écriture. Avant de remplacer `F`, s'il est
+valide, il est copié en `F.bak`. À la lecture, si `F` est illisible on essaie
+`F.bak` ; si les deux sont illisibles, `F` est mis de côté en `F.corrupt` (jamais
+écrasé) et la lecture échoue proprement. `F.bak` n'est consulté **que** si `F`
+existe mais est illisible : un fichier volontairement supprimé (réinitialisation,
+suppression d'une histoire) ne ressuscite pas.
 
 Désinstaller l'appli efface tout cela. L'icône active est mémorisée par
 Android lui-même (état des alias).
@@ -430,7 +632,12 @@ Les chemins Kotlin ci-dessous sont déduits des noms de packages.
 
 ```
 DesDeAventure/
-├── .github/workflows/build-apk.yml   # construit l'APK automatiquement
+├── .github/workflows/
+│   ├── build-apk.yml                 # build debug + tests + lint + vérification release (R8)
+│   ├── release.yml                   # « Release signée » : APK signé + bundle .aab (manuel)
+│   ├── generer-wrapper.yml           # crée gradlew et gradle/wrapper (manuel)
+│   ├── nettoyer-runs.yml             # supprime les anciens runs (manuel)
+│   └── nettoyer-artefacts.yml        # supprime les anciens artefacts (manuel)
 ├── .github/dependabot.yml            # propositions de mises à jour
 ├── gradle/libs.versions.toml         # versions des bibliothèques
 ├── build.gradle                      # plugins Android / Kotlin (racine)
@@ -438,57 +645,79 @@ DesDeAventure/
 ├── gradle.properties
 ├── .gitignore
 └── app/
-    ├── build.gradle                  # config Android, Compose
-    ├── proguard-rules.pro            # vide (minification désactivée)
-    └── src/main/
-        ├── AndroidManifest.xml       # permission INTERNET + alias d'icônes (voir plus bas)
-        ├── assets/fonts/             # polices proposées dans Réglages (Bangers, Nunito, …)
-        ├── res/                      # icônes, images de fond (voir « Ressources »)
-        ├── java/com/aventure/desdice/
-        │   ├── MainActivity.kt       # navigation (AppNavigation)
-        │   ├── MainGameScreen.kt     # écran de jeu + briques d'UI communes (ComicButton, Section…)
-        │   ├── AiPanel.kt            # panneau de narration IA (conversation, message libre, réinitialisation)
-        │   ├── GameDice.kt           # face du dé de réussite, badges et fiches de totems
-        │   ├── GameExtras.kt         # NarratorNoteBox, ContinueSection, JournalSection
-        │   ├── DiceSession.kt        # moteur de jeu (dés, jauges, menace, quêtes, session, mécanique du ❓ selon la longueur)
-        │   ├── StoryRegistry.kt      # registre des histoires personnalisées
-        │   ├── GameEngine.kt         # porte d'entrée unique du moteur Kotlin
-        │   ├── ClassicDiceEngine.kt  # dés classiques (« Des classiques »), délégué par GameEngine
-        │   ├── MistralConfig.kt      # clé API (chiffrée) et modèle Mistral, délégué par GameEngine
-        │   ├── StoryTransfer.kt      # exports (journal, identité, progression) et import, délégué par GameEngine
-        │   ├── PromptBuilder.kt      # textes envoyés à l'IA (mécaniques, rappels, prompt complet, kickoff)
-        │   ├── AiNarrator.kt         # appels à Mistral : narration, nettoyage des balises, digest du journal
-        │   ├── SessionJson.kt        # état de session envoyé à Compose (sessionToJson)
-        │   ├── ImageUtils.kt         # redimensionnement des fonds et des totems
-        │   ├── MistralClient.kt      # client API Mistral
-        │   ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
-        │   ├── SpeechManager.kt      # synthèse vocale (lecture des réponses de l'IA)
-        │   ├── model/Story.kt
-        │   ├── viewmodel/GameViewModel.kt  # utilise GameEngine
-        │   ├── screens/
-        │   │   ├── AudienceChoiceScreen.kt   # tout premier écran : public visé
-        │   │   ├── TotemManagementDialog.kt  # gestion des totems ajoutés en cours de partie
-        │   │   ├── ClassicDiceScreen.kt      # page "Des classiques"
-        │   │   ├── ConfigureKeyScreen.kt     # saisie de la clé API Mistral (+ engrenage vers Réglages)
-        │   │   ├── CreateStoryScreen.kt      # création d'une histoire personnalisée
-        │   │   ├── SettingsScreen.kt         # Réglages : polices, fonds, icône, sons, profil (+ SettingsGearButton)
-        │   │   └── StorySelectorScreen.kt    # carrousel des histoires
-        │   └── ui/
-        │       ├── AppFonts.kt        # chargement des polices (rememberAppFonts, rememberAppTextStyles)
-        │       ├── FontPrefs.kt       # polices, couleurs, tailles choisies + liste des polices de assets/fonts
-        │       ├── AudiencePrefs.kt   # public visé (Audience, AudiencePrefs)
-        │       ├── SoundPrefs.kt      # volumes / coupures, morceaux cochés, DiceSoundPlayer
-        │       ├── MusicPlayer.kt     # musique de fond (MusicPlayer, MusicHost)
-        │       ├── HelpContent.kt     # boutons d'aide (HelpButton) et textes (HelpTexts)
-        │       ├── BackgroundStore.kt # fonds personnalisés (BackgroundSlot, rememberBackgroundPainter)
-        │       └── AppIconStore.kt    # icône de l'appli (AppIcon, activation des alias)
+    ├── build.gradle                  # config Android, Compose, signature release, tests
+    ├── lint.xml                      # réglages du lint
+    ├── proguard-rules.pro            # règles R8 du build release (voir « Construire l'APK »)
+    └── src/
+        ├── main/
+        │   ├── AndroidManifest.xml   # permissions INTERNET et VIBRATE + alias d'icônes (voir plus bas)
+        │   ├── assets/fonts/         # polices proposées dans Réglages (Bangers, Nunito, …)
+        │   ├── res/                  # icônes, images de fond, sons (voir « Ressources »)
+        │   └── java/com/aventure/desdice/
+        │       ├── MainActivity.kt       # navigation (AppNavigation)
+        │       ├── MainGameScreen.kt     # écran de jeu, palier de contenu, jauge de menace + briques d'UI communes (ComicButton, Section…)
+        │       ├── AiPanel.kt            # panneau de narration IA (conversation, streaming, boutons d'actions, bilan, réessayer, réinitialisation)
+        │       ├── DicePanel.kt          # DiceResultCard : lancers des dés, résultat, réessai
+        │       ├── GameDice.kt           # face du dé de réussite, badges et fiches de totems
+        │       ├── GameDialogs.kt        # SymbolPicker et AllowedValuesDialog
+        │       ├── TotemsAndQuests.kt    # jauges de totems (TotemGaugesRow) et quêtes secondaires (SideQuestsList)
+        │       ├── GameExtras.kt         # NarratorNoteBox, ContinueSection, JournalSection
+        │       ├── BilanDialog.kt        # bilan de fin d'aventure
+        │       ├── ThreatExplosion.kt    # explosion de la jauge de menace (animation + vibration)
+        │       ├── TotemUseEffect.kt     # animation « un totem est utilisé »
+        │       ├── Haptics.kt            # vibration (dangerBuzz)
+        │       ├── AgeTier.kt            # paliers de contenu (AgeTier, PlayerAge) et seuil de menace
+        │       ├── DiceSession.kt        # moteur de jeu (dés, jauges, menace, quêtes, bilan, session, mécanique du ❓ selon la longueur)
+        │       ├── DiceSessionModels.kt  # constantes (seuils, faces, combos) et classes de données (RollRecord, SideQuest, AiMessage…)
+        │       ├── StoryRegistry.kt      # registre des histoires personnalisées
+        │       ├── GameEngine.kt         # porte d'entrée unique du moteur Kotlin
+        │       ├── ClassicDiceEngine.kt  # dés classiques (« Des classiques »), délégué par GameEngine
+        │       ├── MistralConfig.kt      # clé API (chiffrée) et modèle Mistral, délégué par GameEngine
+        │       ├── SecretCipher.kt       # chiffrement de la clé (Android Keystore, AES-256-GCM)
+        │       ├── SafeFile.kt           # écriture atomique + copie .bak + quarantaine .corrupt
+        │       ├── StoryTransfer.kt      # exports (journal, identité, progression) et import, délégué par GameEngine
+        │       ├── PromptBuilder.kt      # textes envoyés à l'IA (mécaniques, cadre de contenu, rappels, balises, prompt complet, kickoff)
+        │       ├── AiNarrator.kt         # appels à Mistral : narration, streaming, nettoyage des balises, digest du journal
+        │       ├── SessionJson.kt        # état de session envoyé à Compose (sessionToJson)
+        │       ├── ImageUtils.kt         # redimensionnement des fonds et des totems
+        │       ├── MistralClient.kt      # client API Mistral (streaming SSE, relances, réessais)
+        │       ├── JournalExporter.kt    # export PDF du journal (PdfDocument natif)
+        │       ├── SpeechManager.kt      # synthèse vocale (lecture des réponses de l'IA)
+        │       ├── SpeechText.kt         # nettoyage du texte avant la lecture vocale
+        │       ├── model/Story.kt
+        │       ├── viewmodel/GameViewModel.kt  # utilise GameEngine, expose sessionState et streamingReply
+        │       ├── screens/
+        │       │   ├── AudienceChoiceScreen.kt   # tout premier écran : public visé
+        │       │   ├── TotemManagementDialog.kt  # gestion des totems ajoutés en cours de partie
+        │       │   ├── ClassicDiceScreen.kt      # page "Des classiques"
+        │       │   ├── ClassicDiceWidgets.kt     # composants de la page « Des classiques »
+        │       │   ├── DiceSpin3D.kt, DieFaces.kt  # dés 3D animés et dessin des faces
+        │       │   ├── ConfigureKeyScreen.kt     # saisie de la clé API Mistral (+ engrenage vers Réglages)
+        │       │   ├── CreateStoryScreen.kt      # création d'une histoire personnalisée (héros, longueur, âge…)
+        │       │   ├── SettingsScreen.kt         # Réglages : squelette, pages, SettingsGearButton
+        │       │   ├── SettingsFontsPage.kt      # page Polices
+        │       │   ├── SettingsMediaCards.kt     # pages Photos et Icône
+        │       │   ├── SettingsSoundCards.kt     # page Sons et effets
+        │       │   ├── SettingsStyle.kt          # couleurs communes des Réglages
+        │       │   └── StorySelectorScreen.kt    # carrousel des histoires
+        │       └── ui/
+        │           ├── AppFonts.kt        # chargement des polices (rememberAppFonts, rememberAppTextStyles)
+        │           ├── FontPrefs.kt       # polices, couleurs, tailles choisies + liste des polices de assets/fonts
+        │           ├── AudiencePrefs.kt   # public visé (Audience, AudiencePrefs)
+        │           ├── ClassicDicePrefs.kt # dé de réussite choisi dans « Des classiques »
+        │           ├── SoundPrefs.kt      # volumes / coupures, vibration, animations, morceaux cochés, DiceSoundPlayer
+        │           ├── MusicPlayer.kt     # musique de fond (MusicPlayer, MusicHost)
+        │           ├── HelpContent.kt     # boutons d'aide (HelpButton) et textes (HelpTexts)
+        │           ├── BackgroundStore.kt # fonds personnalisés (BackgroundSlot, rememberBackgroundPainter)
+        │           └── AppIconStore.kt    # icône de l'appli (AppIcon, activation des alias)
+        └── test/                          # tests unitaires et tests d'écrans (voir « Tests et qualité »)
 ```
 
 ### Ressources attendues dans `res/`
 
 - **Fonds par défaut** : `drawable/bg_classic_dice.jpg` (« Des classiques »), `drawable/bg_create_story.jpg` (création d'histoire), `drawable/new_story_bg`, `new_story_bg_filles` et `new_story_bg_duo` (dernière page du carrousel, selon le public visé), `raw/bg_key_page.jpg` (clé API), `raw/bg_settings.jpg` (Réglages).
 - **Icônes d'interface** : `drawable/classic_dice_icon` (icône du carrousel), `drawable/ic_settings.png` (engrenage), `drawable/ic_help.png` (bouton d'aide, image du personnage qui réfléchit).
-- **Sons** : `raw/dice_roll.mp3` (bruit des dés) et, pour la musique de fond, tout fichier `raw/music_<nom>.mp3` ou `.ogg` (détecté automatiquement ; sans fichier, la musique est simplement absente).
+- **Sons** : `raw/dice_roll.ogg` (bruit des dés ; `mp3` et `wav` conviennent aussi) et, pour la musique de fond, tout fichier `raw/music_<nom>.mp3` ou `.ogg` (détecté automatiquement ; sans fichier, la musique est simplement absente).
 - **Polices** : Bangers et Nunito (dont `Nunito-Bold.ttf`) dans `assets/fonts/`, plus toute police à proposer dans Réglages.
 - **Icône d'origine** :
   - `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png` et `ic_launcher_round.png` (Android avant la version 8) ;
@@ -498,6 +727,13 @@ DesDeAventure/
 
 ### Le manifeste (`AndroidManifest.xml`)
 
+- Permissions : `INTERNET` (API Mistral) et `VIBRATE` (vibration quand la
+  jauge de menace explose, accordée automatiquement à l'installation).
+- Sauvegardes Android : `app_config.json` (clé API chiffrée) est exclu de la
+  sauvegarde cloud et du transfert vers un nouveau téléphone
+  (`res/xml/data_extraction_rules.xml` pour Android 12 et plus,
+  `res/xml/backup_rules.xml` avant) ; parties et histoires, elles, sont
+  sauvegardées.
 - `MainActivity` **n'a plus** de filtre `MAIN` / `LAUNCHER` (sinon l'appli
   apparaîtrait en double dans le lanceur) ; elle reste `exported="true"`.
 - Vingt et un `<activity-alias>` portent ce filtre : `.IconOriginal` (activé
@@ -528,7 +764,53 @@ Le projet est compilé automatiquement par GitHub Actions
 2. Onglet **Actions** → dernière exécution de « Build APK » → section **Artifacts** : télécharger **« Dés d'Aventure »** (un `.zip` contenant `Dés d'Aventure-debug.apk`).
 3. Copier l'APK sur le téléphone et l'ouvrir ; Android demande d'autoriser l'installation d'applications inconnues pour l'appli qui ouvre le fichier.
 
-Seul l'APK **debug** est produit (pas de signature de release configurée).
+Le workflow « Build APK » enchaîne : APK debug (publié tout de suite, même si
+la suite échoue), **tests unitaires** (`testDebugUnitTest`), **lint**
+(`lintDebug`, rapport seulement, ne bloque jamais), vérification du **build
+release non signé avec R8** (`assembleRelease`), puis un résumé tests + lint
+sur la page du workflow.
+
+### Release signée (`.github/workflows/release.yml`)
+
+Workflow manuel « Release signée » (Actions > Run workflow, avec le nom de
+version à afficher) : produit un **APK signé** (« Dés d'Aventure (release) »),
+un **bundle `.aab`** pour le Play Store (« Bundle .aab ») et le **mapping R8**,
+après vérification de la signature (`apksigner verify`). Quatre secrets de
+dépôt sont à créer une fois (Settings > Secrets and variables > Actions) :
+`KEYSTORE_BASE64` (fichier `.jks` encodé en base64), `KEYSTORE_PASSWORD`,
+`KEY_ALIAS`, `KEY_PASSWORD`. Le `versionCode` est le numéro du run (il
+augmente donc à chaque release, condition pour qu'Android accepte une mise à
+jour) ; le `versionName` est celui saisi. Sans ces variables (build debug, pull
+request, poste local), le build release reste possible mais **non signé**.
+
+Le build release active **R8** (`minifyEnabled true`) ; `shrinkResources` reste
+volontairement désactivé car l'appli cherche des polices et des musiques par
+leur nom. `app/proguard-rules.pro` garde `R$raw` (la liste des morceaux
+`music_*` est lue par réflexion) ; `app/lint.xml` ne contient que des faux
+positifs connus.
+
+### Autres workflows manuels
+
+- **Nettoyer les anciens runs** et **Nettoyer les artefacts** : gardent les N
+  derniers runs du build (20 par défaut) ; l'option « simulation » affiche ce
+  qui serait supprimé sans rien effacer.
+
+## Tests et qualité
+
+Les tests sont dans `app/src/test/` et tournent sur la machine de build, sans
+émulateur (`gradle testDebugUnitTest`, ou automatiquement à chaque push) :
+
+- **Moteur** : `GameEngineTest`, `DiceSessionTest`, `ClassicDiceEngineTest`,
+  `StoryRegistryTest`, `StoryTransferTest`, `SessionJsonTest`, `PlayerAgeTest`
+  (paliers et seuils de menace), `BilanDialogTest` ;
+- **IA** : `PromptBuilderTest`, `PromptAndExportTest`, `MistralClientStreamTest`,
+  `MistralClientRetryTest`, `MistralClientErrorsTest`, `StreamingDisplayTextTest`,
+  `SpeechTextTest` ;
+- **Fichiers et sécurité** : `SafeFileTest`, `AppConfigSecurityTest` ;
+- **Interface** : `ui/TextStyleChoiceTest` et des tests d'écrans Compose avec
+  Robolectric (`screens/AudienceChoiceScreenTest`, `screens/SettingsScreenTest`).
+
+Les paramètres Robolectric sont dans `src/test/resources/robolectric.properties`.
 
 ### Versions utilisées
 
@@ -564,7 +846,9 @@ et la version de Gradle est celle de `gradle/wrapper/gradle-wrapper.properties`.
 3. Ne pas retirer `androidx.appcompat` : le thème du manifeste (`Theme.AppCompat.Light.NoActionBar`) en dépend.
 4. `Unresolved reference: toBitmap` dans `SettingsScreen.kt` : ajouter la dépendance `androidx.core:core-ktx` (elle sert à dessiner la miniature de l'icône d'origine).
 5. `Unresolved reference: R.drawable.icon_preview_…`, `R.drawable.ic_help`, `R.raw.dice_roll` ou `R.raw.bg_settings` : une ressource d'icône, de fond ou de son manque ou est mal nommée (noms en minuscules, sans espace ni tiret). Un fichier `music_…` manquant n'est pas une erreur : la musique est juste absente.
-6. Un clic sur une icône affiche « les alias du manifeste ne sont pas en place » : le `AndroidManifest.xml` n'est pas celui qui contient les `<activity-alias>`.
+6. Un test échoue : le workflow devient rouge mais l'APK debug reste téléchargeable (il est publié avant les tests). Le résumé de la page du workflow liste les tests en échec.
+7. Le build release (R8) échoue alors que le debug passe : une classe lue par réflexion a besoin d'une règle dans `app/proguard-rules.pro`.
+8. Un clic sur une icône affiche « les alias du manifeste ne sont pas en place » : le `AndroidManifest.xml` n'est pas celui qui contient les `<activity-alias>`.
 
 ## Ouvrir le projet dans Android Studio (optionnel)
 
